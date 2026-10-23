@@ -1,4 +1,4 @@
-import { conservativeRequestTokens, isUuid, PLATFORM_USER_ID } from '@bantoozi/shared';
+import { AppError, conservativeRequestTokens, isUuid, PLATFORM_USER_ID } from '@bantoozi/shared';
 import { startFakeTypeSafe } from '@bantoozi/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1624,3 +1624,42 @@ function baseOllama() {
     maxConcurrency: 1,
   };
 }
+
+describe('a credential lookup cancelled by the caller', () => {
+  const unavailable = (reason: string) =>
+    new AppError('ENGINE_UNAVAILABLE', 'Provider credential unavailable', {
+      details: { provider: 'typesafe', reason },
+    });
+
+  it('ends as cancelled, not no_key, with the breaker closed and nothing reserved', async () => {
+    const controller = new AbortController();
+    const credentials = fakeCredentials({ typesafe: JEV_KEY });
+    credentials.useActive = async () => {
+      controller.abort();
+      throw unavailable('cancelled');
+    };
+    const { router, store, circuit } = setup({ typesafe: null, llm: null, credentials });
+    expect(await router.ask(request(), controller.signal)).toMatchObject({
+      ok: false,
+      reason: 'error',
+      detail: 'cancelled',
+    });
+    expect(store.reservations).toEqual([]);
+    expect((await circuit.readCircuit()).typesafe).toMatchObject({
+      state: 'closed',
+      reopenCount: 0,
+    });
+  });
+
+  it('still answers no_key to an unavailable credential while the caller is live', async () => {
+    const credentials = fakeCredentials({ typesafe: JEV_KEY });
+    credentials.useActive = async () => {
+      throw unavailable('none');
+    };
+    const { router } = setup({ typesafe: null, llm: null, credentials });
+    expect(await router.ask(request(), new AbortController().signal)).toMatchObject({
+      ok: false,
+      reason: 'no_key',
+    });
+  });
+});

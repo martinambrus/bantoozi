@@ -87,6 +87,8 @@ export const RUNTIME_KEYS = [
   'api.rate_limits_enabled',
   // JEV-2: the worker-written resolution of the `jev-latest` alias (not an editable runtime key).
   'engine.model_resolution',
+  'engine.model_probe',
+  'engine.model_impact',
 ] as const;
 
 export interface WorkerRuntimeConfigLike {

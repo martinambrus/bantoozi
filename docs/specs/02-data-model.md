@@ -358,6 +358,7 @@ through `PATCH /admin/settings`.
 | `engine.model_probe` | `{[requestedModelId]: {requested, answered?, ok, at: iso, error?}}`: the newest 10 model-probe results, one per requested id (D-273) | — | worker (`engine.model-probe` job, spec 04 §1.3) |
 | `engine.model_resolution` | `{alias: 'jev-latest', model: <concrete Jev id>, resolvedAt: iso, checkedAt: iso, previous?: {model, until: iso}}` (D-274) | — | worker (the start-up probe and its 5-minute retry; `house.model-watch`) |
 | `engine.model_watch` | `{triggeredAt?: iso, lastCheck?: {at, ok, error?}, notice?: {from, to, at, major, attempts}}` (D-286, D-287, D-288) | — | worker (`house.model-watch`; the retired-model trigger) |
+| `engine.model_impact` | `{at: iso, activeModels: int ≥ 0}`: live users holding an active personal model when the newest model probe was recorded (D-296) | — | worker (in the transaction of every model probe) |
 | `engine.rating_fingerprints` | `{<exact rating sha>: {family: <family sha>, settings: <effective fingerprint settings>, firstSeenAt: iso}}`, at most 64 entries (D-275) | — | worker (start-up, `user.learn`, `house.nightly-learn`); read by `GET /me/learning`; never locked by the rating path |
 | `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
 | `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
@@ -366,7 +367,7 @@ through `PATCH /admin/settings`.
 | `ranker.settings_version` | int | 0 | bumped by the API on ranking-relevant settings changes, and by `eval apply-g1` (spec 06 §7) |
 | `question_sets.active` | `{enrich?: stringId, match?: stringId, cluster?: stringId, suggest?: stringId}` | `{}` | seed (only when a kind is absent), admin |
 | `signup_mode` | `'invite'\|'open'\|'closed'` | env `SIGNUP_MODE` | admin |
-| `engine.typesafe_model` | string 1-200 or `null`; in production a pinned version (`jev-1.13.0`) or exactly `jev-latest`, which the worker resolves and pins (any other alias is refused, D-274) | `null` = env `TYPESAFE_MODEL` | admin |
+| `engine.typesafe_model` | string 1-200 or `null`; in production a pinned version (`jev-1.13.0`) or exactly `jev-latest`, which the worker resolves and pins (any other alias is refused, D-274) | `null` = env `TYPESAFE_MODEL` | admin A change needs a confirming probe of the new value no older than 10 minutes (D-294); the acknowledgement is required only when personal models restart (D-295). |
 | `engine.typesafe_base_url` | http(s) URL without credentials, ≤ 500, or `null`; production: https and a host on `PROVIDER_HOST_ALLOWLIST`; trailing slashes are stripped | `null` = env `TYPESAFE_BASE_URL` | admin |
 | `engine.typesafe_price_per_mtok_usd` | number 0-10 or `null`; production: > 0 | `null` = env `TYPESAFE_PRICE_PER_MTOK_USD` | admin |
 | `engine.concurrency` | int 1-64 or `null` | `null` = env `ENGINE_CONCURRENCY` | admin |

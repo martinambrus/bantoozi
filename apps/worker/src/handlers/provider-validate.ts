@@ -27,6 +27,7 @@ import {
   conservativeRequestTokens,
   isAppError,
   isModelAlias,
+  isModelUnavailableDetail,
   newUuid,
   type CandidateValidation,
 } from '@bantoozi/shared';
@@ -48,10 +49,11 @@ import type { QueueHandler } from './index.js';
  * `credential_probe` authorization, which the store admits only under this validation's own live
  * lease, D-90), LLM output capped at 512 tokens. A bound that stops the probe (including an attempt
  * whose actual cost exceeded its reserve, spec 04 §6), an exhausted platform budget or an
- * unavailable provider records the candidate `pending` with a clear error code (inconclusive: the
- * admin may validate again); an authentication or request rejection records it `invalid`. The probe
- * never goes through `router.ask`, so it never touches the active credential's breaker. A lease
- * lost to revocation or re-staging discards the result.
+ * unavailable provider, or a configured model the provider no longer serves, records the candidate
+ * `pending` with a clear error code (inconclusive: the admin may validate again); an authentication
+ * or request rejection records it `invalid`. The probe never goes through `router.ask`, so it never
+ * touches the active credential's breaker. A lease lost to revocation or re-staging discards the
+ * result.
  */
 
 /** Spec 04 §1.2: attempts and reserved spend of one validation action. */
@@ -157,10 +159,16 @@ export function createProviderValidateHandler(
   const now = deps.now ?? (() => new Date());
   const random = deps.random ?? Math.random;
   const production = config.nodeEnv === 'production';
-  const lanes: Partial<Record<CredentialProvider, ProbeLane>> = {
-    ...optionalLane('typesafe', () => typesafeLane()),
-    ...optionalLane('ollama', () => ollamaLane()),
+  const builders: Record<CredentialProvider, () => ProbeLane> = {
+    typesafe: () => typesafeLane(),
+    ollama: () => ollamaLane(),
   };
+  laneFor('typesafe');
+  laneFor('ollama');
+
+  function laneFor(provider: CredentialProvider): ProbeLane | undefined {
+    return optionalLane(provider, builders[provider])[provider];
+  }
 
   function optionalLane(
     provider: CredentialProvider,
@@ -345,6 +353,7 @@ export function createProviderValidateHandler(
       );
     } catch (error) {
       if (!invoked && isAppError(error) && error.code === 'ENGINE_UNAVAILABLE') {
+        if (signal.aborted) return { kind: 'cancelled' };
         const reason = error.details?.['reason'];
         return { kind: 'unavailable', reason: typeof reason === 'string' ? reason : 'unavailable' };
       }
@@ -390,7 +399,7 @@ export function createProviderValidateHandler(
     signal: AbortSignal,
   ): Promise<ValidationResult | null> {
     const fingerprint = providerConfigFingerprint(provider, config);
-    const lane = lanes[provider];
+    const lane = laneFor(provider);
     if (lane === undefined) {
       return result('pending', 'not_configured', { configFingerprint: fingerprint, attempts: 0 });
     }
@@ -460,6 +469,9 @@ export function createProviderValidateHandler(
         invalidResponses += 1;
         if (invalidResponses > 1) break;
       } else if (!attempt.retryable) {
+        if (isModelUnavailableDetail(attempt.detail)) {
+          return result('pending', 'model_unavailable', base());
+        }
         return result('invalid', 'provider_error', base());
       }
       // Spec 04 §6: an attempt that cost more than its reserve stops further calls (inconclusive).

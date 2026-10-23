@@ -97,6 +97,21 @@ const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.is
 
 const MAX_LATENCY_MS = 60_000;
 
+const MODEL_ID = /^[A-Za-z0-9._:-]{1,64}$/;
+const MAX_MODEL_ENTRIES = 16;
+
+/** A table of requested model ids to answered ones; `{}` is valid on purpose (every id is unknown). */
+function isModelTable(value: unknown): value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return (
+    entries.length <= MAX_MODEL_ENTRIES &&
+    entries.every(
+      ([key, answered]) => MODEL_ID.test(key) && isString(answered) && MODEL_ID.test(answered),
+    )
+  );
+}
+
 const WORKER_READY_SQL = `SELECT
   EXISTS (SELECT 1 FROM settings WHERE key = 'worker.heartbeat' AND value <> '{}'::jsonb) AS "heartbeat",
   EXISTS (SELECT 1 FROM pgboss.schedule WHERE name = 'feed.schedule') AS "schedule"`;
@@ -107,6 +122,7 @@ function fakeView(options: FakeTypeSafeOptions): Record<string, unknown> {
     failRate: options.failRate ?? 0,
     failStatus: options.failStatus ?? null,
     apiKeyRequired: options.apiKey !== undefined,
+    models: options.models === undefined ? null : { ...options.models },
   };
 }
 
@@ -223,13 +239,27 @@ export async function startControlApi(options: ControlOptions): Promise<ControlA
       method: 'POST',
       pattern: /^\/fake\/options$/,
       handle(_params, body) {
-        const fields = objectBody(body, ['latencyMs', 'failStatus', 'failRate', 'apiKey']);
+        const fields = objectBody(body, [
+          'latencyMs',
+          'failStatus',
+          'failRate',
+          'apiKey',
+          'models',
+        ]);
         const latencyMs = optional(fields['latencyMs'], 'latencyMs', isNumber, 'a number');
         const failRate = optional(fields['failRate'], 'failRate', isNumber, 'a number');
         const failStatus = optional(fields['failStatus'], 'failStatus', isNumber, 'a number');
         const apiKey = fields['apiKey'];
         if (apiKey !== undefined && apiKey !== null && !isString(apiKey)) {
           throw new HttpError(400, 'invalid_body', 'apiKey must be a string or null');
+        }
+        const models = fields['models'];
+        if (models !== undefined && models !== null && !isModelTable(models)) {
+          throw new HttpError(
+            400,
+            'invalid_body',
+            `models must be an object of at most ${MAX_MODEL_ENTRIES} model ids to model ids, or null`,
+          );
         }
         if (latencyMs !== undefined && (latencyMs < 0 || latencyMs > MAX_LATENCY_MS)) {
           throw new HttpError(400, 'invalid_body', `latencyMs must be 0-${MAX_LATENCY_MS}`);
@@ -247,6 +277,7 @@ export async function startControlApi(options: ControlOptions): Promise<ControlA
           ...(apiKey === undefined
             ? {}
             : { apiKey: apiKey === null || apiKey === '' ? undefined : apiKey }),
+          ...(models === undefined ? {} : { models: models === null ? undefined : models }),
         };
         try {
           fake.setOptions(patch);
@@ -272,6 +303,7 @@ export async function startControlApi(options: ControlOptions): Promise<ControlA
           failRate: undefined,
           failStatus: undefined,
           apiKey: undefined,
+          models: undefined,
           ...options.fakeDefaults,
         };
         fake.setOptions(fakeCurrent);

@@ -284,6 +284,27 @@ export const probeOf = async (
 ): Promise<EngineModelProbe | undefined> =>
   (await settingValue<Record<string, EngineModelProbe>>(owner, 'engine.model_probe'))?.[requested];
 
+export interface ImpactRow {
+  at: string;
+  activeModels: number;
+}
+
+export const impactOf = async (owner: pg.Pool): Promise<ImpactRow | undefined> =>
+  settingValue<ImpactRow>(owner, 'engine.model_impact');
+
+/** One `user_models` row for `userId`; at most one version per user may be active. */
+export async function seedModel(
+  owner: pg.Pool,
+  userId: string,
+  options: { version?: number; active?: boolean } = {},
+): Promise<void> {
+  await owner.query(
+    `INSERT INTO user_models (user_id, version, feature_spec_sha, n_labels, n_pos, n_neg, weights, intercept, scaler, calibration, metrics, active)
+     VALUES ($1, $2, 'spec', 40, 20, 20, '{}'::jsonb, 0, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, $3)`,
+    [userId, options.version ?? 1, options.active ?? true],
+  );
+}
+
 /** Pending `house.model-watch` intents of the outbox. */
 export async function watchIntents(
   owner: pg.Pool,

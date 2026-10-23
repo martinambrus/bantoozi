@@ -238,6 +238,65 @@ const feedbackEvents: Hook<{ email: string }> = {
   },
 };
 
+/** The marker of a seeded model: `feature_spec_sha` never equals a real feature spec, so it is stale. */
+const SEED_MARKER = 'e2e-seed';
+
+/**
+ * Gives one live account an active personal model (a stale one that is never scored), which is what
+ * the model editor counts as "personal models restart". The API cannot train one without ratings.
+ * An unknown or deleted account, or one that already has an active model, gets none.
+ */
+const seedActiveUserModel: Hook<{ email: string }> = {
+  parse: (params) => ({ email: emailAddress(record(params, ['email'])['email'], 'email') }),
+  async run(db, { email }) {
+    const { rows } = await db.query(
+      `INSERT INTO user_models (user_id, version, feature_spec_sha, n_labels, n_pos, n_neg, weights,
+                                intercept, scaler, calibration, metrics, active)
+       SELECT u.id, coalesce((SELECT max(m.version) FROM user_models m WHERE m.user_id = u.id), 0) + 1,
+              '${SEED_MARKER}', 0, 0, 0,
+              '{"features":[],"weights":[]}'::jsonb, 0, '{"mean":[],"scale":[]}'::jsonb,
+              '{"method":"platt","a":1,"b":0}'::jsonb,
+              '{"status":"activated","e2eSeed":true}'::jsonb, true
+         FROM users u
+        WHERE u.email = $1 AND u.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM user_models a WHERE a.user_id = u.id AND a.active)
+       RETURNING version::text AS "version"`,
+      [email],
+    );
+    return { seeded: rows.length };
+  },
+};
+
+/** Removes the models `seedActiveUserModel` made, and no other. */
+const clearSeededUserModels: Hook<Record<string, never>> = {
+  parse(params) {
+    record(params, []);
+    return {};
+  },
+  async run(db) {
+    const { rows } = await db.query(
+      `DELETE FROM user_models WHERE feature_spec_sha = '${SEED_MARKER}' RETURNING user_id`,
+    );
+    return { deleted: rows.length };
+  },
+};
+
+/** Forgets the probes, the resolution, the watch state and the impact count of the model editor. */
+const clearModelState: Hook<Record<string, never>> = {
+  parse(params) {
+    record(params, []);
+    return {};
+  },
+  async run(db) {
+    const { rows } = await db.query(
+      `DELETE FROM settings
+        WHERE key IN ('engine.model_probe','engine.model_resolution','engine.model_watch','engine.model_impact')
+       RETURNING key`,
+    );
+    return { deleted: rows.length };
+  },
+};
+
 export const ADMIN_HOOKS: readonly NamedHook[] = [
   ['setLastActive', runner(setLastActive)],
   ['createOldPublicationRequest', runner(createOldPublicationRequest)],
@@ -245,4 +304,7 @@ export const ADMIN_HOOKS: readonly NamedHook[] = [
   ['ageCredentialValidation', runner(ageCredentialValidation)],
   ['publicationAudit', runner(publicationAudit)],
   ['feedbackEvents', runner(feedbackEvents)],
+  ['seedActiveUserModel', runner(seedActiveUserModel)],
+  ['clearSeededUserModels', runner(clearSeededUserModels)],
+  ['clearModelState', runner(clearModelState)],
 ];

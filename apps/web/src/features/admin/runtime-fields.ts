@@ -37,9 +37,11 @@ export const RUNTIME_GROUPS: readonly {
   { id: 'translation', keys: ['translate.libretranslate_url'] },
 ];
 
+/** The Jev release has its own editor, which proves a change with a probe first. */
+export const MODEL_KEY = 'engine.typesafe_model';
+
 /** Changing these re-enriches and re-matches the corpus: an acknowledgement comes first. */
 export const ACKNOWLEDGED_KEYS: readonly AdminSettingKey[] = [
-  'engine.typesafe_model',
   'engine.llm_fallback_enabled',
   'engine.ollama_models',
 ];

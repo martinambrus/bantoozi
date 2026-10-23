@@ -9,6 +9,7 @@ DELETE /me
 DELETE /rules/:id
 DELETE /subscriptions/:feedId
 GET /admin/engine/credentials
+GET /admin/engine/model
 GET /admin/feeds
 GET /admin/invites
 GET /admin/library
@@ -58,6 +59,8 @@ PATCH /me
 PATCH /subscriptions/:feedId
 POST /admin/engine/credentials/:provider/activate
 POST /admin/engine/credentials/:provider/validate
+POST /admin/engine/model-check
+POST /admin/engine/model-probe
 POST /admin/engine/reset-breaker
 POST /admin/feeds/:id/reset
 POST /admin/invites

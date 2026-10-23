@@ -849,6 +849,10 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
     'POST /admin/engine/reset-breaker': forbidden(() =>
       aApi.post('/admin/engine/reset-breaker', { engine: 'typesafe' }),
     ),
+    'POST /admin/engine/model-check': forbidden(() => aApi.post('/admin/engine/model-check', {})),
+    'POST /admin/engine/model-probe': forbidden(() =>
+      aApi.post('/admin/engine/model-probe', { model: 'jev-latest' }),
+    ),
     'PUT /admin/engine/credentials/:provider': forbidden(() =>
       aApi.put('/admin/engine/credentials/typesafe', { apiKey: 'x', expectedRevision: '0' }),
     ),

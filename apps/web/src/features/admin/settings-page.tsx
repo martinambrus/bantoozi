@@ -14,8 +14,9 @@ import { useApi } from '../../api/context.js';
 import { routes } from '../../api/routes.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { Hint, PageTitle, SectionTitle } from './admin-ui.js';
+import { ModelEditor } from './model-editor.js';
 import { RuntimeEditor } from './runtime-editor.js';
-import { RUNTIME_GROUPS } from './runtime-fields.js';
+import { MODEL_KEY, RUNTIME_GROUPS } from './runtime-fields.js';
 import { SettingEditor } from './setting-editor.js';
 import { useAdminKey, useRefresh } from './use-admin.js';
 import { WorkersStatus } from './workers-status.js';
@@ -145,29 +146,32 @@ export function AdminSettingsPage() {
                   className="flex flex-col gap-4"
                 >
                   <SectionTitle>{t(`settings.groups.${group.id}`)}</SectionTitle>
-                  {group.keys.map((key) => (
-                    <RuntimeEditor
-                      key={key}
-                      settingKey={key}
-                      value={data.values[key]}
-                      defaultValue={data.defaults[key] ?? null}
-                      source={data.sources[key] ?? 'env'}
-                      hasStoredRow={data.stored.some((entry) => entry.key === key)}
-                      problems={[
-                        ...new Set(
-                          data.workers.flatMap((worker) =>
-                            worker.problems.filter((p) => p.key === key).map((p) => p.message),
+                  {group.keys.map((key) => {
+                    const Editor = key === MODEL_KEY ? ModelEditor : RuntimeEditor;
+                    return (
+                      <Editor
+                        key={key}
+                        settingKey={key}
+                        value={data.values[key]}
+                        defaultValue={data.defaults[key] ?? null}
+                        source={data.sources[key] ?? 'env'}
+                        hasStoredRow={data.stored.some((entry) => entry.key === key)}
+                        problems={[
+                          ...new Set(
+                            data.workers.flatMap((worker) =>
+                              worker.problems.filter((p) => p.key === key).map((p) => p.message),
+                            ),
                           ),
-                        ),
-                      ]}
-                      onSend={send}
-                      onSaved={(result, sequence) => {
-                        adopt(key, result, sequence);
-                        setSavedAt(Date.now());
-                      }}
-                      onStale={() => void refresh('settings')}
-                    />
-                  ))}
+                        ]}
+                        onSend={send}
+                        onSaved={(result, sequence) => {
+                          adopt(key, result, sequence);
+                          setSavedAt(Date.now());
+                        }}
+                        onStale={() => void refresh('settings')}
+                      />
+                    );
+                  })}
                 </section>
               ))}
             </>

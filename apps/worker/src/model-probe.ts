@@ -1,4 +1,9 @@
-import { retryTransaction, updateSettingLocked, type Database } from '@bantoozi/db';
+import {
+  countActiveUserModels,
+  retryTransaction,
+  updateSettingLocked,
+  type Database,
+} from '@bantoozi/db';
 import {
   backoffDelayMs,
   createTypeSafeEngine,
@@ -16,6 +21,7 @@ import {
   canonicalJson,
   conservativeRequestTokens,
   ENGINE_MODEL_PROBES_MAX,
+  EngineModelImpactSchema,
   EngineModelProbesSchema,
   EngineModelProbeSchema,
   isAppError,
@@ -23,6 +29,7 @@ import {
   isModelUnavailableDetail,
   MODEL_ID_PATTERN,
   newUuid,
+  type EngineModelImpact,
   type EngineModelProbe,
   type InferenceAuthorization,
 } from '@bantoozi/shared';
@@ -292,6 +299,7 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
         sent = await sendOnce(attempts + 1);
       } catch (error) {
         if (isAppError(error) && error.code === 'ENGINE_UNAVAILABLE') {
+          if (signal.aborted) return fail('timeout');
           const reason = error.details?.['reason'];
           return fail(`no_key:${typeof reason === 'string' ? reason : 'unavailable'}`);
         }
@@ -327,19 +335,29 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
   };
 }
 
-/** Merges a probe result into `settings['engine.model_probe']`, newest {@link ENGINE_MODEL_PROBES_MAX} by `at`. */
+/**
+ * Merges a probe result into `settings['engine.model_probe']`, newest {@link ENGINE_MODEL_PROBES_MAX} by `at`,
+ * and records in the same transaction how many live users hold an active personal model
+ * (`settings['engine.model_impact']`): the API cannot count other users' models under row-level security.
+ */
 export async function recordModelProbe(db: Database, probe: EngineModelProbe): Promise<void> {
-  await retryTransaction(db, (tx) =>
-    updateSettingLocked(tx, 'engine.model_probe', {}, (current) => {
+  const checked = EngineModelProbeSchema.parse(probe);
+  await retryTransaction(db, async (tx) => {
+    await updateSettingLocked(tx, 'engine.model_probe', {}, (current) => {
       const stored = EngineModelProbesSchema.safeParse(current);
       const merged: Record<string, EngineModelProbe> = {
         ...(stored.success ? stored.data : {}),
-        [probe.requested]: EngineModelProbeSchema.parse(probe),
+        [checked.requested]: checked,
       };
       const newest = Object.entries(merged)
         .sort(([, a], [, b]) => Date.parse(b.at) - Date.parse(a.at))
         .slice(0, ENGINE_MODEL_PROBES_MAX);
       return Object.fromEntries(newest);
-    }),
-  );
+    });
+    // Counted after the probe row is locked: concurrent recorders queue on it, so the later committer carries the later count.
+    const activeModels = await countActiveUserModels(tx);
+    await updateSettingLocked<EngineModelImpact | null>(tx, 'engine.model_impact', null, () =>
+      EngineModelImpactSchema.parse({ at: checked.at, activeModels }),
+    );
+  });
 }

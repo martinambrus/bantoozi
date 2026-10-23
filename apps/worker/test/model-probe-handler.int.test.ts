@@ -64,7 +64,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await owner.query(`DELETE FROM settings WHERE key = 'engine.model_probe'`);
+  await owner.query(
+    `DELETE FROM settings WHERE key IN ('engine.model_probe', 'engine.model_impact')`,
+  );
 });
 
 async function stored(): Promise<Record<string, EngineModelProbe>> {
@@ -125,7 +127,9 @@ describe('engine.model-probe handler', () => {
     );
 
     // Eleven distinct ids: the oldest result goes, the newest ten stay.
-    await owner.query(`DELETE FROM settings WHERE key = 'engine.model_probe'`);
+    await owner.query(
+      `DELETE FROM settings WHERE key IN ('engine.model_probe', 'engine.model_impact')`,
+    );
     const ids = Array.from({ length: ENGINE_MODEL_PROBES_MAX + 1 }, (_, i) => `jev-1.${i}.0`);
     const sequence = scriptedProber({ start: Date.UTC(2032, 0, 1) });
     for (const id of ids) await run(sequence, id);
@@ -133,7 +137,9 @@ describe('engine.model-probe handler', () => {
     expect(Object.keys(kept).sort()).toEqual(ids.slice(1).sort());
     expect(kept[ids[0]!]).toBeUndefined();
     // Control: ten distinct ids lose nothing.
-    await owner.query(`DELETE FROM settings WHERE key = 'engine.model_probe'`);
+    await owner.query(
+      `DELETE FROM settings WHERE key IN ('engine.model_probe', 'engine.model_impact')`,
+    );
     const ten = scriptedProber({ start: Date.UTC(2033, 0, 1) });
     for (const id of ids.slice(0, ENGINE_MODEL_PROBES_MAX)) await run(ten, id);
     expect(Object.keys(await stored())).toHaveLength(ENGINE_MODEL_PROBES_MAX);

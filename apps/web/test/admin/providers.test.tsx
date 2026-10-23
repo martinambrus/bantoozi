@@ -228,12 +228,17 @@ describe('provider accounts (spec 09 §8)', () => {
       'credential_unavailable',
       'The worker could not load the staged key. Validate again, or stage the key again.',
     ],
+    [
+      'model_unavailable',
+      'The provider does not serve the configured model, so the key could not be tested. Choose an available model in Settings, then validate again.',
+    ],
     ['something_new', 'Validation stopped with the code something_new.'],
   ])('explains the last error %s in words', async (code, explanation) => {
     await openProviders({
       items: [
         jevCredential({
-          candidateStatus: code === 'rate_limited' ? 'pending' : 'invalid',
+          candidateStatus:
+            code === 'rate_limited' || code === 'model_unavailable' ? 'pending' : 'invalid',
           lastErrorCode: code,
         }),
         ollamaCredential(),

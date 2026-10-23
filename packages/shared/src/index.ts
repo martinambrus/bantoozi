@@ -26,6 +26,7 @@ export * from './ids.js';
 export * from './jobs.js';
 export * from './json.js';
 export * from './model-id.js';
+export * from './model-impact.js';
 export * from './plans.js';
 export * from './policies/images.js';
 export * from './policies/inference.js';

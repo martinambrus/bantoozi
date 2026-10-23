@@ -44,6 +44,9 @@ describe('admin SQL hooks', () => {
       'ageCredentialValidation',
       'publicationAudit',
       'feedbackEvents',
+      'seedActiveUserModel',
+      'clearSeededUserModels',
+      'clearModelState',
     ]);
   });
 
@@ -347,6 +350,93 @@ describe('admin SQL hooks', () => {
         { email: EMAIL, kind: 'rate' },
       ]) {
         await expect(runSqlHook(db, 'feedbackEvents', params)).rejects.toBeInstanceOf(
+          HookParamsError,
+        );
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('seedActiveUserModel', () => {
+    it('inserts one marked active model for one live account without an active one', async () => {
+      const { db, calls } = recordingDb([{ version: '1' }]);
+      await expect(runSqlHook(db, 'seedActiveUserModel', { email: EMAIL })).resolves.toEqual({
+        seeded: 1,
+      });
+      const { text, values } = onlyQuery(calls);
+      expect(values).toEqual([EMAIL]);
+      expect(text).not.toContain(EMAIL);
+      expect(text).toContain('INSERT INTO user_models');
+      expect(text).toContain("'e2e-seed'");
+      expect(text).toContain('u.email = $1');
+      expect(text).toContain('u.deleted_at IS NULL');
+      expect(text).toMatch(
+        /NOT EXISTS \(SELECT 1 FROM user_models a WHERE a\.user_id = u\.id AND a\.active\)/,
+      );
+      expect(text).not.toMatch(/DELETE|DROP|TRUNCATE/);
+    });
+
+    it('reports an unknown account or one with an active model as nothing seeded', async () => {
+      const { db } = recordingDb([]);
+      await expect(runSqlHook(db, 'seedActiveUserModel', { email: EMAIL })).resolves.toEqual({
+        seeded: 0,
+      });
+    });
+
+    it('refuses invalid parameters without querying', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [
+        ...NOT_AN_OBJECT,
+        {},
+        { email: 1 },
+        { email: 'no-at-sign' },
+        { email: EMAIL, version: 2 },
+      ]) {
+        await expect(runSqlHook(db, 'seedActiveUserModel', params)).rejects.toBeInstanceOf(
+          HookParamsError,
+        );
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('clearSeededUserModels', () => {
+    it('deletes only the marked rows', async () => {
+      const { db, calls } = recordingDb([{ user_id: 'a' }, { user_id: 'b' }]);
+      await expect(runSqlHook(db, 'clearSeededUserModels', {})).resolves.toEqual({ deleted: 2 });
+      const { text } = onlyQuery(calls);
+      expect(text).toContain('DELETE FROM user_models');
+      expect(text).toContain("feature_spec_sha = 'e2e-seed'");
+      expect(text).not.toMatch(/DROP|TRUNCATE/);
+    });
+
+    it('refuses parameters without querying', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [[], 'x', 1, { email: EMAIL }]) {
+        await expect(runSqlHook(db, 'clearSeededUserModels', params)).rejects.toBeInstanceOf(
+          HookParamsError,
+        );
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('clearModelState', () => {
+    it('deletes exactly the four model state keys', async () => {
+      const { db, calls } = recordingDb([{ key: 'engine.model_probe' }]);
+      await expect(runSqlHook(db, 'clearModelState', {})).resolves.toEqual({ deleted: 1 });
+      const { text } = onlyQuery(calls);
+      expect(text).toContain('DELETE FROM settings');
+      expect(text).toContain(
+        "key IN ('engine.model_probe','engine.model_resolution','engine.model_watch','engine.model_impact')",
+      );
+      expect(text).not.toMatch(/DROP|TRUNCATE/);
+    });
+
+    it('refuses parameters without querying', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [[], 'x', 1, { key: 'engine.model_pin' }]) {
+        await expect(runSqlHook(db, 'clearModelState', params)).rejects.toBeInstanceOf(
           HookParamsError,
         );
       }

@@ -196,7 +196,56 @@
       "problem": "Worker zamietol: {{message}}",
       "restarting": "Workery sa reštartujú, aby použili zmenu…"
     },
-    "reprocessing": "Články a karty sa na pozadí spracúvajú znova…"
+    "reprocessing": "Články a karty sa na pozadí spracúvajú znova…",
+    "modelEditor": {
+      "modeLabel": "Vydanie Jevu",
+      "latest": "Sledovať najnovší Jev (jev-latest)",
+      "latestHint": "Jev sa každých pár hodín pýta, ktoré vydanie jev-latest označuje. Nové vydanie tej istej hlavnej verzie zachová hodnotenia aj osobné modely.",
+      "pinned": "Použiť jedno vydanie",
+      "pinnedHint": "Zadajte id vydania, napríklad jev-1.13.0.",
+      "idRejected": "Použite najviac 64 písmen, číslic a znakov . _ : -.",
+      "resolves": "Ukazuje na {{model}} · overené {{time}}",
+      "unresolved": "Zatiaľ nezistené. Použite Overiť teraz alebo počkajte na ďalšiu plánovanú kontrolu.",
+      "checkNow": "Overiť teraz",
+      "checking": "Zisťuje sa, ktoré vydanie jev-latest označuje…",
+      "checkTimeout": "Jev zatiaľ neodpovedal. Skontrolujte, či beží worker, a skúste to znova.",
+      "checkFailed": "Overenie {{time}} zlyhalo ({{reason}}). Vydanie zostáva {{model}}.",
+      "probing": "Zisťuje sa, či Jev poskytuje {{model}}…",
+      "probeAnswered": "Jev odpovedal {{answered}} namiesto {{model}}, preto sa nič neuložilo.",
+      "probeRefused": "Jev nevedel potvrdiť {{model}} ({{reason}}), preto sa nič neuložilo.",
+      "probeTimeout": "Jev neodpovedal ani po 90 sekundách. Skontrolujte, či beží worker, a uložte znova.",
+      "probeExpired": "Overenie {{model}} je staršie ako 10 minút. Uložte znova, aby sa overilo nanovo.",
+      "impact": {
+        "title": "Zmeniť vydanie Jevu?",
+        "change": "{{key}} sa mení z {{from}} na {{to}}.",
+        "none": "{{to}} je už používané vydanie, takže sa nič nespracúva znova.",
+        "kept": "Hodnotenia a osobné modely zostanú zachované; 14-dňové okno sa analyzuje znova.",
+        "restart_one": "Osobný model {{count}} používateľa sa začne učiť odznova z nových hodnotení.",
+        "restart_few": "Osobné modely {{count}} používateľov sa začnú učiť odznova z nových hodnotení.",
+        "restart_many": "Osobné modely {{count}} používateľa sa začnú učiť odznova z nových hodnotení.",
+        "restart_other": "Osobné modely {{count}} používateľov sa začnú učiť odznova z nových hodnotení.",
+        "restartNone": "Zatiaľ nie je aktívny žiadny osobný model, takže sa žiadny nezačína odznova.",
+        "restartUnknown": "Osobné modely sa začnú učiť odznova z nových hodnotení."
+      },
+      "errors": {
+        "model_unavailable": "Jev tento model neposkytuje.",
+        "model_mismatch": "Jev odpovedal iným modelom.",
+        "alias_unresolved": "Jev nepomenoval vydanie pre jev-latest.",
+        "timeout": "Jev neodpovedal včas.",
+        "provider_unavailable": "Jev je momentálne nedostupný.",
+        "rate_limited": "Jev obmedzuje počet požiadaviek.",
+        "auth_rejected": "Jev kľúč odmietol.",
+        "request_rejected": "Jev testovaciu požiadavku odmietol.",
+        "invalid_response": "Jev odpovedal v neočakávanom formáte.",
+        "probe_budget_exceeded": "Testovacie volanie dosiahlo limit výdavkov.",
+        "budget_unavailable": "Denný rozpočet je vyčerpaný.",
+        "cost_overrun": "Testovacie volanie stálo viac, než sa čakalo.",
+        "internal_error": "Overenie sa zastavilo pre internú chybu.",
+        "unsupported_model": "Toto nie je platné id modelu.",
+        "no_key": "Nie je k dispozícii žiadny kľúč Jevu.",
+        "unknown": "kód {{code}}"
+      }
+    }
   },
   "providers": {
     "intro": "Kľúče sú uložené zašifrované a po odoslaní sa už nikdy nezobrazia. Pripravte nový kľúč, overte ho malým testovacím volaním a potom ho aktivujte. Aktívny kľúč funguje, kým sa nový neaktivuje.",
@@ -247,6 +296,7 @@
       "provider_error": "Poskytovateľ počas overovania vrátil chybu.",
       "cost_overrun": "Testovacie volanie stálo viac, než sa čakalo, a bolo zastavené. Overte znova.",
       "credential_unavailable": "Worker nedokázal načítať pripravený kľúč. Overte znova alebo pripravte kľúč znova.",
+      "model_unavailable": "Poskytovateľ nemá nastavený model, preto sa kľúč nedal otestovať. Vyberte dostupný model v Nastaveniach a potom overte znova.",
       "unknown": "Overenie sa zastavilo s kódom {{code}}."
     },
     "keyLabel": "Nový kľúč API pre {{provider}}",

@@ -30,6 +30,7 @@ import {
   type ApiHarness,
   type TestUser,
 } from './support/harness.js';
+import { seedModelState } from './support/model-state.js';
 
 /**
  * M8b-T3 (scope B3, E.2; spec 08 §11, spec 03 §4): the API consumes the live runtime settings.
@@ -119,6 +120,7 @@ async function resetSettings(): Promise<void> {
       'card_text_mode',
     ],
   ]);
+  await seedModelState(h, { reset: true });
 }
 
 beforeAll(async () => {
@@ -503,6 +505,8 @@ describe('engine.typesafe_model is the API fallback model', () => {
     // Control: env model (TYPESAFE_MODEL default jev-1.13.0), no pin.
     expect(await analyzeModel(server, user, feed.id, '0', true)).toBe('jev-1.13.0');
 
+    // JEV-5: a model change needs a fresh probe of the new value.
+    await seedModelState(h, { probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0' }] });
     const set = await patch(server, { 'engine.typesafe_model': 'jev-1.14.0', acknowledge: true });
     expect(set.statusCode, set.body).toBe(200);
     expect(await analyzeModel(server, user, feed.id, '1', false)).toBe('jev-1.14.0');
@@ -516,6 +520,8 @@ describe('engine.typesafe_model is the API fallback model', () => {
     expect(await analyzeModel(server, user, feed.id, '1', false)).toBe('jev-1.12.0');
     await h.owner.query(`DELETE FROM settings WHERE key = 'engine.model_pin'`);
 
+    // The reset targets the env default, which needs its own fresh probe.
+    await seedModelState(h, { probes: [{ requested: 'jev-1.13.0', answered: 'jev-1.13.0' }] });
     const reset = await patch(server, { 'engine.typesafe_model': null, acknowledge: true });
     expect(reset.statusCode, reset.body).toBe(200);
     expect(await analyzeModel(server, user, feed.id, '1', false)).toBe('jev-1.13.0');

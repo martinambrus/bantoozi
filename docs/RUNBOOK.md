@@ -251,6 +251,14 @@ strictly (the API answers 500 on ratings and Analyze, the worker cannot start). 
 `UPDATE settings SET value = value - 'alias' WHERE key = 'engine.model_pin'`. A release older than JEV-2 also refuses
 `TYPESAFE_MODEL=jev-latest` and ignores a stored one.
 
+**Changing the Jev model in Admin → Settings (D-294…D-297).** Save first asks Jev whether it serves the value (it
+needs a live worker and a working Jev key); a refusal names the id Jev answered. `409 model_probe_required` means the
+check is older than 10 minutes: save again. The dialog states the impact; the "I ran eval replay" tick appears only
+when personal models restart (another major). Check now works only while the setting is `jev-latest`. Known hazard:
+switching a concrete id to `jev-latest` while an older `engine.model_resolution` is stored makes a restarting worker
+pin that release first (one extra rebuild) before the watch adopts Jev's answer. An older release ignores
+`engine.model_impact`.
+
 **Jev upgrades while following `jev-latest` (D-286).** After the mail "Jev X → Y" the workers restart on their own in
 production; in development restart the worker (Admin → Workers shows `pendingRestart`). No evaluation replay ran:
 replay the golden set by hand if you want one. A major change resets personal-model training.

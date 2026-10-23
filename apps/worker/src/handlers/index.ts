@@ -271,10 +271,13 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
                 logger: deps.logger,
                 ...(deps.now === undefined ? {} : { now: deps.now }),
               }),
-              configuredModel: async () =>
-                deps.runtimeSettings === undefined
-                  ? providerValidation.config.typesafeModel
-                  : (await deps.runtimeSettings.get()).values.typesafeModel,
+              configuredModel: async () => {
+                if (deps.runtimeSettings === undefined) {
+                  return providerValidation.config.typesafeModel;
+                }
+                deps.runtimeSettings.invalidate();
+                return (await deps.runtimeSettings.get()).values.typesafeModel;
+              },
               settingsEnv: deps.settingsEnv,
               mailer: deps.mailer,
               adminEmails: deps.adminEmails,

@@ -27,6 +27,7 @@ import {
   type StartOptions,
   type WorkerRuntimeLike,
 } from './support/m8b-t5-world.js';
+import { impactOf, rawSetting, settingValue } from './support/model-watch-world.js';
 
 /**
  * JEV-2-B: `jev-latest` at worker start (contract points 4, 6, 7, 10). The alias is resolved to a
@@ -563,6 +564,147 @@ describe('W8: recordPin false never probes and never writes', () => {
   });
 });
 
+const probeRecord = async (): Promise<unknown> =>
+  (await settingValue<Record<string, unknown>>(h.owner, 'engine.model_probe'))?.[ALIAS];
+
+describe('R5: the start and retry probes are recorded in engine.model_probe and engine.model_impact', () => {
+  it('W4r an ok start probe records the answer and the impact at the probe time', async () => {
+    await useAlias();
+    await dropPin();
+    await boot('production', { modelProbe: spy(okProbe(OLD_MODEL)), now: () => T0 });
+    expect(await probeRecord()).toEqual({
+      requested: ALIAS,
+      answered: OLD_MODEL,
+      ok: true,
+      at: T0.toISOString(),
+    });
+    expect(await impactOf(h.owner)).toEqual({ at: T0.toISOString(), activeModels: 0 });
+  });
+
+  it('W5a a failed start probe is recorded with its error and no answered id', async () => {
+    await useAlias();
+    await dropPin();
+    await boot('production', { modelProbe: spy(failedProbe('timeout')), now: () => T0 });
+    const record = await probeRecord();
+    expect(record).toEqual({ requested: ALIAS, ok: false, at: T0.toISOString(), error: 'timeout' });
+    expect(await impactOf(h.owner)).toEqual({ at: T0.toISOString(), activeModels: 0 });
+  });
+
+  it('W5b a probe that never resolves is recorded as a timeout at the deadline', async () => {
+    await useAlias();
+    await dropPin();
+    const never = vi.fn<ModelProbeSeam>(() => new Promise<ModelProbeResultLike>(() => {}));
+    await boot('production', { modelProbe: never, now: () => T0, resolveTimeoutMs: 50 });
+    expect(await probeRecord()).toEqual({
+      requested: ALIAS,
+      ok: false,
+      at: T0.toISOString(),
+      error: 'timeout',
+    });
+    expect(await impactOf(h.owner)).toEqual({ at: T0.toISOString(), activeModels: 0 });
+  });
+
+  it('W5c a throwing probe is recorded as internal_error and the reason stays the thrown message', async () => {
+    await useAlias();
+    await dropPin();
+    const throwing = vi.fn<ModelProbeSeam>(async () => {
+      throw new Error('the probe is not available');
+    });
+    const { runtime } = await boot('production', { modelProbe: throwing, now: () => T0 });
+    expect(await probeRecord()).toEqual({
+      requested: ALIAS,
+      ok: false,
+      at: T0.toISOString(),
+      error: 'internal_error',
+    });
+    expect(runtime.modelState).toMatchObject({
+      kind: 'unresolved',
+      reason: 'the probe is not available',
+    });
+  });
+
+  it('W6r the retry records its own result: the failure first, then the ok answer', async () => {
+    await useAlias();
+    await dropPin();
+    const time = clock();
+    const retryAt = new Date(T0.getTime() + 5 * MIN).toISOString();
+    const probe = spy(failedProbe(), { ...okProbe(OLD_MODEL), at: retryAt });
+    const { runtime } = await boot('production', {
+      modelProbe: probe,
+      now: time.now,
+      selfRestart: true,
+      resolveRetryMs: 5 * MIN,
+    });
+    expect(await probeRecord()).toMatchObject({ ok: false, at: T0.toISOString() });
+    time.advance(5 * MIN);
+    await runtime.check();
+    expect(await probeRecord()).toEqual({
+      requested: ALIAS,
+      answered: OLD_MODEL,
+      ok: true,
+      at: retryAt,
+    });
+    expect(await impactOf(h.owner)).toEqual({ at: retryAt, activeModels: 0 });
+  });
+
+  it('W8r recordPin false writes neither key', async () => {
+    await useAlias();
+    const time = clock();
+    const probe = spy(okProbe());
+    const { runtime } = await boot('test', {
+      modelProbe: probe,
+      recordPin: false,
+      now: time.now,
+      resolveRetryMs: 5 * MIN,
+    });
+    time.advance(60 * MIN);
+    await runtime.check();
+    expect(probe).not.toHaveBeenCalled();
+    expect(await rawSetting(h.owner, 'engine.model_probe')).toBeNull();
+    expect(await rawSetting(h.owner, 'engine.model_impact')).toBeNull();
+  });
+
+  it('W3r a stored resolution means no start probe and no record', async () => {
+    await storeResolution(h.owner, OLD_MODEL);
+    await useAlias();
+    await boot('production', { modelProbe: spy(okProbe(NEW_MODEL)), now: () => T0 });
+    expect(await rawSetting(h.owner, 'engine.model_probe')).toBeNull();
+    expect(await rawSetting(h.owner, 'engine.model_impact')).toBeNull();
+  });
+
+  it('best effort: a refused record is logged and the start still resolves the alias', async () => {
+    await useAlias();
+    await dropPin();
+    await h.owner.query(`
+      CREATE FUNCTION refuse_probe_record() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'probe record refused'; END $$`);
+    await h.owner.query(`
+      CREATE TRIGGER refuse_probe_record BEFORE INSERT OR UPDATE ON settings
+        FOR EACH ROW WHEN (NEW.key = 'engine.model_probe')
+        EXECUTE FUNCTION refuse_probe_record()`);
+    try {
+      const { runtime, rec } = await boot('production', {
+        modelProbe: spy(okProbe(OLD_MODEL)),
+        now: () => T0,
+      });
+      expect(runtime.modelState).toMatchObject({ kind: 'resolved', source: 'probed' });
+      expect(await resolutionRow(h.owner)).toMatchObject({ alias: ALIAS, model: OLD_MODEL });
+      expect(
+        rec.logs.some(
+          (e) =>
+            e.level === 'warn' &&
+            e.msg === 'the model probe result could not be recorded' &&
+            e.obj['model'] === ALIAS,
+        ),
+      ).toBe(true);
+    } finally {
+      await h.owner.query(`DROP TRIGGER refuse_probe_record ON settings`);
+      await h.owner.query(`DROP FUNCTION refuse_probe_record()`);
+    }
+    expect(await rawSetting(h.owner, 'engine.model_probe')).toBeNull();
+  });
+});
+
 describe('W14: the full flow against the fake TypeSafe server (no probe seam)', () => {
   let fake: FakeTypeSafeServer;
 
@@ -590,6 +732,12 @@ describe('W14: the full flow against the fake TypeSafe server (no probe seam)', 
       config: { typesafeBaseUrl: fake.url, typesafeApiKey: API_KEY },
     });
     expect(requestedModels()).toEqual([ALIAS]);
+    expect(await probeRecord()).toMatchObject({
+      requested: ALIAS,
+      answered: OLD_MODEL,
+      ok: true,
+      at: T0.toISOString(),
+    });
     expect(runtime.modelState).toMatchObject({
       kind: 'resolved',
       model: OLD_MODEL,

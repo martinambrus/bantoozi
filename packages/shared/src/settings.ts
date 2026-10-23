@@ -146,6 +146,17 @@ export const EngineModelWatchSchema = z
   .strict();
 export type EngineModelWatch = z.infer<typeof EngineModelWatchSchema>;
 
+/**
+ * `settings['engine.model_impact']`, written only by the worker together with every model probe
+ * (visible-learning §4.1, JEV-5): how many users hold an active personal model when the probe was
+ * recorded. The API cannot count other tenants' `user_models` under row-level security, and the
+ * Admin → Settings confirmation of a model change in another family says how many of them restart.
+ */
+export const EngineModelImpactSchema = z
+  .object({ at: iso, activeModels: z.number().int().min(0) })
+  .strict();
+export type EngineModelImpact = z.infer<typeof EngineModelImpactSchema>;
+
 /** Key of the worker-written registry of rating fingerprints (JEV-4). */
 export const RATING_FINGERPRINTS_KEY = 'engine.rating_fingerprints';
 /** The registry keeps at most this many fingerprints. */
@@ -323,6 +334,11 @@ export const SETTINGS = {
   }),
   'engine.model_watch': def({
     schema: EngineModelWatchSchema,
+    defaultValue: () => undefined,
+    writers: ['worker'],
+  }),
+  'engine.model_impact': def({
+    schema: EngineModelImpactSchema,
     defaultValue: () => undefined,
     writers: ['worker'],
   }),

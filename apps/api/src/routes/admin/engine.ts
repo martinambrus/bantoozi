@@ -13,7 +13,10 @@ import {
   type TenantTx,
 } from '@bantoozi/db';
 import {
+  AdminEngineModelSchema,
   AdminOverviewSchema,
+  EngineModelWatchSchema,
+  ModelProbeBodySchema,
   MetricsSnapshotSchema,
   AdminUsageQuerySchema,
   AdminUsageSchema,
@@ -22,6 +25,8 @@ import {
   CredentialListSchema,
   CredentialResultSchema,
   EngineCircuitSchema,
+  EngineModelImpactSchema,
+  JEV_LATEST_ALIAS,
   PROVIDERS,
   ProviderParamsSchema,
   QueuedSchema,
@@ -31,9 +36,12 @@ import {
   StageCredentialBodySchema,
   TRANSLATE_SKIP_REASONS,
   TranslationsReprocessBodySchema,
+  enqueueModelProbe,
+  enqueueModelWatch,
   enqueueRetranslateSkipped,
   readSetting,
   settingDefault,
+  validateRuntimeSetting,
   type AdminMetrics,
   type AdminOverview,
   type BreakerState,
@@ -50,7 +58,8 @@ import {
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import type { RateLimitRule } from '../../types.js';
-import { settingEnvDefaults } from './settings.js';
+import { MODEL_STATE_KEYS, readModelState } from '../../services/model-state.js';
+import { runtimeContext, settingEnvDefaults } from './settings.js';
 import { auditLog, credentialStatus, freshWorkerKeyrings, freshWorkers } from './shared.js';
 
 /**
@@ -64,6 +73,11 @@ import { auditLog, credentialStatus, freshWorkerKeyrings, freshWorkers } from '.
 const CREDENTIAL_LIMITS: readonly RateLimitRule[] = [
   { group: 'admin-credentials', max: 20, windowSeconds: 3600, per: 'user' },
 ];
+/** Each model probe costs at most $0.002; one bucket covers the probe and the Check now button. */
+const MODEL_PROBE_LIMITS: readonly RateLimitRule[] = [
+  { group: 'admin-model-probe', max: 30, windowSeconds: 3600, per: 'user' },
+];
+const MODEL_KEYS = [...MODEL_STATE_KEYS, 'engine.model_watch', 'engine.model_impact'];
 const TOP_USERS = 20;
 
 function breaker(state: BreakerState, resetRequestedAt: string | undefined) {
@@ -246,6 +260,109 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
         return { status: 202, body: { queued: true as const } };
       });
       auditLog(request, { action: 'translations.reprocess' });
+      await reply.code(202).send(outcome.body);
+    },
+  );
+
+  // ── The TypeSafe model (visible-learning §4.1) ───────────────────────────────────────────────
+
+  app.get(
+    '/engine/model',
+    {
+      config: { auth: 'admin' },
+      schema: {
+        tags: ['admin'],
+        summary: 'TypeSafe model status',
+        response: { 200: AdminEngineModelSchema },
+      },
+    },
+    async (request) => {
+      const [snapshot, rows] = await Promise.all([
+        app.services.runtime.get(),
+        request.withTx((tx) => readSettingRows(tx, MODEL_KEYS)),
+      ]);
+      const state = readModelState(rows);
+      const byKey = new Map(rows.map((row) => [row.key, row.value]));
+      const lastCheck =
+        EngineModelWatchSchema.pick({ lastCheck: true }).safeParse({
+          lastCheck: (byKey.get('engine.model_watch') as { lastCheck?: unknown } | null)?.lastCheck,
+        }).data?.lastCheck ?? null;
+      const source = snapshot.sources['engine.typesafe_model'];
+      return {
+        now: app.services.clock.now().toISOString(),
+        setting: {
+          value: snapshot.values.typesafeModel,
+          source: source === 'stored' || source === 'last_good' ? source : ('env' as const),
+        },
+        resolution: state.resolution,
+        pin:
+          state.pin === null
+            ? null
+            : {
+                model: state.pin.model,
+                ...(state.pin.alias === undefined ? {} : { alias: state.pin.alias }),
+                since: state.pin.since,
+              },
+        watch: { lastCheck },
+        probes: state.probes,
+        impact: EngineModelImpactSchema.safeParse(byKey.get('engine.model_impact')).data ?? null,
+      };
+    },
+  );
+
+  app.post(
+    '/engine/model-probe',
+    {
+      config: { auth: 'admin', rateLimits: MODEL_PROBE_LIMITS },
+      schema: {
+        tags: ['admin'],
+        summary: 'Ask Jev whether it serves a model',
+        body: ModelProbeBodySchema,
+        response: { 202: QueuedSchema },
+      },
+    },
+    async (request, reply) => {
+      const { model } = request.body;
+      const checked = validateRuntimeSetting(
+        'engine.typesafe_model',
+        model,
+        runtimeContext(app.services.config),
+      );
+      if (!checked.ok) {
+        throw new AppError('VALIDATION_FAILED', 'Invalid setting value', {
+          details: { key: 'engine.typesafe_model', message: checked.message },
+        });
+      }
+      const outcome = await request.mutate(async (_tx, { outbox }) => {
+        await enqueueModelProbe(outbox, { model });
+        return { status: 202, body: { queued: true as const } };
+      });
+      auditLog(request, { action: 'engine.model_probe', target: model });
+      await reply.code(202).send(outcome.body);
+    },
+  );
+
+  app.post(
+    '/engine/model-check',
+    {
+      config: { auth: 'admin', rateLimits: MODEL_PROBE_LIMITS },
+      schema: {
+        tags: ['admin'],
+        summary: 'Check where jev-latest points now',
+        response: { 202: QueuedSchema },
+      },
+    },
+    async (request, reply) => {
+      const outcome = await request.mutate(async (_tx, { outbox }) => {
+        if ((await app.services.runtime.get()).values.typesafeModel !== JEV_LATEST_ALIAS) {
+          throw new AppError('CONFLICT', 'The model setting is not following jev-latest', {
+            details: { reason: 'not_following_alias' },
+          });
+        }
+        await enqueueModelWatch(outbox);
+        return { status: 202, body: { queued: true as const } };
+      });
+      auditLog(request, { action: 'engine.model_check' });
       await reply.code(202).send(outcome.body);
     },
   );

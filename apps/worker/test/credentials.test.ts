@@ -2,9 +2,11 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 
 import { JEV_FAKE_MODEL } from '@bantoozi/engine';
-import { describe, expect, it } from 'vitest';
+import type { Database } from '@bantoozi/db';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  createWorkerCredentialResolver,
   CredentialUnavailableError,
   isCredentialUnavailableError,
   MAX_SECRET_INPUT_BYTES,
@@ -189,5 +191,117 @@ describe('engineConfigFromWorker', () => {
     const production = engineConfigFromWorker({ ...fake, nodeEnv: 'production' });
     expect(production.production).toBe(true);
     expect(production.typesafe.allowFakeModel).toBeUndefined();
+  });
+});
+
+describe('credential resolver cancellation', () => {
+  const CANDIDATE_TOKEN = '00000000-0000-4000-8000-0000000000c1';
+  const cancelled = { code: 'ENGINE_UNAVAILABLE', details: { reason: 'cancelled' } };
+
+  function resolverOver(execute: () => Promise<unknown>) {
+    const spy = vi.fn(execute);
+    const resolver = createWorkerCredentialResolver({
+      db: { execute: spy } as unknown as Database,
+      masterKeyId: undefined,
+      masterKeys: undefined,
+      envKeys: { typesafe: 'env-key' },
+    });
+    return { resolver, execute: spy };
+  }
+
+  /** The outcome of `pending`, or 'pending' when it has not settled within 200 ms. */
+  async function settled(pending: Promise<unknown>): Promise<unknown> {
+    const quiet = pending.then(
+      () => 'resolved',
+      (error: unknown) => error,
+    );
+    const timer = new Promise<string>((resolve) => setTimeout(() => resolve('pending'), 200));
+    return Promise.race([quiet, timer]);
+  }
+
+  const methods = {
+    useActive: (r: ReturnType<typeof resolverOver>['resolver'], signal: AbortSignal, send: never) =>
+      r.useActive('typesafe', signal, send),
+    useCandidate: (
+      r: ReturnType<typeof resolverOver>['resolver'],
+      signal: AbortSignal,
+      send: never,
+    ) => r.useCandidate('typesafe', '1', CANDIDATE_TOKEN, signal, send),
+  };
+
+  for (const [name, call] of Object.entries(methods)) {
+    describe(name, () => {
+      it('does not read the database for a signal aborted before the call', async () => {
+        const { resolver, execute } = resolverOver(async () => ({ rows: [] }));
+        const send = vi.fn();
+        await expect(call(resolver, AbortSignal.abort(), send as never)).rejects.toMatchObject(
+          cancelled,
+        );
+        expect(execute).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+      });
+
+      it('stops waiting for a read that never answers once the signal aborts', async () => {
+        const { resolver } = resolverOver(() => new Promise(() => undefined));
+        const controller = new AbortController();
+        const send = vi.fn();
+        const pending = call(resolver, controller.signal, send as never);
+        controller.abort();
+        expect(await settled(pending)).toMatchObject(cancelled);
+        expect(send).not.toHaveBeenCalled();
+      });
+
+      it('does not leave an unhandled rejection when the abandoned read fails later', async () => {
+        const unhandled: unknown[] = [];
+        const listener = (reason: unknown) => unhandled.push(reason);
+        process.on('unhandledRejection', listener);
+        try {
+          let fail: (error: Error) => void = () => undefined;
+          const { resolver } = resolverOver(
+            () =>
+              new Promise((_, reject) => {
+                fail = reject;
+              }),
+          );
+          const controller = new AbortController();
+          const pending = call(resolver, controller.signal, vi.fn() as never);
+          controller.abort();
+          expect(await settled(pending)).toMatchObject(cancelled);
+          fail(new Error('connection terminated'));
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          expect(unhandled).toEqual([]);
+        } finally {
+          process.off('unhandledRejection', listener);
+        }
+      });
+    });
+  }
+
+  it('does not send a credential read that finished as the signal aborted', async () => {
+    const flag = { aborted: false };
+    const signal = {
+      get aborted() {
+        return flag.aborted;
+      },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    } as unknown as AbortSignal;
+    const { resolver } = resolverOver(async () => {
+      flag.aborted = true;
+      return { rows: [] };
+    });
+    const send = vi.fn();
+    await expect(resolver.useActive('typesafe', signal, send)).rejects.toMatchObject(cancelled);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('still serves the environment key to a live signal', async () => {
+    const { resolver } = resolverOver(async () => ({ rows: [] }));
+    const result = await resolver.useActive(
+      'typesafe',
+      new AbortController().signal,
+      async (auth) => auth,
+    );
+    expect(result).toEqual({ apiKey: 'env-key', source: 'env' });
   });
 });

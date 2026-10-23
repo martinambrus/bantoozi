@@ -1,4 +1,5 @@
 import type {
+  AdminEngineModel,
   AdminFeed,
   AdminInviteSchema,
   AdminLibraryCard,
@@ -8,6 +9,7 @@ import type {
   AdminUser,
   AdminWaitlistEntrySchema,
   CredentialStatus,
+  EngineModelProbe,
   InviteDto,
   LibraryCandidate,
   Me,
@@ -47,6 +49,43 @@ export const userMe = (): Me => makeMe();
 export const T1 = '2026-10-08T09:00:00.000Z';
 export const T2 = '2026-10-08T09:30:00.000Z';
 export const T3 = '2026-09-01T12:00:00.000Z';
+
+/** The API clock of the model status fixtures (`GET /admin/engine/model` answers it as `now`). */
+export const MODEL_NOW = T2;
+/** The moment `minutes` before (negative: after) the API clock of the model status fixtures. */
+export const modelAgo = (minutes: number, now = MODEL_NOW): string =>
+  new Date(Date.parse(now) - minutes * 60_000).toISOString();
+
+/** `GET /admin/engine/model`: a pinned jev-1.13.0, no probe, no resolution, no check yet. */
+export function makeModelStatus(over: Partial<AdminEngineModel> = {}): AdminEngineModel {
+  return {
+    now: MODEL_NOW,
+    setting: { value: 'jev-1.13.0', source: 'env' },
+    resolution: null,
+    pin: { model: 'jev-1.13.0', since: T1 },
+    watch: { lastCheck: null },
+    probes: {},
+    impact: null,
+    ...over,
+  };
+}
+
+/** A probe that confirmed `model` (it answered the same id) two minutes before the API clock. */
+export function modelProbe(model: string, over: Partial<EngineModelProbe> = {}): EngineModelProbe {
+  return { requested: model, answered: model, ok: true, at: modelAgo(2), ...over };
+}
+
+/** The status probes of the given models, each a fresh confirming probe. */
+export function freshProbes(...models: string[]): AdminEngineModel['probes'] {
+  return Object.fromEntries(models.map((model) => [model, modelProbe(model)]));
+}
+
+/** A time as the app prints it for an account in `timeZone`: short time only, spaces normalised. */
+export function printedTime(iso: string, timeZone = 'Europe/Bratislava', language = 'en'): string {
+  return new Intl.DateTimeFormat(language, { timeStyle: 'short', timeZone })
+    .format(new Date(iso))
+    .replace(/\s+/g, ' ');
+}
 
 export function page<T>(items: T[], nextCursor: string | null = null) {
   return { items, nextCursor };
@@ -331,6 +370,7 @@ export function adminRoutes(
     'GET /admin/overview': () => json(200, makeOverview()),
     'GET /admin/usage': () => json(200, makeUsage()),
     'GET /admin/settings': () => json(200, makeSettings()),
+    'GET /admin/engine/model': () => json(200, makeModelStatus()),
     'GET /admin/engine/credentials': () =>
       json(200, {
         items: [makeCredential('typesafe'), makeCredential('ollama')],

@@ -50,6 +50,8 @@ export const CREDENTIAL_UNAVAILABLE_REASONS = [
   'lookup_failed',
   /** `useCandidate`: the validation lease is no longer this token's (revoked, re-staged, expired). */
   'lease_lost',
+  /** The caller's signal aborted during the lookup; callers conclude cancellation, never `no_key`. */
+  'cancelled',
 ] as const;
 export type CredentialUnavailableReason = (typeof CREDENTIAL_UNAVAILABLE_REASONS)[number];
 
@@ -134,7 +136,7 @@ export function createWorkerCredentialResolver(
     diagnostic: Record<string, string | null> = {},
   ): CredentialUnavailableError {
     // Operators need to see host problems (keyring, decryption, database) once, never a payload.
-    if (reason !== 'none' && reason !== 'lease_lost') {
+    if (reason !== 'none' && reason !== 'lease_lost' && reason !== 'cancelled') {
       const key = `${reason}:${JSON.stringify(diagnostic)}`;
       if (reported.get(provider) !== key) {
         reported.set(provider, key);
@@ -145,6 +147,27 @@ export function createWorkerCredentialResolver(
       }
     }
     return new CredentialUnavailableError(provider, reason);
+  }
+
+  /** Race one database read against the signal; an abandoned read finishes in the background. */
+  async function cancellable<T>(
+    provider: CredentialProvider,
+    signal: AbortSignal,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    if (signal.aborted) throw unavailable(provider, 'cancelled');
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(unavailable(provider, 'cancelled'));
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      const value = await Promise.race([read(), aborted]);
+      if (signal.aborted) throw unavailable(provider, 'cancelled');
+      return value;
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
   }
 
   /** Decrypt one envelope for one send; failures are typed, without crypto detail. */
@@ -198,16 +221,15 @@ export function createWorkerCredentialResolver(
 
     async useActive<T>(
       provider: CredentialProvider,
-      _signal: AbortSignal,
+      signal: AbortSignal,
       send: (auth: ProviderAuth) => Promise<T>,
     ): Promise<T> {
       assertProvider(provider);
-      let secret: Awaited<ReturnType<typeof readActiveCredentialSecret>>;
-      try {
-        secret = await readActiveCredentialSecret(db, provider);
-      } catch (error) {
-        throw unavailable(provider, 'lookup_failed', { sqlState: sqlState(error) ?? null });
-      }
+      const secret = await cancellable(provider, signal, () =>
+        readActiveCredentialSecret(db, provider).catch((error: unknown) => {
+          throw unavailable(provider, 'lookup_failed', { sqlState: sqlState(error) ?? null });
+        }),
+      );
       if (secret.state === 'missing') {
         const envKey = envKeys[provider];
         if (envKey === undefined) throw unavailable(provider, 'none');
@@ -225,20 +247,19 @@ export function createWorkerCredentialResolver(
       provider: CredentialProvider,
       candidateVersion: string,
       validationToken: string,
-      _signal: AbortSignal,
+      signal: AbortSignal,
       send: (auth: ProviderAuth) => Promise<T>,
     ): Promise<T> {
       assertProvider(provider);
-      let candidate: Awaited<ReturnType<typeof readCandidateCredentialSecret>>;
-      try {
-        candidate = await readCandidateCredentialSecret(db, {
+      const candidate = await cancellable(provider, signal, () =>
+        readCandidateCredentialSecret(db, {
           provider,
           candidateVersion,
           validationToken,
-        });
-      } catch (error) {
-        throw unavailable(provider, 'lookup_failed', { sqlState: sqlState(error) ?? null });
-      }
+        }).catch((error: unknown) => {
+          throw unavailable(provider, 'lookup_failed', { sqlState: sqlState(error) ?? null });
+        }),
+      );
       if (candidate === null) throw unavailable(provider, 'lease_lost');
       const apiKey = decrypt(provider, candidateVersion, candidate.envelope);
       return send({ apiKey, source: 'db', credentialVersion: candidateVersion });

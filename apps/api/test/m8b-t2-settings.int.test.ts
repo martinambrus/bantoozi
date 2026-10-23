@@ -14,6 +14,7 @@ import {
   type ApiHarness,
   type TestUser,
 } from './support/harness.js';
+import { seedModelState } from './support/model-state.js';
 
 /**
  * M8b-T2 (scope B4, C; spec 08 §9): the admin settings API for the thirteen live runtime keys.
@@ -112,6 +113,8 @@ async function resetAll(): Promise<void> {
   lt.reset();
   ltNoSlovak.reset();
   await h.owner.query('DELETE FROM job_outbox');
+  // JEV-5: a model change needs a fresh probe of the new value; every test seeds its own.
+  await seedModelState(h, { reset: true });
   await h.owner.query(
     `DELETE FROM settings WHERE key = ANY($1::text[]) OR key IN
      ('worker.heartbeat','engine.prefilter_enabled','language_modes','card_text_mode')`,
@@ -237,6 +240,9 @@ describe('PATCH /admin/settings runtime keys', () => {
   it.each(cases)('round-trips %s', async (key, value, expectedStored) => {
     const url = key === 'translate.libretranslate_url' ? lt.url : undefined;
     const sent = url ?? value;
+    if (key === 'engine.typesafe_model') {
+      await seedModelState(h, { probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0' }] });
+    }
     const want = url ?? expectedStored ?? value;
     const res = await patch({ [key]: sent, ...(ACK_KEYS.has(key) ? { acknowledge: true } : {}) });
     expect(res.statusCode, res.body).toBe(200);
@@ -320,7 +326,9 @@ describe('production validation', () => {
       expect(res.json().error.details.key, key).toBe(key);
       expect(await stored(key), key).toBeUndefined();
     }
-    // Negative control: the same keys with valid production values are accepted.
+    // Negative control: the same keys with valid production values are accepted (the model needs a
+    // fresh probe that confirms it, JEV-5).
+    await seedModelState(h, { probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0' }] });
     const ok = await patch(
       {
         'engine.typesafe_base_url': 'https://api.typesafe.ai/',
@@ -340,6 +348,9 @@ describe('production validation', () => {
       since: '2026-10-01T00:00:00Z',
     });
     await h.owner.query('DELETE FROM job_outbox');
+    // The alias resolves to another family than the stored model: personal models restart, so the
+    // acknowledgement is required (JEV-5: a same-family answer would need none).
+    await seedModelState(h, { probes: [{ requested: 'jev-latest', answered: 'jev-2.0.0' }] });
     const needsAck = await patch({ 'engine.typesafe_model': 'jev-latest' }, prod);
     expect(needsAck.statusCode, needsAck.body).toBe(409);
     expect(needsAck.json().error.details.reason).toBe('confirmation_required');
@@ -363,6 +374,7 @@ describe('production validation', () => {
     expect((await patch({ 'engine.ollama_base_url': 'http://localhost:11434' })).statusCode).toBe(
       200,
     );
+    await seedModelState(h, { probes: [{ requested: 'jev-fake', answered: 'jev-fake' }] });
     expect(
       (await patch({ 'engine.typesafe_model': 'jev-fake', acknowledge: true })).statusCode,
     ).toBe(200);
@@ -378,11 +390,13 @@ describe('model-affecting keys need acknowledge', () => {
       llm: null,
       since: '2026-10-01T00:00:00Z',
     });
+    // Another family than the env model jev-1.13.0, with a fresh confirming probe: personal models restart.
+    await seedModelState(h, { probes: [{ requested: 'jev-2.0.0', answered: 'jev-2.0.0' }] });
     for (const body of [
-      { 'engine.typesafe_model': 'jev-1.14.0' },
+      { 'engine.typesafe_model': 'jev-2.0.0' },
       { 'engine.llm_fallback_enabled': true },
-      { 'engine.typesafe_model': 'jev-1.14.0', 'engine.concurrency': 3 }, // whole patch refused
-      { 'engine.typesafe_model': 'jev-1.14.0', acknowledge: false },
+      { 'engine.typesafe_model': 'jev-2.0.0', 'engine.concurrency': 3 }, // whole patch refused
+      { 'engine.typesafe_model': 'jev-2.0.0', acknowledge: false },
     ]) {
       const res = await patch(body);
       expect(res.statusCode, JSON.stringify(body)).toBe(409);
@@ -399,6 +413,7 @@ describe('model-affecting keys need acknowledge', () => {
   it('with acknowledge stores the value and writes no pin and no rebuild intent', async () => {
     const pin = { model: 'jev-1.13.0', llm: null, since: '2026-10-01T00:00:00Z' };
     await setRow('engine.model_pin', pin);
+    await seedModelState(h, { probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0' }] });
     const res = await patch({
       'engine.typesafe_model': 'jev-1.14.0',
       'engine.llm_fallback_enabled': true,
@@ -443,12 +458,60 @@ describe('model-affecting keys need acknowledge', () => {
     expect(ack.statusCode, ack.body).toBe(200);
     expect(await outbox()).toEqual([]);
 
-    // Resetting a stored model to the env default is a change too.
-    await patch({ 'engine.typesafe_model': 'jev-1.14.0', acknowledge: true });
-    expect((await patch({ 'engine.typesafe_model': null })).statusCode).toBe(409);
+    // Resetting a stored model to the env default is a change too: it is gated on a probe of the
+    // env default (jev-1.13.0) and, from another family, on the acknowledgement.
+    const probe2 = { requested: 'jev-2.0.0', answered: 'jev-2.0.0' };
+    await seedModelState(h, { probes: [probe2] });
+    expect(
+      (await patch({ 'engine.typesafe_model': 'jev-2.0.0', acknowledge: true })).statusCode,
+    ).toBe(200);
+    const unprobed = await patch({ 'engine.typesafe_model': null, acknowledge: true });
+    expect(unprobed.statusCode, unprobed.body).toBe(409);
+    expect(unprobed.json().error.details).toEqual({
+      reason: 'model_probe_required',
+      model: 'jev-1.13.0',
+    });
+    await seedModelState(h, {
+      probes: [probe2, { requested: 'jev-1.13.0', answered: 'jev-1.13.0' }],
+    });
+    const unacknowledged = await patch({ 'engine.typesafe_model': null });
+    expect(unacknowledged.statusCode, unacknowledged.body).toBe(409);
+    expect(unacknowledged.json().error.details.reason).toBe('confirmation_required');
+    expect(await stored('engine.typesafe_model')).toBe('jev-2.0.0');
     expect((await patch({ 'engine.typesafe_model': null, acknowledge: true })).statusCode).toBe(
       200,
     );
+    expect((await get()).sources['engine.typesafe_model']).toBe('env');
+  });
+
+  it('JEV-5: another release of the same major needs a probe but no acknowledge', async () => {
+    await seedModelState(h, { probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0' }] });
+    const res = await patch({ 'engine.typesafe_model': 'jev-1.14.0' });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().changed).toEqual(['engine.typesafe_model']);
+    expect(await stored('engine.typesafe_model')).toBe('jev-1.14.0');
+  });
+
+  it('JEV-5: a missing, failed or stale probe refuses the change and writes nothing', async () => {
+    const missing = await patch({ 'engine.typesafe_model': 'jev-1.14.0', acknowledge: true });
+    expect(missing.statusCode, missing.body).toBe(409);
+    expect(missing.json().error.details).toEqual({
+      reason: 'model_probe_required',
+      model: 'jev-1.14.0',
+    });
+    await seedModelState(h, {
+      probes: [{ requested: 'jev-1.14.0', ok: false, error: 'model_unavailable' }],
+    });
+    const failed = await patch({ 'engine.typesafe_model': 'jev-1.14.0', acknowledge: true });
+    expect(failed.statusCode, failed.body).toBe(409);
+    expect(failed.json().error.details.reason).toBe('model_probe_failed');
+    await seedModelState(h, {
+      probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0', offsetMs: -11 * 60_000 }],
+    });
+    const stale = await patch({ 'engine.typesafe_model': 'jev-1.14.0', acknowledge: true });
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect(stale.json().error.details.reason).toBe('model_probe_required');
+    expect(await stored('engine.typesafe_model')).toBeUndefined();
   });
 });
 

@@ -190,7 +190,54 @@
       "problem": "Rejected by worker: {{message}}",
       "restarting": "Workers are restarting to apply the change…"
     },
-    "reprocessing": "Re-processing articles and cards in the background…"
+    "reprocessing": "Re-processing articles and cards in the background…",
+    "modelEditor": {
+      "modeLabel": "Jev release",
+      "latest": "Follow the newest Jev (jev-latest)",
+      "latestHint": "Jev is asked every few hours which release jev-latest stands for. A new release of the same major keeps ratings and personal models.",
+      "pinned": "Use one release",
+      "pinnedHint": "Type the id of the release, for example jev-1.13.0.",
+      "idRejected": "Use up to 64 letters, digits and . _ : - characters.",
+      "resolves": "Resolves to {{model}} · checked {{time}}",
+      "unresolved": "Not resolved yet. Check now, or wait for the next scheduled check.",
+      "checkNow": "Check now",
+      "checking": "Asking Jev which release jev-latest stands for…",
+      "checkTimeout": "Jev has not answered yet. Check that a worker is running, then try again.",
+      "checkFailed": "The check at {{time}} failed ({{reason}}). The release stays {{model}}.",
+      "probing": "Asking Jev whether it serves {{model}}…",
+      "probeAnswered": "Jev answered {{answered}} for {{model}}, so nothing was saved.",
+      "probeRefused": "Jev could not confirm {{model}} ({{reason}}), so nothing was saved.",
+      "probeTimeout": "Jev has not answered after 90 seconds. Check that a worker is running, then save again.",
+      "probeExpired": "The check of {{model}} is more than 10 minutes old. Save again to check it once more.",
+      "impact": {
+        "title": "Change the Jev release?",
+        "change": "{{key}} changes from {{from}} to {{to}}.",
+        "none": "{{to}} is the release in use, so nothing is rebuilt.",
+        "kept": "Ratings and personal models are kept; the 14-day window is analysed again.",
+        "restart_one": "{{count}} user's personal model restarts from new ratings.",
+        "restart_other": "{{count}} users' personal models restart from new ratings.",
+        "restartNone": "No personal model is active yet, so none restarts.",
+        "restartUnknown": "Personal models restart from new ratings."
+      },
+      "errors": {
+        "model_unavailable": "Jev does not serve this model.",
+        "model_mismatch": "Jev answered with another model.",
+        "alias_unresolved": "Jev did not name a release for jev-latest.",
+        "timeout": "Jev did not answer in time.",
+        "provider_unavailable": "Jev is not available right now.",
+        "rate_limited": "Jev is rate limiting requests.",
+        "auth_rejected": "Jev rejected the key.",
+        "request_rejected": "Jev rejected the test request.",
+        "invalid_response": "Jev answered in an unexpected format.",
+        "probe_budget_exceeded": "The test call reached its spend limit.",
+        "budget_unavailable": "The daily budget is used up.",
+        "cost_overrun": "The test call cost more than expected.",
+        "internal_error": "The check stopped because of an internal error.",
+        "unsupported_model": "This is not a valid model id.",
+        "no_key": "No Jev key is available.",
+        "unknown": "code {{code}}"
+      }
+    }
   },
   "providers": {
     "intro": "Keys are stored encrypted and are never shown again after you submit them. Stage a new key, validate it with a small test call, then activate it. The active key keeps working until the new one is activated.",
@@ -241,6 +288,7 @@
       "provider_error": "The provider returned an error during validation.",
       "cost_overrun": "The test call cost more than expected and was stopped. Validate again.",
       "credential_unavailable": "The worker could not load the staged key. Validate again, or stage the key again.",
+      "model_unavailable": "The provider does not serve the configured model, so the key could not be tested. Choose an available model in Settings, then validate again.",
       "unknown": "Validation stopped with the code {{code}}."
     },
     "keyLabel": "New API key for {{provider}}",

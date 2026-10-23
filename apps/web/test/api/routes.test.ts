@@ -17,8 +17,8 @@ const entries = Object.entries(routes) as [string, AnyRoute][];
 const operation = (route: AnyRoute) => `${route.method} ${route.path}`;
 
 describe('route table', () => {
-  it('lists the 114 operations of apps/api/test/expected-operations.txt', () => {
-    expect(EXPECTED_OPERATIONS).toHaveLength(114);
+  it('lists the 117 operations of apps/api/test/expected-operations.txt', () => {
+    expect(EXPECTED_OPERATIONS).toHaveLength(117);
     expect(entries.map(([, route]) => operation(route)).sort()).toEqual(
       [...EXPECTED_OPERATIONS].sort(),
     );
