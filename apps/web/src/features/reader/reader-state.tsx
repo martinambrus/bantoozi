@@ -14,6 +14,10 @@ import { useApi } from '../../api/context.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useSession } from '../../session/context.js';
+import {
+  useEstimateNoticeState,
+  type EstimateNoticeControl,
+} from '../learning/use-estimate-notice.js';
 import { createSettingsWriter, type SettingsWriter } from './settings-writer.js';
 import { createTargets, type ReaderTargets } from './shortcuts/targets.js';
 
@@ -26,6 +30,7 @@ interface ReaderState {
   feedFilter: string;
   setFeedFilter: Dispatch<SetStateAction<string>>;
   targets: ReaderTargets;
+  estimateNotice: EstimateNoticeControl;
 }
 
 const ReaderStateContext = createContext<ReaderState | null>(null);
@@ -41,6 +46,7 @@ export function ReaderStateProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const toast = useToast();
   const { i18n } = useTranslation();
+  const estimateNotice = useEstimateNoticeState();
   const [everythingOpen, setEverythingOpen] = useState(true);
   const [feedFilter, setFeedFilter] = useState('');
   const [targets] = useState(createTargets);
@@ -53,11 +59,32 @@ export function ReaderStateProvider({ children }: { children: ReactNode }) {
     }),
   );
   const value = useMemo(
-    () => ({ everythingOpen, setEverythingOpen, settings, feedFilter, setFeedFilter, targets }),
-    [everythingOpen, settings, feedFilter, targets],
+    () => ({
+      everythingOpen,
+      setEverythingOpen,
+      settings,
+      feedFilter,
+      setFeedFilter,
+      targets,
+      estimateNotice,
+    }),
+    [everythingOpen, settings, feedFilter, targets, estimateNotice],
   );
   return <ReaderStateContext value={value}>{children}</ReaderStateContext>;
 }
+
+/** The wait for the estimate refresh that follows the reader's ratings; it outlives a change of view. */
+export function useEstimateNotice(): EstimateNoticeControl {
+  return useReaderState().estimateNotice;
+}
+
+/** Tells the notice that the reader rated; does nothing outside the reader. */
+export function useArmEstimateNotice(): () => void {
+  const state = useContext(ReaderStateContext);
+  return state === null ? noop : state.estimateNotice.arm;
+}
+
+function noop() {}
 
 function useReaderState(): ReaderState {
   const state = useContext(ReaderStateContext);

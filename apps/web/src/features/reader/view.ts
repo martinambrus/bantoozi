@@ -93,6 +93,11 @@ export function viewMinTier(
   return view.lane === 'all' ? preferences.feedMinTier : 1;
 }
 
+/** Estimated rows are unread and unanalyzed, so only the New lane and the scoped all-lanes view show them. */
+export function showsEstimates(view: ReaderView): boolean {
+  return view.lane === 'new' || (view.kind !== 'lane' && view.lane === 'all');
+}
+
 /** Bookmarks and Hidden list every article, read or not; the other views list the unread ones. */
 export function listsUnread(lane: ArticleViewLane): boolean {
   return lane !== 'bookmarks' && lane !== 'hidden';

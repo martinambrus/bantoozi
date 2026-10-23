@@ -26,6 +26,7 @@ import {
 import { probe } from '../article/reader-probe.js';
 import { runResetHooks, type ResetReason } from '../../src/session/reset.js';
 import { renderApp, type ApiRouteHandler } from '../support/app.js';
+import { makeLearning } from '../learning/fixtures.js';
 import { acked } from './actions/fake-transport.js';
 
 // The reader page belongs to another task; the probe page renders article rows in its place.
@@ -61,7 +62,11 @@ async function openReader(
     path: '/read/for_you',
     server: {
       me: options.me ?? makeMe(),
-      routes: { 'GET /articles/counts': () => json(200, COUNTS), ...options.routes },
+      routes: {
+        'GET /articles/counts': () => json(200, COUNTS),
+        'GET /me/learning': () => json(200, makeLearning()),
+        ...options.routes,
+      },
     },
   });
   await screen.findByRole('article', { name: TITLE });

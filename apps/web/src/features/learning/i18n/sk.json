@@ -22,5 +22,23 @@
     "interestsAgree": "Záujmy sa zhodujú na {{value}} · pripravené od {{threshold}}",
     "interestsReady": "Pripravené na automatickú klasifikáciu",
     "enable": "Zapnúť"
+  },
+  "notice": {
+    "both_one": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaný článok sa posunul vyššie, {{down}} nižšie",
+    "both_few": "Aktualizované podľa vašich hodnotení: {{count}} neprečítané články sa posunuli vyššie, {{down}} nižšie",
+    "both_many": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaného článku sa posunulo vyššie, {{down}} nižšie",
+    "both_other": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaných článkov sa posunulo vyššie, {{down}} nižšie",
+    "up_one": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaný článok sa posunul vyššie",
+    "up_few": "Aktualizované podľa vašich hodnotení: {{count}} neprečítané články sa posunuli vyššie",
+    "up_many": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaného článku sa posunulo vyššie",
+    "up_other": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaných článkov sa posunulo vyššie",
+    "down_one": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaný článok sa posunul nižšie",
+    "down_few": "Aktualizované podľa vašich hodnotení: {{count}} neprečítané články sa posunuli nižšie",
+    "down_many": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaného článku sa posunulo nižšie",
+    "down_other": "Aktualizované podľa vašich hodnotení: {{count}} neprečítaných článkov sa posunulo nižšie",
+    "show": "Zobraziť",
+    "showLabel": "Zobraziť články v novom poradí",
+    "dismiss": "Zavrieť",
+    "dismissLabel": "Zavrieť oznámenie o aktualizácii"
   }
 }
