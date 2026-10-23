@@ -5,7 +5,6 @@ import {
   type Database,
 } from '@bantoozi/db';
 import {
-  EngineModelResolutionSchema,
   MODEL_NOTICE_MAX_ATTEMPTS,
   isConcreteJevModel,
   isModelAlias,
@@ -17,7 +16,12 @@ import type { Mailer } from '@bantoozi/shared/server';
 import { alertRecipients, deliver } from '../alerts/mail.js';
 import { ensureFingerprintRegistered } from '../learn/fingerprints.js';
 import { recordModelProbe, type ModelProber } from '../model-probe.js';
-import { recordModelResolution } from '../model-resolution.js';
+import {
+  readResolutionState,
+  recordModelResolution,
+  recordStartResolution,
+  resolutionInForce,
+} from '../model-resolution.js';
 import { MODEL_WATCH_KEY, upgradeMail, watchStateOf, writePendingNotice } from '../model-watch.js';
 import type { HandlerLogger, WorkerDeps } from './deps.js';
 import { MODEL_PROBE_DEADLINE_MS } from './model-probe.js';
@@ -47,8 +51,10 @@ const sameNotice = (a: Notice | undefined, b: Notice): boolean =>
  * `house.model-watch` (every 6 hours, on start, after a retired-model failure, or by hand): probes
  * the alias `jev-latest` and adopts a different concrete answer. The outgoing rating fingerprint is
  * registered first, then `engine.model_resolution` and the pending notice are written in one
- * transaction and the admins are mailed. Workers restart through the stale-worker machinery; this
- * job never touches `engine.model_pin`. A failed probe or mail is recorded, never thrown.
+ * transaction and the admins are mailed. A dormant stored resolution (see `resolutionInForce`) is
+ * replaced silently by the answer, with no fingerprint, notice or mail. Workers restart through
+ * the stale-worker machinery; this job never touches `engine.model_pin`. A failed probe or mail is
+ * recorded, never thrown.
  */
 export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<typeof JOB> {
   const { db, prober, logger } = deps;
@@ -139,13 +145,22 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
       return;
     }
 
-    const stored = EngineModelResolutionSchema.safeParse(
-      await readStoredSetting(db, 'engine.model_resolution'),
-    );
-    if (stored.success && stored.data.alias === alias && stored.data.model !== answered) {
+    if ((await deps.configuredModel()) !== alias) {
+      await recordHouseProgress({ db }, JOB, now(), true);
+      return;
+    }
+    const { row: stored, pin } = await readResolutionState(db);
+    if (stored !== null && stored.alias === alias && !resolutionInForce(stored, pin, now())) {
+      const at = now();
+      await recordStartResolution(db, { alias, model: answered, now: at, dormant: stored });
+      await updateState((state) => ({ ...state, lastCheck: { at: at.toISOString(), ok: true } }));
+      await recordHouseProgress({ db }, JOB, now(), true);
+      return;
+    }
+    if (stored !== null && stored.alias === alias && stored.model !== answered) {
       await ensureFingerprintRegistered(
         db,
-        { settingsEnv: deps.settingsEnv, primaryModel: stored.data.model },
+        { settingsEnv: deps.settingsEnv, primaryModel: stored.model },
         now(),
       );
     }
