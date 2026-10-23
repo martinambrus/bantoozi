@@ -1,7 +1,7 @@
 import { createDatabase, MIGRATIONS_FOLDER, PG_BOSS_VERSION, runMigrations } from '@bantoozi/db';
 import { CLOSED_BREAKER, defaultCircuit, enterAuthMode, JEV_FAKE_MODEL } from '@bantoozi/engine';
 import { conservativeRequestTokens, EngineModelProbeSchema } from '@bantoozi/shared';
-import { createLogger } from '@bantoozi/shared/server';
+import { createLogger, type ProviderAuth } from '@bantoozi/shared/server';
 import {
   dropCreatedTestDatabases,
   setupTestDatabase,
@@ -10,9 +10,12 @@ import {
   type TestDatabase,
 } from '@bantoozi/testing';
 import pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createWorkerCredentialResolver } from '../src/credentials/index.js';
+import {
+  createWorkerCredentialResolver,
+  type CredentialProvider,
+} from '../src/credentials/index.js';
 import { createWorkerEngineRouter, type WorkerEngineConfig } from '../src/engine-router.js';
 import {
   createModelProber,
@@ -124,7 +127,7 @@ function setup(options: { price?: number; envKey?: string | null } = {}) {
     logger,
     random: () => 0,
   });
-  return { prober, config };
+  return { prober, config, ledger, credentials };
 }
 
 interface CallRow {
@@ -362,6 +365,35 @@ describe('model probe: credentials, signals and safety', () => {
     // Control: without the signal the same probe is sent.
     expect(await setup().prober.probe('jev-latest')).toMatchObject({ ok: true });
     expect(fake.requests).toHaveLength(1);
+  });
+
+  it('W11b a signal aborted during the credential lookup reserves and sends nothing', async () => {
+    const { ledger, credentials, config } = setup();
+    const controller = new AbortController();
+    const abortingLookup = {
+      ...credentials,
+      useActive: <T>(
+        provider: CredentialProvider,
+        signal: AbortSignal,
+        send: (auth: ProviderAuth) => Promise<T>,
+      ) => {
+        controller.abort();
+        return credentials.useActive(provider, signal, send);
+      },
+    };
+    const reserve = vi.spyOn(ledger, 'reserveExternalCall');
+    const prober = createModelProber({
+      ledger,
+      credentials: abortingLookup,
+      config,
+      logger,
+      random: () => 0,
+    });
+    const probe = await prober.probe('jev-latest', { signal: controller.signal });
+    expect(probe).toMatchObject({ ok: false, error: 'timeout' });
+    expect(reserve).not.toHaveBeenCalled();
+    expect(fake.requests).toHaveLength(0);
+    expect(await calls()).toEqual([]);
   });
 
   it('W13 uses the configured loopback base url and writes no plaintext key', async () => {

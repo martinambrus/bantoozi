@@ -618,6 +618,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       });
     } catch (error) {
       if (invoked) throw error;
+      if (ctx.signal.aborted) return { kind: 'cancelled' };
       if (run.lane.injected) return reserveAndSend(run, sub, ctx, undefined);
       return { kind: 'no_credential', reason: unavailableReason(error) };
     }

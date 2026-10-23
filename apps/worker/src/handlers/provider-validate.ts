@@ -353,6 +353,7 @@ export function createProviderValidateHandler(
       );
     } catch (error) {
       if (!invoked && isAppError(error) && error.code === 'ENGINE_UNAVAILABLE') {
+        if (signal.aborted) return { kind: 'cancelled' };
         const reason = error.details?.['reason'];
         return { kind: 'unavailable', reason: typeof reason === 'string' ? reason : 'unavailable' };
       }

@@ -299,6 +299,7 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
         sent = await sendOnce(attempts + 1);
       } catch (error) {
         if (isAppError(error) && error.code === 'ENGINE_UNAVAILABLE') {
+          if (signal.aborted) return fail('timeout');
           const reason = error.details?.['reason'];
           return fail(`no_key:${typeof reason === 'string' ? reason : 'unavailable'}`);
         }
