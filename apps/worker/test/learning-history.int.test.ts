@@ -380,6 +380,36 @@ describe('estimate model provenance', () => {
     expect(model.metrics['fromRatings']).toBe(false);
   });
 
+  it('a previous model trained with other trainer options (a new seed) gives fromRatings false even with a newer rating', async () => {
+    const userId = await ew.reader(6, 6);
+    await estimate(userId);
+    await h.owner.query(
+      `UPDATE user_estimate_models
+          SET metrics = jsonb_set(metrics, '{options,seed}', '"estimate-v0"')
+        WHERE user_id = $1`,
+      [userId],
+    );
+    await ew.setRating(userId, 12, 1);
+    await estimate(userId);
+    const model = await newest(userId);
+    expect(model.version).toBe(2);
+    expect(model.metrics['ratedThrough']).toBe(ew.ratedAtOf(12).toISOString());
+    expect(model.metrics['fromRatings']).toBe(false);
+  });
+
+  it('a previous model without stored trainer options gives fromRatings false', async () => {
+    const userId = await ew.reader(6, 6);
+    await estimate(userId);
+    await h.owner.query(
+      `UPDATE user_estimate_models SET metrics = metrics - 'options' WHERE user_id = $1`,
+      [userId],
+    );
+    await ew.setRating(userId, 12, 1);
+    await estimate(userId);
+    const model = await newest(userId);
+    expect(model.metrics['fromRatings']).toBe(false);
+  });
+
   it('a previous model without a valid ratedThrough gives fromRatings false', async () => {
     for (const patch of [
       `metrics - 'ratedThrough'`,
