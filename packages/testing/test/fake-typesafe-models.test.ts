@@ -104,4 +104,16 @@ describe('fake TypeSafe models table', () => {
     );
     expect((fakeTypeSafeAnswer(request) as { model: string }).model).toBe(FAKE_TYPESAFE_MODEL);
   });
+
+  it('F8 a 200 statusOverride without a body is answered as the models table says', async () => {
+    server.setOptions({
+      models: { 'jev-latest': 'jev-1.14.0' },
+      statusOverride: () => ({ status: 200 }),
+    });
+    expect(await answered('jev-latest')).toBe('jev-1.14.0');
+    // The explicit 200 wins over the table's 404 for an id it does not list: the default model answers.
+    expect(await answered('jev-unlisted')).toBe(FAKE_TYPESAFE_MODEL);
+    server.setOptions({ models: undefined });
+    expect(await answered('jev-latest')).toBe(FAKE_TYPESAFE_MODEL);
+  });
 });

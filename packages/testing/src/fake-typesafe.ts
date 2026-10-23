@@ -67,7 +67,8 @@ export interface FakeTypeSafeOptions {
   apiKey?: string | undefined;
   /**
    * Requested model id to answering model id. Unset: every request is answered as `jev-fake`. Set: a
-   * requested id that is a key is answered with its value, any other id gets 404 `model_not_found`.
+   * requested id that is a key is answered with its value (a 200 `statusOverride` without a body too), any
+   * other id gets 404 `model_not_found` (a 200 `statusOverride` still answers it as `jev-fake`).
    */
   models?: Readonly<Record<string, string>> | undefined;
 }
@@ -345,6 +346,17 @@ export function fakeTypeSafeErrorBody(status: number): unknown {
   return { error: { type, code, message: `fake TypeSafe status ${status}` } };
 }
 
+/** The model the `models` table answers a request as; undefined when it does not list the requested id. */
+function answeringModel(
+  models: Readonly<Record<string, string>> | undefined,
+  body: unknown,
+): string | undefined {
+  const requested = isRecord(body) ? own(body, 'model') : undefined;
+  return models !== undefined && typeof requested === 'string' && Object.hasOwn(models, requested)
+    ? models[requested]
+    : undefined;
+}
+
 function checkOptions(options: FakeTypeSafeOptions): void {
   const { failRate } = options;
   if (failRate !== undefined && !(failRate >= 0 && failRate <= 1)) {
@@ -373,7 +385,9 @@ export async function startFakeTypeSafe(
       const normal = override.status === 200 && problem === undefined;
       return {
         ...override,
-        body: normal ? fakeTypeSafeAnswer(body) : fakeTypeSafeErrorBody(override.status),
+        body: normal
+          ? fakeTypeSafeAnswer(body, answeringModel(current.models, body))
+          : fakeTypeSafeErrorBody(override.status),
       };
     }
     const failRate = current.failRate ?? 0;
@@ -387,11 +401,10 @@ export async function startFakeTypeSafe(
         body: { error: { type: 'invalid_request_error', code: problem, message: 'fake' } },
       };
     }
-    const { models } = current;
-    if (models !== undefined) {
-      const requested = isRecord(body) ? own(body, 'model') : undefined;
-      if (typeof requested === 'string' && Object.hasOwn(models, requested)) {
-        return { status: 200, body: fakeTypeSafeAnswer(body, models[requested]) };
+    if (current.models !== undefined) {
+      const answering = answeringModel(current.models, body);
+      if (answering !== undefined) {
+        return { status: 200, body: fakeTypeSafeAnswer(body, answering) };
       }
       return {
         status: 404,
