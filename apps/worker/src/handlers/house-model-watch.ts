@@ -80,11 +80,14 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     const admins =
       mailer === undefined
         ? []
-        : await alertRecipients({
-            db,
-            logger,
-            ...(deps.adminEmails === undefined ? {} : { adminEmails: deps.adminEmails }),
-          });
+        : await alertRecipients(
+            {
+              db,
+              logger,
+              ...(deps.adminEmails === undefined ? {} : { adminEmails: deps.adminEmails }),
+            },
+            JOB,
+          );
     if (mailer === undefined || admins.length === 0) {
       logger.warn(
         { job: JOB, from: notice.from, to: notice.to },
@@ -93,7 +96,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
       await updateState(clear);
       return;
     }
-    if (await deliver({ logger }, mailer, admins, upgradeMail(notice))) {
+    if (await deliver({ logger }, mailer, admins, upgradeMail(notice), JOB)) {
       await updateState(clear);
       return;
     }

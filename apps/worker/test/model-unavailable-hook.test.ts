@@ -14,7 +14,8 @@ interface StoreLike {
   settleReservation(id: string, call: Call, usage: unknown, billing: string): Promise<void>;
   [method: string]: unknown;
 }
-type Wrap = (store: StoreLike, hook: () => Promise<void>) => StoreLike;
+type Warn = { warn: (obj: object, msg: string) => void };
+type Wrap = (store: StoreLike, hook: () => Promise<void>, logger?: Warn) => StoreLike;
 
 const load = async (): Promise<Wrap> => withModelUnavailableHook as unknown as Wrap;
 
@@ -106,6 +107,39 @@ describe('T3b: withModelUnavailableHook', () => {
     });
     await expect(wrapped.settleReservation('r1', call(), usage, 'known')).resolves.toBeUndefined();
     expect(order).toEqual(['inner:r1', 'hook']);
+  });
+
+  it('logs one warning with the error message when the hook fails, and the result is unchanged', async () => {
+    const wrap = await load();
+    const warned: { obj: object; msg: string }[] = [];
+    const wrapped = wrap(
+      fakeStore(),
+      async () => {
+        throw new Error('db down');
+      },
+      { warn: (obj, msg) => void warned.push({ obj, msg }) },
+    );
+    await expect(wrapped.settleReservation('r1', call(), usage, 'known')).resolves.toBeUndefined();
+    expect(warned).toEqual([{ obj: { err: 'db down' }, msg: 'model-unavailable trigger failed' }]);
+  });
+
+  it('logs err "unknown" for a non-Error rejection and nothing when the hook succeeds', async () => {
+    const wrap = await load();
+    const warned: object[] = [];
+    const logger = { warn: (obj: object) => void warned.push(obj) };
+    await wrap(fakeStore(), () => Promise.reject('text'), logger).settleReservation(
+      'r1',
+      call(),
+      usage,
+      'known',
+    );
+    await wrap(fakeStore(), async () => undefined, logger).settleReservation(
+      'r2',
+      call(),
+      usage,
+      'known',
+    );
+    expect(warned).toEqual([{ err: 'unknown' }]);
   });
 
   it('a hook that rejects asynchronously is awaited and swallowed', async () => {

@@ -4,7 +4,7 @@ import type { EmailMessage, Mailer } from '@bantoozi/shared/server';
 import type { WorkerDeps } from '../handlers/deps.js';
 import { safeText } from './types.js';
 
-const JOB = 'house.alerts' as const;
+const DEFAULT_JOB = 'house.alerts';
 
 /**
  * Alert recipients (M8b-T7): the active admins in the database; `ADMIN_EMAILS` only while there is
@@ -12,13 +12,14 @@ const JOB = 'house.alerts' as const;
  */
 export async function alertRecipients(
   deps: Pick<WorkerDeps, 'db' | 'logger' | 'adminEmails'>,
+  job: string = DEFAULT_JOB,
 ): Promise<readonly string[]> {
   try {
     const emails = await activeAdminEmails(deps.db);
     if (emails.length > 0) return emails;
   } catch (error) {
     deps.logger.warn(
-      { job: JOB, error: safeText(error instanceof Error ? error.message : error, 200) },
+      { job, error: safeText(error instanceof Error ? error.message : error, 200) },
       'admin recipients lookup failed; using ADMIN_EMAILS',
     );
   }
@@ -31,6 +32,7 @@ export async function deliver(
   mailer: Mailer,
   admins: readonly string[],
   content: Pick<EmailMessage, 'subject' | 'text'>,
+  job: string = DEFAULT_JOB,
 ): Promise<boolean> {
   let accepted = 0;
   for (const to of admins) {
@@ -39,7 +41,7 @@ export async function deliver(
       accepted += 1;
     } catch (error) {
       deps.logger.warn(
-        { job: JOB, error: safeText(error instanceof Error ? error.message : error, 200) },
+        { job, error: safeText(error instanceof Error ? error.message : error, 200) },
         'alert email not delivered',
       );
     }

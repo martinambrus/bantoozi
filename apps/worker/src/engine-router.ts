@@ -113,6 +113,7 @@ const MODEL_UNAVAILABLE_KINDS: ReadonlySet<string> = new Set([
 export function withModelUnavailableHook<S extends Pick<EngineStore, 'settleReservation'>>(
   store: S,
   hook: () => Promise<void>,
+  logger?: Pick<EngineLogger, 'warn'>,
 ): S {
   return {
     ...store,
@@ -125,8 +126,12 @@ export function withModelUnavailableHook<S extends Pick<EngineStore, 'settleRese
       ) {
         try {
           await hook();
-        } catch {
-          // the call result must not change
+        } catch (error) {
+          // the call result must not change, but a hook that keeps failing disables the trigger
+          logger?.warn(
+            { err: error instanceof Error ? error.message : 'unknown' },
+            'model-unavailable trigger failed',
+          );
         }
       }
     },
@@ -141,7 +146,7 @@ export function createWorkerEngineRouter(options: WorkerEngineRouterOptions): En
   const store =
     options.onModelUnavailable === undefined
       ? pgStore
-      : withModelUnavailableHook(pgStore, options.onModelUnavailable);
+      : withModelUnavailableHook(pgStore, options.onModelUnavailable, options.logger);
   return createEngineRouter({
     config: engineConfigFromWorker(options.config, options),
     store,
