@@ -80,6 +80,18 @@ function fakeProbe(path = '/probe'): Promise<Response> {
   return fetch(`${fake.url}${path}`);
 }
 
+function fakeModel(model: string): Promise<Response> {
+  return fetch(`${fake.url}/v1/systemone`, {
+    method: 'POST',
+    body: JSON.stringify({
+      model,
+      state: { article: { title: 'Solid-state battery pilot line' } },
+      questions: { card: { type: 'noul', instructions: { interest: 'Batteries' } } },
+    }),
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 function fakeQuestion(headers: Record<string, string> = {}): Promise<Response> {
   return fetch(`${fake.url}/v1/systemone`, { method: 'POST', body: '{}', headers });
 }
@@ -304,7 +316,15 @@ describe('the fake TypeSafe server', () => {
   it('shows the options and applies a patch', async () => {
     expect(await send('POST', '/fake/options')).toEqual({
       status: 200,
-      json: { options: { latencyMs: 5, failRate: 0, failStatus: null, apiKeyRequired: false } },
+      json: {
+        options: {
+          latencyMs: 5,
+          failRate: 0,
+          failStatus: null,
+          apiKeyRequired: false,
+          models: null,
+        },
+      },
     });
     expect(await send('POST', '/fake/options', { json: { latencyMs: 0 } })).toMatchObject({
       json: { options: { latencyMs: 0 } },
@@ -326,6 +346,53 @@ describe('the fake TypeSafe server', () => {
     await send('POST', '/fake/options', { json: { apiKey: 'again' } });
     await send('POST', '/fake/options', { json: { apiKey: '' } });
     expect((await fakeQuestion()).status).not.toBe(401);
+  });
+
+  it('sets, clears and shows the model table', async () => {
+    const table = { 'jev-latest': 'jev-1.13.0', 'jev-fake': 'jev-fake' };
+    expect(await send('POST', '/fake/options', { json: { models: table } })).toMatchObject({
+      json: { options: { models: table } },
+    });
+    expect((await fakeModel('jev-latest')).status).toBe(200);
+    expect(((await (await fakeModel('jev-latest')).json()) as { model: string }).model).toBe(
+      'jev-1.13.0',
+    );
+    expect((await fakeModel('jev-1.14.0')).status).toBe(404);
+    // a later patch of another option keeps the table
+    expect(await send('POST', '/fake/options', { json: { latencyMs: 0 } })).toMatchObject({
+      json: { options: { models: table } },
+    });
+    expect(await send('POST', '/fake/options', { json: { models: null } })).toMatchObject({
+      json: { options: { models: null } },
+    });
+    expect((await fakeModel('jev-1.14.0')).status).toBe(200);
+  });
+
+  it('accepts an empty model table: every id is then unknown', async () => {
+    expect(await send('POST', '/fake/options', { json: { models: {} } })).toMatchObject({
+      json: { options: { models: {} } },
+    });
+    expect((await fakeModel('jev-fake')).status).toBe(404);
+  });
+
+  it.each([
+    ['an array', []],
+    ['a text', 'jev-latest'],
+    ['a number', 1],
+    ['too many entries', Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`m${i}`, 'x']))],
+    ['a bad key', { 'bad key': 'x' }],
+    ['a long key', { ['k'.repeat(65)]: 'x' }],
+    ['a non-string value', { a: 1 }],
+    ['a bad value', { a: 'no/slash' }],
+    ['an empty value', { a: '' }],
+  ])('rejects a model table that is %s and changes nothing', async (_name, models) => {
+    expect(await send('POST', '/fake/options', { json: { models } })).toEqual({
+      status: 400,
+      json: failure('invalid_body', 'models must be'),
+    });
+    expect(await send('POST', '/fake/options')).toMatchObject({
+      json: { options: { models: null } },
+    });
   });
 
   it('fails every request with the given status when failRate is 1', async () => {
@@ -361,7 +428,7 @@ describe('POST /reset', () => {
     feeds.science.script('/feed.xml', 500);
     await fetch(feeds.culture.url);
     await send('POST', '/fake/options', {
-      json: { latencyMs: 0, failRate: 1, failStatus: 500, apiKey: 'x' },
+      json: { latencyMs: 0, failRate: 1, failStatus: 500, apiKey: 'x', models: {} },
     });
     await fakeProbe();
 
@@ -377,6 +444,10 @@ describe('POST /reset', () => {
     expect(await send('POST', '/fake/options')).toMatchObject({
       json: { options: { latencyMs: 5, failRate: 0, failStatus: null, apiKeyRequired: false } },
     });
+    expect(await send('POST', '/fake/options')).toMatchObject({
+      json: { options: { models: null } },
+    });
+    expect((await fakeModel('jev-1.14.0')).status).toBe(200);
     expect((await fakeQuestion()).status).not.toBe(401);
     expect((await fakeQuestion()).status).not.toBe(500);
   });

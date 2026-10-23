@@ -93,3 +93,22 @@ export interface FeedbackEvent {
 export function feedbackEvents(control: Control, email: string): Promise<FeedbackEvent[]> {
   return control.sql<FeedbackEvent[]>('feedbackEvents', { email });
 }
+
+/**
+ * Gives the account an active personal model of its own (a marked, never-scored one), which the
+ * model editor counts as a model that restarts. Seed it after the account exists.
+ */
+export async function seedActiveUserModel(control: Control, email: string): Promise<void> {
+  const done = await control.sql<{ seeded: number }>('seedActiveUserModel', { email });
+  expect(done.seeded, `${email} is a live account without an active model`).toBe(1);
+}
+
+/** Removes every model `seedActiveUserModel` made. */
+export async function clearSeededUserModels(control: Control): Promise<void> {
+  await control.sql<{ deleted: number }>('clearSeededUserModels', {});
+}
+
+/** Forgets the model probes, the resolution, the watch state and the impact count. */
+export async function clearModelState(control: Control): Promise<void> {
+  await control.sql<{ deleted: number }>('clearModelState', {});
+}

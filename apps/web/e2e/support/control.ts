@@ -53,6 +53,8 @@ export interface FakeOptions {
   failStatus?: number;
   /** A string requires `Authorization: Bearer <apiKey>`; null lifts the requirement. */
   apiKey?: string | null;
+  /** Requested model id -> answered id; any other id gets 404 model_not_found. null = every id is answered `jev-fake` again. */
+  models?: Record<string, string> | null;
 }
 
 export interface FakeOptionsView {
@@ -60,6 +62,7 @@ export interface FakeOptionsView {
   failRate: number;
   failStatus: number | null;
   apiKeyRequired: boolean;
+  models: Record<string, string> | null;
 }
 
 export interface ArticleState {
