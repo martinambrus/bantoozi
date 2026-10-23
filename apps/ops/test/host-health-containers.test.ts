@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { HostHealthDetailSchema } from '@bantoozi/shared';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Each run spawns the script (and its docker stub) with a 60 s spawn timeout, and the last test runs it twice.
+vi.setConfig({ testTimeout: 120_000 });
 
 /**
  * S17 (spec 11 §6.1 "Service health": repeated OOM/restarts): `infra/scripts/host-health.sh` must put

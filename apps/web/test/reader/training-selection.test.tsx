@@ -20,6 +20,7 @@ import {
 } from './support.js';
 import { likeOf } from './surfaces.js';
 import { acked } from './actions/fake-transport.js';
+import { holdExits } from './exit-hold.js';
 
 const { open } = createReaderHarness();
 
@@ -882,6 +883,7 @@ describe('where the focus goes after a lane bulk rating', () => {
 
   describe.each(['Like', 'Dislike'])('after keyboard %s', (rating) => {
     it('moves to a remaining row when the selected rows leave', async () => {
+      const exits = holdExits();
       const { app } = await open({ path: '/read/for_you', items: numbered(3) });
       await screen.findByRole('article', { name: 'Article 1' });
       await choose(app, 'Article 2', 'Article 3');
@@ -892,6 +894,7 @@ describe('where the focus goes after a lane bulk rating', () => {
       await app.user.keyboard('{Enter}');
 
       expect(titleOf('Article 2')).toHaveFocus();
+      await exits.release();
       await waitFor(() => {
         expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull();
         expect(screen.queryByRole('article', { name: 'Article 3' })).toBeNull();
@@ -900,6 +903,7 @@ describe('where the focus goes after a lane bulk rating', () => {
     });
 
     it('moves to main when every selected row leaves an empty list', async () => {
+      const exits = holdExits();
       const { app } = await open({ path: '/read/for_you', items: numbered(2) });
       await screen.findByRole('article', { name: 'Article 1' });
       await choose(app, 'Article 1', 'Article 2');
@@ -910,6 +914,7 @@ describe('where the focus goes after a lane bulk rating', () => {
       await app.user.keyboard('{Enter}');
 
       expect(titleOf('Article 1')).toHaveFocus();
+      await exits.release();
       await waitFor(() => {
         expect(screen.queryByRole('article', { name: 'Article 1' })).toBeNull();
         expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull();
@@ -1156,6 +1161,7 @@ describe('the selection bar', () => {
 
   it('likes every selected article once, with the request of one that has it, and clears the selection', async () => {
     const { app } = await openFeed([item(1, { analysis: asked('failed', 1) }), item(2), item(3)]);
+    holdExits();
     await choose(app, 'Article 1', 'Article 2');
 
     await app.user.click(bulk(/^Like 2 selected articles$/));
@@ -1266,6 +1272,7 @@ describe('the selection bar', () => {
     const { app } = await openFeed([item(1), item(2, { rating: 1 }), item(3)], {
       me: makeMe({ preferences: { markReadOnRate: false } }),
     });
+    holdExits();
     await choose(app, ...titles(3));
     await app.user.click(bulk(/^Dislike 3 selected articles$/));
     expect(app.calls(RATE)).toHaveLength(0);
@@ -1279,6 +1286,28 @@ describe('the selection bar', () => {
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
     expect(ratedBodies(app).map(({ url, body }) => [url, body['rating'], body['reason']])).toEqual([
       ['/api/v1/articles/1/rating', 1, undefined],
+      ['/api/v1/articles/3/rating', -1, 'off_topic'],
+    ]);
+  });
+
+  it('drops a selected article whose row has left, so the bulk Like leaves its held dislike for the reason', async () => {
+    const { app } = await openFeed([item(1), item(2, { rating: 1 }), item(3)], {
+      me: makeMe({ preferences: { markReadOnRate: false } }),
+    });
+    const exits = holdExits();
+    await choose(app, ...titles(3));
+    await app.user.click(bulk(/^Dislike 3 selected articles$/));
+    await choose(app, 'Article 1', 'Article 2');
+
+    await exits.release();
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 1' })).toBeNull());
+    await app.user.click(bulk(/^Like 1 selected article$/));
+    const reasons = screen.getByRole('group', { name: 'Reason for the dislike' });
+    await app.user.click(within(reasons).getByRole('button', { name: 'Off-topic' }));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating'], body['reason']])).toEqual([
+      ['/api/v1/articles/1/rating', -1, 'off_topic'],
       ['/api/v1/articles/3/rating', -1, 'off_topic'],
     ]);
   });

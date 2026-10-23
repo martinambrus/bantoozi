@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FAKE_LIBRETRANSLATE_LANGUAGES,
@@ -74,13 +74,23 @@ describe('fake LibreTranslate server', () => {
 
   it('never answers in timeout mode', async () => {
     lt.setOptions({ mode: 'timeout' });
-    const aborted = fetch(`${lt.url}/translate`, {
+    // Abort only after the fake has recorded the request, so a late arrival cannot hit the next test.
+    const controller = new AbortController();
+    const pending = fetch(`${lt.url}/translate`, {
       method: 'POST',
       body: JSON.stringify({ q: ['x'], source: 'sk', target: 'en' }),
-      signal: AbortSignal.timeout(150),
+      signal: controller.signal,
     });
-    await expect(aborted).rejects.toThrow();
-    expect(lt.requests).toHaveLength(1);
+    const settled = pending.then(
+      () => 'answered',
+      () => 'rejected',
+    );
+    await vi.waitFor(() => expect(lt.requests).toHaveLength(1), { timeout: 30_000 });
+    expect(
+      await Promise.race([settled, new Promise((r) => setTimeout(() => r('pending'), 150))]),
+    ).toBe('pending');
+    controller.abort();
+    await expect(pending).rejects.toThrow();
   });
 
   it('answers a scripted status with Retry-After, then follows the sequence back to the base mode', async () => {
