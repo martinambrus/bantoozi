@@ -30,14 +30,16 @@ export function openCredentialSession(
     applicationName: 'bantoozi-credentials-cli',
   });
   const db = createDatabase(pool);
+  const effectiveConfig = async (): Promise<CredentialSessionConfig> =>
+    options.effective === undefined
+      ? config
+      : withEffectiveValues(config, await options.effective(db));
   return {
     db,
     config,
+    effectiveConfig,
     async validateInline(payload) {
-      const effective =
-        options.effective === undefined
-          ? config
-          : withEffectiveValues(config, await options.effective(db));
+      const effective = await effectiveConfig();
       const credentials = credentialResolverFromConfig(db, effective, logger);
       const router = createWorkerEngineRouter({ db, config: effective, credentials, logger });
       const handle = createProviderValidateHandler({

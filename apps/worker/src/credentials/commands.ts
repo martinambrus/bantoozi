@@ -79,10 +79,15 @@ export interface CliIo {
   stderr: CliOutput;
 }
 
+const configOf = (session: CredentialCliSession): Promise<CredentialCliConfig> =>
+  session.effectiveConfig?.() ?? Promise.resolve(session.config);
+
 /** One command's database session. */
 export interface CredentialCliSession {
   db: Database;
   config: CredentialCliConfig;
+  /** The configuration a validation records (stored runtime settings over `config`); absent = `config`. */
+  effectiveConfig?: () => Promise<CredentialCliConfig>;
   /** Run `provider.validate` in this process instead of queueing it (`--inline`). */
   validateInline?: (payload: {
     provider: CredentialProvider;
@@ -242,10 +247,16 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
     .command('credentials:status')
     .description('print redacted provider credential metadata and keyring ids')
     .action(
-      command(async ({ db, config }) => {
+      command(async (session) => {
+        const { db, config } = session;
+        const effective = await configOf(session);
         const rows = await listCredentialMetadata(db);
         const lines = PROVIDERS.flatMap((provider) =>
-          describeCredential(provider, rows.find((r) => r.provider === provider) ?? null, config),
+          describeCredential(
+            provider,
+            rows.find((r) => r.provider === provider) ?? null,
+            effective,
+          ),
         );
         print([...lines, describeKeyring(config)]);
       }),
@@ -315,7 +326,7 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
             inline?: boolean;
           },
         ) => {
-          const { db, config } = session;
+          const { db } = session;
           const provider = parseProvider(providerArg);
           const requestedRevision = parseRevision('--expected-revision', options.expectedRevision);
           const requestedCandidate = parseRevision('--candidate-version', options.candidateVersion);
@@ -342,7 +353,9 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
               throw new AppError('CONFLICT', 'Stale or busy credential candidate');
             }
             await session.validateInline({ provider, candidateVersion });
-            print(describeCredential(provider, await currentRow(db, provider), config));
+            print(
+              describeCredential(provider, await currentRow(db, provider), await configOf(session)),
+            );
             return;
           }
 
@@ -359,7 +372,7 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
               (now.candidateStatus !== 'validating' &&
                 now.candidateValidation.checkedAt !== before);
             if (finished) {
-              print(describeCredential(provider, now, config));
+              print(describeCredential(provider, now, await configOf(session)));
               return;
             }
           }
@@ -380,10 +393,11 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
     .action(
       command(
         async (
-          { db, config },
+          session,
           providerArg: string,
           options: { admin: string; candidateVersion?: string; expectedRevision?: string },
         ) => {
+          const { db } = session;
           const provider = parseProvider(providerArg);
           const requestedRevision = parseRevision('--expected-revision', options.expectedRevision);
           const requestedCandidate = parseRevision('--candidate-version', options.candidateVersion);
@@ -394,7 +408,7 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
             provider,
             expectedRevision: requestedRevision ?? row?.revision ?? '0',
             candidateVersion,
-            configFingerprint: providerConfigFingerprint(provider, config),
+            configFingerprint: providerConfigFingerprint(provider, await configOf(session)),
             adminUserId,
           });
           print(
