@@ -48,7 +48,11 @@ export const RESTART_SETTING_KEYS = [
   'translate.libretranslate_url',
 ] as const;
 
-async function staleness(
+/**
+ * The non-throwing core of {@link assertWorkerCurrent}: the error describing why this process is not
+ * what the database now asks for, or null while it is current.
+ */
+export async function workerStaleness(
   db: Executor,
   classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
 ): Promise<StaleWorkerError | null> {
@@ -83,7 +87,7 @@ export async function assertWorkerCurrent(
   db: Executor,
   classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
 ): Promise<void> {
-  const error = await staleness(db, classification);
+  const error = await workerStaleness(db, classification);
   if (error !== null) throw error;
 }
 
@@ -104,7 +108,7 @@ export async function lockWorkerCurrent(
   );
   await shareLockStoredSetting(tx, 'engine.model_pin');
   await shareLockStoredSetting(tx, 'engine.model_resolution');
-  return staleness(tx, classification);
+  return workerStaleness(tx, classification);
 }
 
 /**

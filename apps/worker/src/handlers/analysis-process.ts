@@ -80,6 +80,7 @@ import { facetFeatures, l2Branches, refreshFacetFeatures } from '../classify/fea
 import { buildState, modelInput } from '../classify/model-input.js';
 import { RECOVERY_INTERVAL_MS, failureDisposition } from '../classify/outcomes.js';
 import { runTier1, runTier2, type TranslationDeps } from '../classify/translation.js';
+import { lockWorkerCurrent, workerStaleness, type StaleWorkerError } from '../stale-worker.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 import { resetOnChangedText } from './translation-change.js';
@@ -159,6 +160,27 @@ export function createAnalysisProcessHandler(
   translation: TranslationDeps | undefined,
 ): QueueHandler<'analysis.process'> {
   return async ({ analysisRequestId }) => {
+    // A request is leased only by a current process: a stale one leaves it for the restarted worker
+    // (throwing would end the job with the request pending and no job or intent left).
+    const stale = await workerStaleness(deps.db, classification);
+    if (stale !== null) {
+      deps.logger.warn(
+        {
+          job: 'analysis.process',
+          analysisRequestId,
+          reason: stale.reason,
+          processModel: stale.processModel,
+          pinnedModel: stale.pinnedModel,
+        },
+        'stale worker: request left for a current worker',
+      );
+      await scheduleAt(
+        deps,
+        analysisRequestId,
+        new Date(nowOf(deps).getTime() + stale.retryDelaySeconds * 1000),
+      );
+      return;
+    }
     const claim = await claimAnalysisRequest(deps.db, analysisRequestId, {
       leaseMs: classification.leaseMs,
     });
@@ -358,6 +380,7 @@ class AnalysisRun {
       let tier1Row = this.stages.tier1;
       if (tier1Row?.sourceSha256 !== job.sourceSha256) {
         await this.renewLease();
+        await this.guardCurrent();
         const tier1 = await runTier1(
           this.deps.db,
           this.classification.router,
@@ -378,6 +401,7 @@ class AnalysisRun {
       // Tier 2 only when tier 1 failed; nothing to send (`none`) stays native.
       if (tier1Row?.quality === 'fail') {
         await this.renewLease();
+        await this.guardCurrent();
         const tier2 = await runTier2(
           this.deps.db,
           this.classification.router,
@@ -608,6 +632,7 @@ class AnalysisRun {
     }
     this.calls += 1;
     await this.renewLease();
+    await this.guardCurrent();
     const outcome = await this.classification.router.ask({
       ...request,
       articleId: this.request.articleId,
@@ -694,7 +719,10 @@ class AnalysisRun {
       },
     });
 
+    let stale: StaleWorkerError | null = null;
     const published = await retryTransaction(deps.db, async (tx) => {
+      stale = await lockWorkerCurrent(tx, this.classification);
+      if (stale !== null) return 'stale' as const;
       const lock = await lockAnalysisRequest(tx, request.id, this.leaseToken);
       if (lock === 'lost') return 'lost' as const;
       if (lock === 'revoked') {
@@ -729,6 +757,7 @@ class AnalysisRun {
       }
       return cachesFilled ? ('published' as const) : ('complete' as const);
     });
+    if (stale !== null) return this.staleRelease(stale);
     deps.logger.info(
       { analysisRequestId: request.id, outcome: published, cards: result.match.cards.length },
       'analysis request processed',
@@ -738,12 +767,13 @@ class AnalysisRun {
   /**
    * Fill the shared current caches (missing, incompatible or lower-precedence entries, never a newer
    * compatible answer: `fill` mode) with the result, only when the live article revision, question
-   * sets, card text mode, language mode, pinned model and the live model states all equal the frozen
-   * ones; each card also needs its live question hash. A result that no longer matches stays
-   * request-specific (training only). The request's own translation of the live source is stored
-   * first; when it changes the effective text the article's current facets were built from, the
-   * article is reset and re-enriched from it as a re-translation is, and nothing else is filled
-   * (D-92). Level-2 rows it writes rebuild the stored facet row's features (D-93).
+   * sets, card text mode and language mode all equal the frozen ones; it runs only inside the
+   * completion transaction, after `lockWorkerCurrent` found this process current. Each card also
+   * needs its live question hash. A result that no longer matches stays request-specific (training
+   * only). The request's own translation of the live source is stored first; when it changes the
+   * effective text the article's current facets were built from, the article is reset and
+   * re-enriched from it as a re-translation is, and nothing else is filled (D-92). Level-2 rows it
+   * writes rebuild the stored facet row's features (D-93).
    */
   private async fillCurrentCaches(
     tx: Transaction,
@@ -883,6 +913,20 @@ class AnalysisRun {
     if (!saved) throw new RunEnded();
   }
 
+  /** Before a model or translator call: a stale process hands the request back instead. */
+  private async guardCurrent(): Promise<void> {
+    const stale = await workerStaleness(this.deps.db, this.classification);
+    if (stale !== null) return this.staleRelease(stale);
+  }
+
+  /** Back to pending without an attempt, due when the restarted worker is expected. */
+  private staleRelease(stale: StaleWorkerError): Promise<never> {
+    return this.defer(
+      new Date(nowOf(this.deps).getTime() + stale.retryDelaySeconds * 1000),
+      'stale_worker',
+    );
+  }
+
   /** Back to pending at `at` without a failure attempt, with the delayed intent that resumes it. */
   private async defer(
     at: Date,
@@ -986,7 +1030,7 @@ function frozenStates(
   return { translation, variant, enrich: build('enrich'), match: build('match') };
 }
 
-/** Whether the live configuration still is the frozen one (sets and modes; the pinned model only has to be of the frozen model's family). */
+/** Whether the live configuration still is the frozen one (question sets, card text mode and language mode; the model is not compared: the fenced completion decides that). */
 function sameFrozenConfig(snapshot: AnalysisInputSnapshot, config: ClassificationConfig): boolean {
   const { enrich, match } = snapshot.questionSets;
   return (
