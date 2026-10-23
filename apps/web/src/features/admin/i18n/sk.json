@@ -203,7 +203,7 @@
       "latestHint": "Jev sa každých pár hodín pýta, ktoré vydanie jev-latest označuje. Nové vydanie tej istej hlavnej verzie zachová hodnotenia aj osobné modely.",
       "pinned": "Použiť jedno vydanie",
       "pinnedHint": "Zadajte id vydania, napríklad jev-1.13.0.",
-      "idRejected": "Použite najviac 64 písmen, číslic a znakov . _ : -.",
+      "idRejected": "Použite najviac 64 písmen, číslic a znakov . _ : + -; prvým znakom musí byť písmeno alebo číslica.",
       "resolves": "Ukazuje na {{model}} · overené {{time}}",
       "unresolved": "Zatiaľ nezistené. Použite Overiť teraz alebo počkajte na ďalšiu plánovanú kontrolu.",
       "checkNow": "Overiť teraz",

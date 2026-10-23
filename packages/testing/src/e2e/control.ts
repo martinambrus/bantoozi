@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
+import { isModelId } from '@bantoozi/shared';
+
 import { closeServer, listenLoopback } from '../fake-http.js';
 import type { FakeTypeSafeOptions, FakeTypeSafeServer } from '../fake-typesafe.js';
 import { E2E_FEED_KEYS, isE2eFeedKey, type E2eFeedKey } from './env.js';
@@ -97,7 +99,6 @@ const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.is
 
 const MAX_LATENCY_MS = 60_000;
 
-const MODEL_ID = /^[A-Za-z0-9._:-]{1,64}$/;
 const MAX_MODEL_ENTRIES = 16;
 
 /** A table of requested model ids to answered ones; `{}` is valid on purpose (every id is unknown). */
@@ -106,9 +107,7 @@ function isModelTable(value: unknown): value is Record<string, string> {
   const entries = Object.entries(value);
   return (
     entries.length <= MAX_MODEL_ENTRIES &&
-    entries.every(
-      ([key, answered]) => MODEL_ID.test(key) && isString(answered) && MODEL_ID.test(answered),
-    )
+    entries.every(([key, answered]) => isModelId(key) && isString(answered) && isModelId(answered))
   );
 }
 

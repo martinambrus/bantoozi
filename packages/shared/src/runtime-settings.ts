@@ -1,4 +1,4 @@
-import { JEV_LATEST_ALIAS, isConcreteJevModel, isModelAlias } from './model-id.js';
+import { JEV_LATEST_ALIAS, isModelAlias, isModelId, isPinnedModel } from './model-id.js';
 import { EngineModelResolutionSchema, parseSetting, type SettingKey } from './settings.js';
 
 /**
@@ -144,16 +144,13 @@ export function validateRuntimeSetting(
   if (parsed === null) return { ok: true, value: null };
   switch (key) {
     case 'engine.typesafe_model':
-      if (
-        ctx.production &&
-        !isConcreteJevModel(parsed as string) &&
-        !isModelAlias(parsed as string)
-      ) {
+      if (ctx.production && !isPinnedModel(parsed as string) && !isModelAlias(parsed as string)) {
         return {
           ok: false,
           message: `production needs a pinned model version such as jev-1.13.0, or ${JEV_LATEST_ALIAS}`,
         };
       }
+      if (!isModelId(parsed as string)) return { ok: false, message: 'not a valid model id' };
       return { ok: true, value: parsed };
     case 'engine.typesafe_base_url':
     case 'engine.ollama_base_url':

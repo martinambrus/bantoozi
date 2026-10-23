@@ -368,6 +368,14 @@ describe('the fake TypeSafe server', () => {
     expect((await fakeModel('jev-1.14.0')).status).toBe(200);
   });
 
+  it('accepts model ids with build metadata in a model table', async () => {
+    const table = { 'jev-latest': 'jev-1.14.0+build5' };
+    expect(await send('POST', '/fake/options', { json: { models: table } })).toMatchObject({
+      json: { options: { models: table } },
+    });
+    await send('POST', '/fake/options', { json: { models: null } });
+  });
+
   it('accepts an empty model table: every id is then unknown', async () => {
     expect(await send('POST', '/fake/options', { json: { models: {} } })).toMatchObject({
       json: { options: { models: {} } },

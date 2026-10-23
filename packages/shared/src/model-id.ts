@@ -19,7 +19,12 @@ export function isModelUnavailableDetail(detail: string | undefined): boolean {
 }
 
 /** The shape of any model id the app stores, probes or puts in a job payload. */
-export const MODEL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/;
+export const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$/;
+
+/** Whether a string has the shape of a model id: the one rule every validator builds on. */
+export function isModelId(model: string): boolean {
+  return MODEL_ID_PATTERN.test(model);
+}
 
 /** Exactly `jev-latest`: case-sensitive, no trimming. */
 export function isModelAlias(model: string): boolean {
@@ -33,12 +38,12 @@ const CONCRETE_JEV_MODEL = /^jev-\d+\.\d+\.\d+(?:[-+.][\w.-]+)?$/;
 
 /** A pinned release id of any vendor prefix: what `TYPESAFE_MODEL` and the engine accept in production. */
 export function isPinnedModel(model: string): boolean {
-  return PINNED_MODEL.test(model);
+  return MODEL_ID_PATTERN.test(model) && PINNED_MODEL.test(model);
 }
 
 /** A concrete Jev release (`jev-1.13.0`, `jev-1.14.0-rc1`): the only thing an alias can resolve to. */
 export function isConcreteJevModel(model: string): boolean {
-  return CONCRETE_JEV_MODEL.test(model);
+  return MODEL_ID_PATTERN.test(model) && CONCRETE_JEV_MODEL.test(model);
 }
 
 /** The upgrade family of a model id: `jev-<major>` for a concrete Jev release, any other id is its own family. */

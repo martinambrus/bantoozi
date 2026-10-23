@@ -1,6 +1,7 @@
 import {
   isConcreteJevModel,
   isModelAlias,
+  isModelId,
   isPinnedModel,
   MODEL_UNAVAILABLE_DETAIL,
   systemClock,
@@ -101,7 +102,7 @@ function parseUsage(json: unknown): { inputTokens: number; outputTokens: number 
 
 /** Shows a provider-supplied model id in a detail only when it looks like one. */
 function shownModel(model: string): string {
-  return /^[A-Za-z0-9._:-]{1,64}$/.test(model) ? model : 'unrecognized';
+  return isModelId(model) ? model : 'unrecognized';
 }
 
 function parseJson(body: Uint8Array): unknown {
