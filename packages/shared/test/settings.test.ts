@@ -52,6 +52,7 @@ const SPEC_KEYS = [
   'engine.budget_alerts',
   'engine.laya',
   'engine.model_pin',
+  'engine.model_impact',
   'engine.model_probe',
   'engine.model_resolution',
   'engine.model_watch',

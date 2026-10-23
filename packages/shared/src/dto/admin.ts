@@ -3,11 +3,15 @@ import { z } from 'zod';
 import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
 import { ENV_RANGES } from '../env-ranges.js';
 import { TRANSLATE_SKIP_REASONS } from '../jobs.js';
+import { JEV_LATEST_ALIAS, MODEL_ID_PATTERN } from '../model-id.js';
 import { MIN_FETCH_INTERVAL_MAX_S, MIN_FETCH_INTERVAL_MIN_S, PlanLimitsSchema } from '../plans.js';
 import { RUNTIME_SETTING_KEYS } from '../runtime-settings.js';
 import { RankerThresholdsSchema } from '../ranker-config.js';
 import {
   CardTextModeSchema,
+  EngineModelImpactSchema,
+  EngineModelProbesSchema,
+  EngineModelResolutionSchema,
   LanguageModesSchema,
   QuestionSetsActiveSchema,
   SETTINGS,
@@ -323,6 +327,74 @@ export const TranslationsReprocessBodySchema = z
   .object({ reasons: z.array(z.enum(TRANSLATE_SKIP_REASONS)).min(1).max(3).optional() })
   .strict();
 export const QueuedSchema = z.object({ queued: z.literal(true) }).strict();
+
+// ── Engine: the TypeSafe model (visible-learning §4.1, JEV-5) ────────────────────────────────────
+
+/** `POST /admin/engine/model-probe`: the model id to ask Jev about (the probe job's payload rule). */
+export const ModelProbeBodySchema = z
+  .object({ model: z.string().regex(MODEL_ID_PATTERN, 'invalid model id') })
+  .strict();
+export type ModelProbeBody = z.infer<typeof ModelProbeBodySchema>;
+
+/**
+ * `GET /admin/engine/model`: what the model editor shows and polls. `now` is the API clock: a
+ * probe's freshness is judged against it, never against the browser's. `impact` is `null` until a
+ * worker that knows the count has recorded a probe.
+ */
+export const AdminEngineModelSchema = z
+  .object({
+    now: IsoTimestampSchema,
+    setting: z
+      .object({
+        value: z.string().min(1).max(200),
+        source: z.enum(['env', 'stored', 'last_good']),
+      })
+      .strict(),
+    resolution: EngineModelResolutionSchema.nullable(),
+    pin: z
+      .object({
+        model: z.string().min(1).max(200),
+        alias: z.literal(JEV_LATEST_ALIAS).optional(),
+        since: IsoTimestampSchema,
+      })
+      .strict()
+      .nullable(),
+    watch: z
+      .object({
+        lastCheck: z
+          .object({
+            at: IsoTimestampSchema,
+            ok: z.boolean(),
+            error: z.string().min(1).max(200).optional(),
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
+    probes: EngineModelProbesSchema,
+    impact: EngineModelImpactSchema.nullable(),
+  })
+  .strict();
+export type AdminEngineModel = z.infer<typeof AdminEngineModelSchema>;
+
+/** `409 CONFLICT` details of a model change without a fresh probe of the new value. */
+export const ModelProbeRequiredDetailsSchema = z
+  .object({ reason: z.literal('model_probe_required'), model: z.string().min(1).max(200) })
+  .strict();
+export type ModelProbeRequiredDetails = z.infer<typeof ModelProbeRequiredDetailsSchema>;
+
+/** `409 CONFLICT` details of a model change whose fresh probe did not confirm the value. */
+export const ModelProbeFailedDetailsSchema = z
+  .object({
+    reason: z.literal('model_probe_failed'),
+    model: z.string().min(1).max(200),
+    /** The model Jev named instead, when it named one. */
+    answered: z.string().min(1).max(200).optional(),
+    error: z.string().min(1).max(200),
+    at: IsoTimestampSchema,
+  })
+  .strict();
+export type ModelProbeFailedDetails = z.infer<typeof ModelProbeFailedDetailsSchema>;
 
 /** Sanitized capability metadata recorded by `provider.validate` (spec 04 §1.2). */
 export const ProviderCapabilitiesSchema = z
