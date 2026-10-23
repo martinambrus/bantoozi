@@ -1,8 +1,16 @@
 import { auc } from '../learn/metrics.js';
+import { murmur3 } from '../learn/murmur3.js';
 import { fitPlatt, type PlattParams } from '../learn/platt.js';
 
 import { estimateFeatures } from './features.js';
-import { fitLogistic, pruneWeights, timeFold, type FitData, type FitParams } from './fit.js';
+import {
+  featureSupport,
+  fitLogistic,
+  pruneWeights,
+  timeFold,
+  type FitData,
+  type FitParams,
+} from './fit.js';
 import { ESTIMATE_SPEC } from './spec.js';
 import {
   DEFAULT_ESTIMATE_OPTIONS,
@@ -45,7 +53,7 @@ function fitPruned(
   keep: number,
 ): { weights: Float64Array; bias: number } | null {
   const fit = fitLogistic(data, rows, params);
-  if (fit !== null) pruneWeights(fit.weights, names, keep);
+  if (fit !== null) pruneWeights(fit.weights, names, keep, featureSupport(data, rows));
   return fit;
 }
 
@@ -66,6 +74,7 @@ export function trainEstimateModel(
   const names: string[] = [];
   const features: Int32Array[] = [];
   const labels = new Uint8Array(n);
+  const keys = new Uint32Array(n);
   ordered.forEach((sample, index) => {
     const feats = estimateFeatures(sample);
     const row = new Int32Array(feats.length);
@@ -80,8 +89,9 @@ export function trainEstimateModel(
     });
     features.push(row);
     labels[index] = sample.rating === 1 ? 1 : 0;
+    keys[index] = murmur3(sample.articleId);
   });
-  const data: FitData = { features, labels, vocabSize: names.length };
+  const data: FitData = { features, labels, keys, vocabSize: names.length };
   const params = (suffix: string): FitParams => ({
     epochs: opts.epochs,
     learningRate: opts.learningRate,
