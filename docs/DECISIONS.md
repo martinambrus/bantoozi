@@ -3271,3 +3271,17 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   worker containers' 120 s `stop_grace_period`; a model call longer than that is failed by pg-boss and its lease lapses
   by expiry. Known: while an ordinary equivalent job is pending, a replacement carrying the hidden field is not seen as
   its duplicate, so the relay re-offers it until that job finishes.
+- D-320: 2026-10-24 (DPF-6…DPF-8 of docs/design/visible-learning.md; D-270 supersedes the design's 15 s offer toast) —
+  Seen-based "Show fewer like these?" offers and a feed fallback. Offers are tenant rows of `dislike_pattern_offers`
+  (migration 0036; RLS; API SELECT/INSERT/UPDATE; cascade on user deletion) inserted in the rating transaction; the
+  response's strict `pattern` union discriminates `card` | `feed` and carries `offerId`. `POST
+  /articles/:id/pattern-offer {offerId, event}` records `seen` after 1 s of visible toast, or `accepted`/`dismissed`
+  (any event fills `seen_at`; first values win; only the offer's own user and rated article match). Only a seen offer
+  starts the 14-day cooldown of its card family or feed, and an unanswered offer of the same scope from the last 10
+  minutes holds back another, so a quick series or "Dislike all" yields one offer; the web keeps one sticky offer toast
+  per scope next to each rating's own undo toast. Without a deciding held card the same similarity check runs over the
+  reader's latest 200 ratings of the last 30 days on the lowest-id subscribed carrier feed (quality dislikes excluded)
+  and offers "Make a Never card from these", which opens the Never editor with the articles that load; "Similar unread
+  articles in this feed will be ranked lower." shows only while estimates are on, and no ranking claim is made while
+  similar demotion is off. Measured on a heavy reader: 2–3 ms for the two extra queries, existing indexes. Older web
+  bundles reject the union until the D-163 reload bar.

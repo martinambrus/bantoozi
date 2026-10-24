@@ -125,6 +125,7 @@ sequences have no default API grant.
 | `articles` | `UPDATE (story_cluster_id)` | mute-story |
 | `interest_cards` | `INSERT`; `UPDATE (retired_at, title, topic_ids, i18n, slug)` | card create/reuse (un-retire), admin library and promotion (`shared` → `public`). **Never** the text or examples: cards are immutable (spec 05 §5.1) |
 | `feedback_events` | `INSERT` | reader actions (append-only; rows disappear only through `ON DELETE CASCADE` when the worker purges a user) |
+| `dislike_pattern_offers` | `SELECT, INSERT, UPDATE` | tenant-scoped offer insertion in the rating transaction and idempotent impression/answer events (D-320; migration 0036); account erasure cascades |
 | `subscriptions`, `user_feed_preferences`, `user_cards`, `user_labels`, `user_rules`, `api_mutations` | `INSERT, UPDATE, DELETE` | RLS applies; idempotency records are repository-internal |
 | `user_article` | `INSERT (user_id, article_id, opened_at, read_at, rating, reason, rated_at, dwell_ms, bookmarked_at, archived_at, label_ids, feedback_prompted_at, state_version)`; `UPDATE` on those reader-state columns except the primary key, plus `label_suggestions` | rating/read/bookmark actions; ranking columns are worker-only |
 | `card_suggestions` | `UPDATE (dismissed_at)` | dismiss suggestion |
