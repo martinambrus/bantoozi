@@ -165,6 +165,20 @@ describe('EngineRouter.ask: a successful logical request', () => {
 });
 
 describe('EngineRouter.ask: request validation and demand', () => {
+  it.each(['translate', 'credential_probe', 'card_draft', 'model_probe', 'unknown'])(
+    'refuses %s at the ask boundary before dispatch',
+    async (kind) => {
+      const { router, store, typesafe } = setup();
+      const outcome = await router.ask(request({ kind: kind as EngineRequest['kind'] }));
+      expect(outcome).toMatchObject({
+        ok: false,
+        reason: 'invalid_request',
+        detail: 'kind: unknown',
+      });
+      expect(store.reservations).toHaveLength(0);
+      expect(typesafe!.calls).toHaveLength(0);
+    },
+  );
   it.each([
     ['no questions', { questions: {} }],
     ['a bad question key', { questions: { 'bad key': QUESTIONS.q1! } }],
@@ -1181,6 +1195,23 @@ describe('EngineRouter: eval routers (spec 04 §1)', () => {
 });
 
 describe('EngineRouter: status and advisory checks', () => {
+  it('excludes eval from status and advisory spend, while charging non-live probes', async () => {
+    const { router, store } = setup();
+    const reserve = (kind: 'eval' | 'model_probe', estimateUsd: number) =>
+      store.reserveSpend({
+        day: '2026-09-26',
+        engine: 'typesafe',
+        kind,
+        estimateUsd,
+        priority: 'bulk',
+        authorization: kind === 'eval' ? EVAL_AUTH : { type: 'model_probe', model: 'jev-latest' },
+      });
+    expect(await reserve('eval', 10)).not.toBeNull();
+    expect(await reserve('model_probe', 0.6)).not.toBeNull();
+    expect(await router.status()).toMatchObject({ spendTodayUsd: 0.6 });
+    expect(await router.canSpend(1.4, 'bulk')).toBe(true);
+    expect(await router.canSpend(1.5, 'bulk')).toBe(false);
+  });
   it('reports credentials, breakers, spend and LLM calls', async () => {
     const { router } = setup({
       typesafe: null,

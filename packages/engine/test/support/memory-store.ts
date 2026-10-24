@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  CALL_KIND_PROFILES,
+  kindMatchesAuthorization,
   PLATFORM_USER_ID,
   type BudgetSnapshot,
   type CallKind,
@@ -62,7 +64,7 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
   };
   const committed = (day: string): number =>
     reservations
-      .filter((r) => r.day === day && r.kind !== 'eval')
+      .filter((r) => r.day === day && !CALL_KIND_PROFILES[r.kind].budgetExempt)
       .reduce((sum, r) => sum + (r.status === 'settled' ? (r.actualUsd ?? 0) : r.reservedUsd), 0);
 
   function addUsage(row: UsageRow): void {
@@ -99,7 +101,7 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
 
     async reserveSpend(input) {
       if (!store.authorize(input.authorization)) return null;
-      if ((input.kind === 'eval') !== (input.authorization.type === 'eval')) return null;
+      if (!kindMatchesAuthorization(input.kind, input.authorization.type)) return null;
       if (input.callCap !== undefined) {
         const group = capKinds(input.kind);
         const used = reservations.filter(
@@ -107,7 +109,7 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
         ).length;
         if (used + 1 > input.callCap) return null;
       }
-      if (input.kind !== 'eval') {
+      if (!CALL_KIND_PROFILES[input.kind].budgetExempt) {
         const limit =
           input.priority === 'interactive' ? budget() * (1 + INTERACTIVE_ALLOWANCE) : budget();
         if (committed(input.day) + input.estimateUsd > limit + USD_EPSILON) return null;

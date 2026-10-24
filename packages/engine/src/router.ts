@@ -1,4 +1,6 @@
 import {
+  ASK_KINDS,
+  BUDGET_EXEMPT_KINDS,
   conservativeRequestTokens,
   demandBasisOf,
   isAppError,
@@ -114,7 +116,7 @@ const MAX_DETAIL_LENGTH = 200;
 const MAX_CARD_IDS = 10_000;
 const DIGEST = /^[A-Za-z0-9+/=_-]{1,128}$/;
 const REASON = /^[a-z][a-z0-9_]{0,31}$/;
-const ASK_KINDS: ReadonlySet<string> = new Set(['enrich', 'match', 'cluster', 'suggest', 'eval']);
+const ASK_KIND_SET: ReadonlySet<string> = new Set(ASK_KINDS);
 /** `settingDefault` of the cap keys does not depend on the environment. */
 const NO_ENV: SettingEnvDefaults = { dailyBudgetUsd: 0, languageModes: {}, signupMode: 'invite' };
 
@@ -448,7 +450,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
   /** Why a request cannot be sent to any provider (a log-safe detail), or undefined. */
   function requestProblem(req: EngineRequest): string | undefined {
     if (typeof req !== 'object' || req === null) return 'request: not an object';
-    if (!ASK_KINDS.has(req.kind)) return 'kind: unknown';
+    if (!ASK_KIND_SET.has(req.kind)) return 'kind: unknown';
     if (req.kind === 'eval' && !evalRouter) return 'kind: eval needs an eval router';
     if (req.priority !== 'interactive' && req.priority !== 'bulk') return 'priority: unknown';
     const authorization: unknown = req.authorization;
@@ -1203,7 +1205,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         metadata('typesafe'),
         metadata('ollama'),
         breaker.states(),
-        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: ['eval'] }),
+        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: [...BUDGET_EXEMPT_KINDS] }),
         budgetUsd(),
       ]);
       return {
@@ -1220,7 +1222,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       if (!Number.isFinite(estimateUsd) || estimateUsd < 0) return false;
       if (evalBudget !== undefined) return estimateUsd <= evalBudget.remainingUsd + USD_EPSILON;
       const [snapshot, budget] = await Promise.all([
-        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: ['eval'] }),
+        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: [...BUDGET_EXEMPT_KINDS] }),
         budgetUsd(),
       ]);
       return admitsSpend({

@@ -1,5 +1,7 @@
 import {
   AppError,
+  BUDGET_EXEMPT_KINDS,
+  CALL_KIND_PROFILES,
   CALL_KINDS,
   DECISION_KINDS,
   EngineCircuitSchema,
@@ -177,7 +179,7 @@ async function committedProductionUsd(db: Executor, day: string): Promise<number
   const result = await db.execute<{ usd: string }>(sql`
     SELECT coalesce(sum(CASE WHEN r.status = 'settled' THEN r.actual_usd ELSE r.reserved_usd END), 0)::text AS usd
       FROM engine_reservations r
-     WHERE r.day = ${day}::date AND r.kind <> 'eval'`);
+     WHERE r.day = ${day}::date AND NOT (r.kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[]))`);
   return Number(result.rows[0]?.usd ?? '0');
 }
 
@@ -277,7 +279,7 @@ function insertCallSql(row: EngineCallRow, reservationId: string | null, cost: s
 type ReservationRow = {
   day: string;
   engine: string;
-  kind: string;
+  kind: CallKind;
   status: 'reserved' | 'settled' | 'uncertain';
 };
 
@@ -340,7 +342,7 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
         outputTokens: Math.max(0, call.outputTokens - previous.output),
         costUsd: Math.max(0, cost - Number(previous.cost)),
       });
-      if (reservation.kind !== 'eval')
+      if (!CALL_KIND_PROFILES[reservation.kind].budgetExempt)
         await markBudgetCrossings(tx, reservation.day, fallbackBudget);
       return;
     }
@@ -372,7 +374,8 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
       outputTokens: call.outputTokens,
       costUsd: cost,
     });
-    if (reservation.kind !== 'eval') await markBudgetCrossings(tx, reservation.day, fallbackBudget);
+    if (!CALL_KIND_PROFILES[reservation.kind].budgetExempt)
+      await markBudgetCrossings(tx, reservation.day, fallbackBudget);
   }
 
   return {
@@ -412,7 +415,7 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
                AND r.kind = ANY(${sql.param([...capKinds(input.kind)])}::text[])`);
           if ((used.rows[0]?.calls ?? 0) + 1 > input.callCap) return null;
         }
-        const production = input.kind !== 'eval';
+        const production = !CALL_KIND_PROFILES[input.kind].budgetExempt;
         if (production) {
           const budget = await dailyBudgetUsd(tx, fallbackBudget);
           const committed = await committedProductionUsd(tx, input.day);
