@@ -212,6 +212,7 @@
       "checking": "Zisťuje sa, ktoré vydanie jev-latest označuje…",
       "checkTimeout": "Jev zatiaľ neodpovedal. Skontrolujte, či beží worker, a skúste to znova.",
       "checkFailed": "Overenie {{time}} zlyhalo ({{reason}}). Vydanie zostáva {{model}}.",
+      "checkFailedUnresolved": "Overenie {{time}} zlyhalo ({{reason}}). Vydanie pre alias zatiaľ nie je zistené.",
       "probing": "Zisťuje sa, či Jev poskytuje {{model}}…",
       "probeAnswered": "Jev odpovedal {{answered}} namiesto {{model}}, preto sa nič neuložilo.",
       "probeRefused": "Jev nevedel potvrdiť {{model}} ({{reason}}), preto sa nič neuložilo.",

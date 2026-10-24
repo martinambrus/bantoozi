@@ -206,6 +206,7 @@
       "checking": "Asking Jev which release jev-latest stands for…",
       "checkTimeout": "Jev has not answered yet. Check that a worker is running, then try again.",
       "checkFailed": "The check at {{time}} failed ({{reason}}). The release stays {{model}}.",
+      "checkFailedUnresolved": "The check at {{time}} failed ({{reason}}). The alias is still unresolved.",
       "probing": "Asking Jev whether it serves {{model}}…",
       "probeAnswered": "Jev answered {{answered}} for {{model}}, so nothing was saved.",
       "probeRefused": "Jev could not confirm {{model}} ({{reason}}), so nothing was saved.",

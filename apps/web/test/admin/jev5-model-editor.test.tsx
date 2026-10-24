@@ -823,6 +823,47 @@ describe('JEV-5 Check now', () => {
     expect(group()).toHaveTextContent(DEFAULT);
   });
 
+  it.each(['en', 'sk'] as const)(
+    'shows a failed check with a dormant resolution in %s',
+    async (language) => {
+      const { app, model } = await open({
+        language,
+        saved: ALIAS,
+        savedAt: modelAgo(60),
+        status: {
+          ...aliasStatus('jev-1.14.0', modelAgo(11)),
+          pin: { model: DEFAULT, since: T1 },
+        },
+        server: { checkOnRead: 1, checkResult: { ok: false, error: 'timeout' } },
+      });
+      const checkButton = inGroup().getByRole('button', {
+        name: language === 'en' ? 'Check now' : 'Overiť teraz',
+      });
+      await app.user.click(checkButton);
+      await wait(1_800);
+
+      await vi.waitFor(() =>
+        expect(group()).toHaveTextContent(
+          language === 'en'
+            ? `The check at ${printedTime(MODEL_NOW)} failed (Jev did not answer in time.). The alias is still unresolved.`
+            : `Overenie ${printedTime(MODEL_NOW, 'Europe/Bratislava', 'sk')} zlyhalo (Jev neodpovedal včas.). Vydanie pre alias zatiaľ nie je zistené.`,
+        ),
+      );
+      expect(group()).toHaveTextContent(
+        language === 'en' ? 'Not resolved yet.' : 'Zatiaľ nezistené.',
+      );
+      expect(group()).not.toHaveTextContent('jev-1.14.0');
+      expect(group()).not.toHaveTextContent(
+        language === 'en' ? 'The release stays' : 'Vydanie zostáva',
+      );
+      expect(checkButton).not.toHaveAttribute('aria-busy');
+      expect(model.checks).toBe(1);
+      const settled = model.reads;
+      await wait(20_000);
+      expect(model.reads).toBe(settled);
+    },
+  );
+
   it('gives up after 90 seconds, with one request', async () => {
     const { app, model } = await open({
       saved: ALIAS,
@@ -962,6 +1003,7 @@ const REQUIRED = [
   'settings.modelEditor.checking',
   'settings.modelEditor.checkTimeout',
   'settings.modelEditor.checkFailed',
+  'settings.modelEditor.checkFailedUnresolved',
   'settings.modelEditor.probing',
   'settings.modelEditor.probeAnswered',
   'settings.modelEditor.probeRefused',

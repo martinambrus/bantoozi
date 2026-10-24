@@ -293,8 +293,7 @@ export function ModelEditor({
   const checkFailed =
     lastCheck !== null &&
     !lastCheck.ok &&
-    resolution !== null &&
-    Date.parse(lastCheck.at) > Date.parse(resolution.checkedAt);
+    (resolution === null || Date.parse(lastCheck.at) > Date.parse(resolution.checkedAt));
   const when = (iso: string) => whenText(iso, i18n.language, timezone);
   const resetTarget = typeof defaultValue === 'string' ? defaultValue : null;
 
@@ -404,11 +403,16 @@ export function ModelEditor({
           </Hint>
           {checkFailed ? (
             <Hint>
-              {t('settings.modelEditor.checkFailed', {
-                time: when(lastCheck.at),
-                reason: errorWords(t, lastCheck.error),
-                model: resolution.model,
-              })}
+              {t(
+                resolution === null
+                  ? 'settings.modelEditor.checkFailedUnresolved'
+                  : 'settings.modelEditor.checkFailed',
+                {
+                  time: when(lastCheck.at),
+                  reason: errorWords(t, lastCheck.error),
+                  model: resolution?.model,
+                },
+              )}
             </Hint>
           ) : null}
           {checkTimedOut ? <Hint>{t('settings.modelEditor.checkTimeout')}</Hint> : null}
