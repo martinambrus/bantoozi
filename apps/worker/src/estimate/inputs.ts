@@ -1,8 +1,8 @@
 import {
   loadEstimateRatings,
-  loadEstimateModel,
+  loadEstimateState,
   type EstimateRating,
-  type StoredEstimateModel,
+  type EstimateStateRow,
   type Executor,
 } from '@bantoozi/db';
 import {
@@ -10,7 +10,6 @@ import {
   ESTIMATE_SPEC,
   estimateGate,
   estimateInputSha,
-  parseEstimateModel,
   type EstimateOptions,
   type RankerSettings,
 } from '@bantoozi/ranker';
@@ -22,7 +21,7 @@ export interface EstimateInputs {
   ratings: EstimateRating[];
   options: EstimateOptions;
   inputSha: string;
-  state: StoredEstimateModel | null;
+  state: EstimateStateRow | null;
   counts: { n: number; nPos: number; nNeg: number };
 }
 
@@ -45,7 +44,7 @@ export async function loadEstimateInputs(
   const since = new Date(now.getTime() - config.model.historyDays * DAY_MS);
   const ratings = await loadEstimateRatings(db, userId, since);
   const inputSha = estimateInputSha(ratings, options);
-  const state = await loadEstimateModel(db, userId);
+  const state = await loadEstimateState(db, userId);
   const nPos = ratings.filter((r) => r.rating === 1).length;
   return {
     ratings,
@@ -67,7 +66,7 @@ export function estimateAction(inputs: EstimateInputs): 'unchanged' | 'idle' | '
     state !== null &&
     state.spec === ESTIMATE_SPEC &&
     state.metrics['inputSha'] === inputSha &&
-    parseEstimateModel(state) !== null
+    state.parseable
   ) {
     return 'unchanged';
   }

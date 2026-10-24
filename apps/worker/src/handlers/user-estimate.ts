@@ -2,13 +2,13 @@ import {
   appendLearningHistory,
   deleteEstimateModels,
   insertEstimateModel,
-  loadEstimateModel,
+  loadEstimateState,
   lockEstimateUser,
   pruneEstimateModels,
   retryTransaction,
   workerOutbox,
 } from '@bantoozi/db';
-import { ESTIMATE_SPEC, parseEstimateModel } from '@bantoozi/ranker';
+import { ESTIMATE_SPEC } from '@bantoozi/ranker';
 import { canonicalJson, enqueueRank } from '@bantoozi/shared';
 
 import { estimateAction, loadEstimateInputs } from '../estimate/inputs.js';
@@ -63,12 +63,12 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
 
     const outcome = await retryTransaction(deps.db, async (tx) => {
       if (!(await lockEstimateUser(tx, userId))) return 'gone';
-      const current = await loadEstimateModel(tx, userId);
+      const current = await loadEstimateState(tx, userId);
       if (
         current !== null &&
         current.spec === ESTIMATE_SPEC &&
         current.metrics['inputSha'] === inputSha &&
-        parseEstimateModel(current) !== null
+        current.parseable
       ) {
         return 'duplicate';
       }

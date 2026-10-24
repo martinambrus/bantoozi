@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
 import { toDate, type RawTimestamp } from '../timestamps.js';
@@ -43,7 +43,10 @@ export interface StoredEstimateModel {
 export type EstimateStateRow = Omit<
   StoredEstimateModel,
   'userId' | 'intercept' | 'weights' | 'platt'
->;
+> & {
+  /** The full read would pass parseEstimateModel (metrics are normalized to an object). */
+  parseable: boolean;
+};
 
 export interface NewEstimateModel {
   userId: string;
@@ -70,6 +73,19 @@ export async function lockEstimateUser(tx: Transaction, userId: string): Promise
   return result.rows.length > 0;
 }
 
+/**
+ * JSON numbers reach JS through JSON.parse. Its overflow boundary is 2^1024 - 2^970;
+ * smaller magnitudes (including underflow to zero) are finite. Keep the check in SQL so
+ * nightly staleness checks never transfer the weights object.
+ */
+const JSON_NUMBER_OVERFLOW = sql`(power(2::numeric, 1024) - power(2::numeric, 970))`;
+
+function finiteJsonNumber(value: SQL): SQL {
+  return sql`CASE WHEN jsonb_typeof(${value}) = 'number'
+    THEN abs((${value})::text::numeric) < ${JSON_NUMBER_OVERFLOW}
+    ELSE false END`;
+}
+
 /** The user's newest model without its weights, platt and intercept; null when none is stored. */
 export async function loadEstimateState(
   db: Executor,
@@ -83,12 +99,23 @@ export async function loadEstimateState(
     n_pos: number;
     n_neg: number;
     metrics: unknown;
+    parseable: boolean;
   }>(sql`
-    SELECT version, spec, trained_at, n, n_pos, n_neg, metrics FROM user_estimate_models
+    SELECT version, spec, trained_at, n, n_pos, n_neg, metrics,
+           (intercept > '-Infinity'::float8 AND intercept < 'Infinity'::float8
+            AND jsonb_typeof(weights) = 'object'
+            AND NOT jsonb_path_exists(weights,
+              '$.* ? (@.type() != "number" || @ >= $overflow || @ <= -$overflow)',
+              jsonb_build_object('overflow', ${JSON_NUMBER_OVERFLOW}))
+            AND jsonb_typeof(platt) = 'object'
+            AND ${finiteJsonNumber(sql`platt->'a'`)}
+            AND ${finiteJsonNumber(sql`platt->'b'`)}) AS parseable
+      FROM user_estimate_models
      WHERE user_id = ${userId}::uuid ORDER BY version DESC LIMIT 1`);
   const row = result.rows[0];
   if (row === undefined) return null;
   return {
+    parseable: row.parseable,
     version: row.version,
     spec: row.spec,
     trainedAt: toDate(row.trained_at),

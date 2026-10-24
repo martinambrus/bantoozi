@@ -1,4 +1,4 @@
-import { loadEstimateModel } from '@bantoozi/db';
+import { loadEstimateModel, loadEstimateState } from '@bantoozi/db';
 import { parseEstimateModel } from '@bantoozi/ranker';
 import PgBoss from 'pg-boss';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -95,3 +95,73 @@ it('deletes a malformed stored model when the gate closes', async () => {
     await h.deleteSetting('ranker.thresholds');
   }
 });
+
+it.each([
+  ['valid', {}, true],
+  ['empty weights', { weights: {} }, true],
+  ['weights array', { weights: [] }, false],
+  ['weights null', { weights: null }, false],
+  ['weights string', { weights: 'broken' }, false],
+  ['weight string', { weights: { word: '1' } }, false],
+  ['weight null', { weights: { word: null } }, false],
+  ['weight object', { weights: { word: {} } }, false],
+  ['platt array', { platt: [] }, false],
+  ['platt null', { platt: null }, false],
+  ['platt missing fields', { platt: {} }, false],
+  ['platt missing b', { platt: { a: 1 } }, false],
+  ['platt a string', { platt: { a: '1', b: 0 } }, false],
+  ['platt b null', { platt: { a: 1, b: null } }, false],
+  ['metrics array', { metrics: [] }, true],
+] as const)(
+  'light state parseability agrees with the full parser for %s',
+  async (_name, patch, expected) => {
+    const userId = await w.reader(6, 6);
+    await h.dispatch('user.estimate', { userId });
+    for (const [column, value] of Object.entries(patch)) {
+      await h.owner.query(
+        `UPDATE user_estimate_models SET ${column} = $2::jsonb WHERE user_id = $1`,
+        [userId, JSON.stringify(value)],
+      );
+    }
+    const state = await loadEstimateState(h.db, userId);
+    const full = await loadEstimateModel(h.db, userId);
+    expect(full).not.toBeNull();
+    const parseable = full !== null && parseEstimateModel(full) !== null;
+    expect(parseable).toBe(expected);
+    expect(state).toHaveProperty('parseable', parseable);
+    expect(state).not.toHaveProperty('weights');
+    const { config } = await loadRankerSettings(h.db);
+    const inputs = await loadEstimateInputs(h.db, userId, config, new Date());
+    expect(inputs.state).not.toHaveProperty('weights');
+    expect(estimateAction(inputs)).toBe(
+      expected && _name !== 'metrics array' ? 'unchanged' : 'train',
+    );
+  },
+);
+
+it.each([
+  ['NaN', '0', '{"a":1,"b":0}', false],
+  ['Infinity', '0', '{"a":1,"b":0}', false],
+  ['-Infinity', '0', '{"a":1,"b":0}', false],
+  ['0', '1e400', '{"a":1,"b":0}', false],
+  ['0', '-1e400', '{"a":1,"b":0}', false],
+  ['0', '1e-400', '{"a":1,"b":0}', true],
+  ['0', '1.7976931348623158e308', '{"a":1,"b":0}', true],
+  ['0', '0', '{"a":1e400,"b":0}', false],
+  ['0', '0', '{"a":1,"b":-1e400}', false],
+] as const)(
+  'light state matches the parser for intercept %s, weight %s, platt %s',
+  async (intercept, weight, platt, expected) => {
+    const userId = await w.reader(0, 0);
+    await h.owner.query(
+      `INSERT INTO user_estimate_models (user_id, version, spec, n, n_pos, n_neg, intercept, weights, platt, metrics)
+     VALUES ($1, 1, 'test', 0, 0, 0, $2::float8, $3::jsonb, $4::jsonb, '{}')`,
+      [userId, intercept, `{"word":${weight}}`, platt],
+    );
+    const full = await loadEstimateModel(h.db, userId);
+    expect(full).not.toBeNull();
+    const parseable = full !== null && parseEstimateModel(full) !== null;
+    expect(parseable).toBe(expected);
+    expect(await loadEstimateState(h.db, userId)).toHaveProperty('parseable', parseable);
+  },
+);
