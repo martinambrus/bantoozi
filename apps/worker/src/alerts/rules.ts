@@ -39,6 +39,8 @@ export const ALERT_THRESHOLDS = {
   backlogOldestSeconds: 30 * 60,
   outboxSeconds: 5 * 60,
   heartbeatStaleMs: 30 * MINUTE,
+  /** Live-worker window used by Admin (three heartbeat periods). */
+  heartbeatFreshMs: 90_000,
   houseOverduePeriods: 2,
   degradedMinArticles: 20,
   feedsMinSubscribed: 5,
@@ -263,6 +265,34 @@ const serviceRule: AlertRule = {
     const { deps, now } = context;
     const out: Condition[] = [];
     const heartbeats = (await read(context, 'worker.heartbeat')) ?? {};
+    const queueProblems = new Set<string>();
+    for (const entry of Object.values(heartbeats)) {
+      const age = now.getTime() - Date.parse(entry.at);
+      if (!Number.isFinite(age) || Math.abs(age) > ALERT_THRESHOLDS.heartbeatFreshMs) continue;
+      const problems = entry.runtime?.['problems'];
+      if (!Array.isArray(problems)) continue;
+      for (const problem of problems) {
+        if (
+          problem !== null &&
+          typeof problem === 'object' &&
+          !Array.isArray(problem) &&
+          problem['key'] === 'queues.missing' &&
+          typeof problem['message'] === 'string'
+        ) {
+          queueProblems.add(problem['message']);
+        }
+      }
+    }
+    if (queueProblems.size > 0) {
+      out.push({
+        key: 'service.queues_missing',
+        title: 'Missing pg-boss queues',
+        detail: safeText(
+          `Run the migrate job (pnpm db:migrate or the deploy migration step). ${[...queueProblems].join(' ')}`,
+          600,
+        ),
+      });
+    }
     const newest = Math.max(0, ...Object.values(heartbeats).map((entry) => Date.parse(entry.at)));
     if (now.getTime() - newest >= ALERT_THRESHOLDS.heartbeatStaleMs) {
       out.push({
