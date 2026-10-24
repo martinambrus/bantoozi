@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
     problems: () => [],
   },
   queueReadiness: vi.fn(),
+  createDeps: vi.fn(),
   modelsClose: vi.fn(),
   cpuClose: vi.fn(),
   mailClose: vi.fn(),
@@ -44,7 +45,7 @@ vi.mock('../src/readiness.js', () => ({
   startQueueReadiness: h.queueReadiness,
   assertProductionReady: () => [],
 }));
-vi.mock('../src/handlers/deps.js', () => ({ createWorkerDeps: () => ({}) }));
+vi.mock('../src/handlers/deps.js', () => ({ createWorkerDeps: h.createDeps }));
 vi.mock('../src/handlers/index.js', () => ({ createHandlers: () => ({}) }));
 vi.mock('../src/runtime.js', () => ({
   createWorkerRuntime: async () => ({
@@ -88,6 +89,8 @@ const originalInt = new Set(process.listeners('SIGINT'));
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  h.createDeps.mockReturnValue({});
+  h.boss.stop.mockResolvedValue(undefined);
   h.ingestOnly = false;
   h.readinessFailure = false;
   h.boss.schedule.mockImplementation(async (queue: string) => {
@@ -150,5 +153,31 @@ describe('ingest-only queue readiness', () => {
         queues: ['feed.schedule', 'feed.fetch', 'article.extract', '__pgboss__send-it'],
       }),
     );
+  });
+});
+
+describe('shutdown cleanup isolation', () => {
+  it.each(['boss', 'leases'])('continues every cleanup after %s fails', async (failing) => {
+    const { ProcessLeases } = await import('../src/process-leases.js');
+    const drain = vi.spyOn(ProcessLeases.prototype, 'drain');
+    if (failing === 'boss') h.boss.stop.mockRejectedValueOnce(new Error('boss failed'));
+    else drain.mockRejectedValueOnce(new AggregateError([new Error('release failed')]));
+    try {
+      await import('../src/main.js');
+      const terminate = process
+        .listeners('SIGTERM')
+        .find((listener) => !originalTerm.has(listener));
+      terminate?.('SIGTERM');
+      await vi.waitFor(() => expect(h.pool.end).toHaveBeenCalledTimes(2));
+      expect(drain).toHaveBeenCalledOnce();
+      expect(h.readiness.stop).toHaveBeenCalledOnce();
+      expect(h.heartbeat.stop).toHaveBeenCalledOnce();
+      expect(h.modelsClose).toHaveBeenCalledOnce();
+      expect(h.cpuClose).toHaveBeenCalledOnce();
+      expect(h.mailClose).toHaveBeenCalledOnce();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      drain.mockRestore();
+    }
   });
 });

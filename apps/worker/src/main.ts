@@ -182,24 +182,29 @@ async function stop(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   if (settingsTimer !== undefined) clearInterval(settingsTimer);
-  schedules?.stop();
-  try {
-    // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
-    // removed only after the relay and the queue consumers have stopped.
-    await health?.close();
-    await relay?.stop();
-    // Compose gives both workers 120 s: allow 100 s for in-flight calls, leaving 20 s for cleanup.
-    await boss?.stop({ graceful: true, timeout: 100_000, wait: true });
-    await leases.drain();
-    queueReadiness.stop();
-    await heartbeat?.stop();
-    await models.close();
-    await cpuPool.close();
-    mailer.close();
-    await Promise.all([pool.end(), lockPool.end()]);
-  } catch (error) {
-    logger.error({ err: error }, 'worker shutdown failed');
-    process.exitCode = 1;
+  // Keep cleanup ordered, but attempt every step even if an earlier one fails.
+  const steps: (() => unknown)[] = [
+    () => schedules?.stop(),
+    () => health?.close(),
+    () => relay?.stop(),
+    // Remove the heartbeat only after consumers stop. Compose allows 120 s in total.
+    () => boss?.stop({ graceful: true, timeout: 100_000, wait: true }),
+    () => leases.drain(),
+    () => queueReadiness.stop(),
+    () => heartbeat?.stop(),
+    () => models.close(),
+    () => cpuPool.close(),
+    () => mailer.close(),
+    () => pool.end(),
+    () => lockPool.end(),
+  ];
+  for (const cleanup of steps) {
+    try {
+      await cleanup();
+    } catch (error) {
+      logger.error({ err: error }, 'worker shutdown failed');
+      process.exitCode = 1;
+    }
   }
 }
 try {
