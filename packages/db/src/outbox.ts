@@ -69,12 +69,12 @@ async function insertDelayedWorkerIntents(
       FROM (${intentRows(distinct)}) batch
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
-    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_token IS NOT NULL
+    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_until > now()
                                      THEN excluded.available_at
                                      ELSE least(job_outbox.available_at, excluded.available_at) END,
                   lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND (job_outbox.lease_token IS NOT NULL OR excluded.available_at < job_outbox.available_at)`);
+        AND (job_outbox.lease_until > now() OR excluded.available_at < job_outbox.available_at)`);
 }
 
 /**
@@ -109,12 +109,12 @@ export async function enqueueDelayedWorkerIntent(
             greatest(now(), ${availableAt.toISOString()}::timestamptz))
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
-    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_token IS NOT NULL
+    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_until > now()
                                      THEN excluded.available_at
                                      ELSE least(job_outbox.available_at, excluded.available_at) END,
                   lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND (job_outbox.lease_token IS NOT NULL OR excluded.available_at < job_outbox.available_at)
+        AND (job_outbox.lease_until > now() OR excluded.available_at < job_outbox.available_at)
     RETURNING id`);
   return result.rows.length > 0;
 }

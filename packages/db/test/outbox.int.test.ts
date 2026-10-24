@@ -661,3 +661,28 @@ it.each([false, true])(
     expect(pending[0]!.lease_token).toBeNull();
   },
 );
+
+it.each([false, true])(
+  'keeps crashed-relay work due after a delayed insert (batch %s)',
+  async (batch) => {
+    await drain();
+    const intent = buildJobIntent('house.reconcile', {}, { revision: 'expired-lease' });
+    await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    await ctx.owner.query(
+      "UPDATE job_outbox SET lease_until = now() - interval '1 second' WHERE id = $1",
+      [claimed!.id],
+    );
+    const before = (await outboxRows()).find((row) => row.id === claimed!.id)!;
+    await ctx.worker.transaction(async (tx) => {
+      const sender = workerOutbox(tx, { availableAt: new Date(Date.now() + 600_000) });
+      if (batch) await sender.enqueueMany!([intent]);
+      else await sender.enqueue(intent);
+    });
+    expect((await outboxRows()).find((row) => row.id === claimed!.id)!.available_at).toEqual(
+      before.available_at,
+    );
+    const due = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    expect(due.map((row) => row.id)).toEqual([claimed!.id]);
+  },
+);
