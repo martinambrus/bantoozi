@@ -799,12 +799,15 @@ A free per-user word model scores the rows that would otherwise have no P (desig
 - **Pure part** (`packages/ranker/src/estimate/`, D-271): `estimateFeatures(article)` gives distinct binary features
   `t:<tok>` (title tokens of `similarityTokens`, D-268), `b:<a>_<b>` (adjacent title pairs), `e:<stem>` (the first 80
   excerpt tokens, stemmed) and `f:<feedId>`. `ESTIMATE_SPEC` hashes the feature definition; a model of another spec is
-  never scored. `trainEstimateModel` (class-balanced Adagrad, 8 epochs in a per-sample hashed order, L2 1e-4, 5 time-ordered folds,
-  Platt on the out-of-fold scores, the 20,000 weights with the largest contribution `|w| * sqrt(support)`) is pure and
-  byte-deterministic. A sample's place in an epoch depends only on its article id, the seed and the epoch, so one
+  never scored. `trainEstimateModel` (class-balanced Adagrad, 8 epochs in a per-sample hashed order, learning rate 0.15 /
+  sqrt(epoch + 1), the weights and bias averaged over every iterate of the last 4 epochs (D-326), L2 1e-4, 5
+  time-ordered folds, Platt on the out-of-fold scores, the 20,000 averaged weights with the largest contribution
+  `|w| * sqrt(support)`) is pure and byte-deterministic. A sample's place in an epoch depends only on its article id, the seed and the epoch, so one
   rating more or less leaves the others' order unchanged and a retrain moves few scores (D-301);
   `DEFAULT_ESTIMATE_OPTIONS.seed` names the trainer revision (`estimate-v2`), so a stored model of an older revision
-  retrains once at its next trigger. The remaining guarantees are unchanged; `scoreEstimate` gives a P that never
+  retrains once at its next trigger; the stored options hash does the same for an options change (the D-326 learning
+  rate). A day of ageing or a burst of ratings still moves about a quarter of the unseen estimates: those runs change
+  the training data itself. The remaining guarantees are unchanged; `scoreEstimate` gives a P that never
   decreases with the logit. Metrics: counts, pooled out-of-fold AUC, per-feed AUC for feeds with ≥ 10 ratings of both
   classes. Ratings: `loadEstimateRatings` (current explicit ratings within `model.historyDays`, title, excerpt, the
   lowest-id subscribed carrier feed); scoring derives the feed with the same rule.

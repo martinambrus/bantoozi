@@ -10,6 +10,7 @@ export interface FitData {
 
 export interface FitParams {
   epochs: number;
+  /** Initial rate, divided by sqrt(epoch + 1) on each pass. */
   learningRate: number;
   l2: number;
   /** Seeds each epoch's visiting order. */
@@ -78,7 +79,7 @@ export function featureSupport(
   return support;
 }
 
-/** Weighted-class logistic regression by Adagrad on the given rows; null when a class is missing. */
+/** Class-balanced Adagrad, averaging post-update iterates over the last half of the epochs; null when a class is missing. */
 export function fitLogistic(
   data: FitData,
   rows: Int32Array,
@@ -92,11 +93,23 @@ export function fitLogistic(
   const classWeight = [n / (2 * n0), n / (2 * n1)];
   const weights = new Float64Array(data.vocabSize);
   const sums = new Float64Array(data.vocabSize).fill(ACCUMULATOR_START);
+  const averaged = new Float64Array(data.vocabSize);
+  // Match the number of passes made by `epoch < params.epochs`, including a fractional option.
+  const epochs = Math.ceil(params.epochs);
+  const averageStart = Math.floor(epochs / 2);
+  const averageSteps = (epochs - averageStart) * n;
   let bias = 0;
   let biasSum = ACCUMULATOR_START;
-  for (let epoch = 0; epoch < params.epochs; epoch += 1) {
+  let averagedBias = 0;
+  for (let epoch = 0; epoch < epochs; epoch += 1) {
+    if (epoch === averageStart) averaged.set(weights);
+    const averaging = epoch >= averageStart;
+    const learningRate = params.learningRate / Math.sqrt(epoch + 1);
     const order = epochOrder(data.keys, rows, params.seed, epoch);
     for (let k = 0; k < n; k += 1) {
+      // A change at this step contributes to every remaining post-update iterate. Accumulating
+      // weighted deltas also counts the steps where a feature is absent, without a dense scan.
+      const remaining = averaging ? ((epochs - epoch) * n - k) / averageSteps : 0;
       const row = order[k] as number;
       const feats = data.features[row] as Int32Array;
       const label = data.labels[row] as number;
@@ -105,18 +118,21 @@ export function fitLogistic(
       const p = z >= 0 ? 1 / (1 + Math.exp(-z)) : Math.exp(z) / (1 + Math.exp(z));
       const grad = (p - label) * (classWeight[label] as number);
       biasSum += grad * grad;
-      bias -= (params.learningRate / Math.sqrt(biasSum)) * grad;
+      bias -= (learningRate / Math.sqrt(biasSum)) * grad;
+      if (averaging) averagedBias += bias;
       for (let f = 0; f < feats.length; f += 1) {
         const id = feats[f] as number;
         const w = weights[id] as number;
         const g = grad + params.l2 * w;
         const acc = (sums[id] as number) + g * g;
         sums[id] = acc;
-        weights[id] = w - (params.learningRate / Math.sqrt(acc)) * g;
+        const next = w - (learningRate / Math.sqrt(acc)) * g;
+        weights[id] = next;
+        if (averaging) averaged[id] = (averaged[id] as number) + (next - w) * remaining;
       }
     }
   }
-  return { weights, bias };
+  return epochs > 0 ? { weights: averaged, bias: averagedBias / averageSteps } : { weights, bias };
 }
 
 /**

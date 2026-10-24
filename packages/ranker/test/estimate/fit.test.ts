@@ -6,6 +6,8 @@ import {
   fitLogistic,
   pruneWeights,
   timeFold,
+  type FitData,
+  type FitParams,
 } from '../../src/estimate/fit.js';
 import { murmur3 } from '../../src/learn/murmur3.js';
 import { seededRandom } from '../../src/learn/random.js';
@@ -25,7 +27,72 @@ function toy() {
 }
 const all = (n: number) => Int32Array.from({ length: n }, (_, i) => i);
 
+/** Small, dense oracle: explicitly sum every post-update state, including untouched coordinates. */
+function denseAverage(data: FitData, rows: Int32Array, options: FitParams) {
+  const weights = new Float64Array(data.vocabSize);
+  const accumulators = new Float64Array(data.vocabSize).fill(1e-8);
+  const total = new Float64Array(data.vocabSize);
+  const positives = Array.from(rows).reduce((sum, row) => sum + data.labels[row]!, 0);
+  const classWeights = [
+    rows.length / (2 * (rows.length - positives)),
+    rows.length / (2 * positives),
+  ];
+  let bias = 0;
+  let biasAccumulator = 1e-8;
+  let totalBias = 0;
+  let count = 0;
+  const epochs = Math.ceil(options.epochs);
+  for (let epoch = 0; epoch < epochs; epoch += 1) {
+    const learningRate = options.learningRate / Math.sqrt(epoch + 1);
+    for (const row of epochOrder(data.keys, rows, options.seed, epoch)) {
+      const features = data.features[row]!;
+      const z = Array.from(features).reduce((sum, id) => sum + weights[id]!, bias);
+      const label = data.labels[row]!;
+      const gradient = (1 / (1 + Math.exp(-z)) - label) * classWeights[label]!;
+      biasAccumulator += gradient ** 2;
+      bias -= (learningRate * gradient) / Math.sqrt(biasAccumulator);
+      for (const id of features) {
+        const gradientWithPenalty = gradient + options.l2 * weights[id]!;
+        accumulators[id] = accumulators[id]! + gradientWithPenalty ** 2;
+        weights[id] =
+          weights[id]! - (learningRate * gradientWithPenalty) / Math.sqrt(accumulators[id]!);
+      }
+      if (epoch >= Math.floor(epochs / 2)) {
+        for (let id = 0; id < weights.length; id += 1) total[id] = total[id]! + weights[id]!;
+        totalBias += bias;
+        count += 1;
+      }
+    }
+  }
+  return {
+    weights: total.map((value) => (count ? value / count : 0)),
+    bias: count ? totalBias / count : 0,
+  };
+}
+
 describe('fitLogistic', () => {
+  it.each([0, 1, 3, 3.5, 8])(
+    'matches dense tail averaging with %s epochs and sparse, uneven feature visits',
+    (epochs) => {
+      const data: FitData = {
+        features: [[0, 1], [2], [], [0], [1], [2, 3]].map((ids) => Int32Array.from(ids)),
+        labels: Uint8Array.from([1, 0, 0, 0, 1, 0]),
+        keys: Uint32Array.from({ length: 6 }, (_, i) => murmur3(`sparse-${i}`)),
+        vocabSize: 5,
+      };
+      // Excludes a row and leaves feature 4 unseen; empty-feature rows must still count in the mean.
+      const rows = Int32Array.from([0, 1, 2, 4, 5]);
+      const options = { ...params, epochs, l2: 0.1 };
+      const actual = fitLogistic(data, rows, options)!;
+      const expected = denseAverage(data, rows, options);
+      for (let id = 0; id < data.vocabSize; id += 1) {
+        expect(actual.weights[id]).toBeCloseTo(expected.weights[id]!, 12);
+      }
+      expect(actual.bias).toBeCloseTo(expected.bias, 12);
+      expect(actual.weights[4]).toBe(0);
+    },
+  );
+
   it('learns a separable toy set', () => {
     const data = toy();
     const fit = fitLogistic(data, all(20), params);

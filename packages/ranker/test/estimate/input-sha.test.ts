@@ -34,6 +34,11 @@ describe('estimateInputSha', () => {
     expect(estimateInputSha(base)).toBe(estimateInputSha(base, { ...DEFAULT_ESTIMATE_OPTIONS }));
   });
 
+  it('changes for the old learning rate while retaining estimate-v2', () => {
+    const options = { seed: 'estimate-v2', learningRate: 0.3 };
+    expect(estimateInputSha(base)).not.toBe(estimateInputSha(base, options));
+  });
+
   it.each([
     ['a rating', [sample('1', -1, 1_000), base[1]!, base[2]!]],
     ['a rating time', [sample('1', 1, 1_001), base[1]!, base[2]!]],
