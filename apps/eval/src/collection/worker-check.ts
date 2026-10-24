@@ -1,4 +1,4 @@
-import { HEARTBEAT_FRESH_MS, parseSetting, type QueueName } from '@bantoozi/shared';
+import { isHeartbeatFresh, parseSetting, type QueueName } from '@bantoozi/shared';
 
 /**
  * The worker precondition of `eval ingest-sample` (spec 10 §2.1, D-96): a worker heartbeat younger
@@ -36,9 +36,7 @@ export function liveWorkers(value: unknown, now: Date): LiveWorker[] {
   const live: LiveWorker[] = [];
   for (const [processId, entry] of Object.entries(parsed)) {
     const at = new Date(entry.at);
-    const age = now.getTime() - at.getTime();
-    // A heartbeat slightly in the future (clock skew between hosts) still counts as live.
-    if (age > HEARTBEAT_FRESH_MS) continue;
+    if (!isHeartbeatFresh(at.getTime(), now)) continue;
     live.push({ processId, at, queues: [...entry.queues], evalIngestOnly: entry.evalIngestOnly });
   }
   return live.sort((a, b) => (a.processId < b.processId ? -1 : a.processId > b.processId ? 1 : 0));

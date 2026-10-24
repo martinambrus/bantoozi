@@ -194,6 +194,9 @@ describe('house.alerts rules (spec 11 §6.1)', () => {
       );
     expect(await emails(heartbeat(before(30 * MINUTE))), 'heartbeat 30 min old').toBe(1);
     expect(await emails(heartbeat(undefined)), 'no heartbeat').toBe(1);
+    expect(await emails(heartbeat(before(-90_001))), 'future skew cannot mask a dead fleet').toBe(
+      1,
+    );
     expect(await emails(heartbeat(before(10_000))), 'heartbeat 10 s old').toBe(0);
   });
 

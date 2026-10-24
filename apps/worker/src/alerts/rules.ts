@@ -16,6 +16,7 @@ import {
   HOUSE_PROGRESS_CURSORS,
   HostHealthDetailSchema,
   isModelAlias,
+  isHeartbeatFresh,
   readSetting,
   utcDay,
   type SettingKey,
@@ -268,8 +269,7 @@ const serviceRule: AlertRule = {
     const heartbeats = (await read(context, 'worker.heartbeat')) ?? {};
     const missingQueues = new Set<string>();
     for (const entry of Object.values(heartbeats)) {
-      const age = now.getTime() - Date.parse(entry.at);
-      if (!Number.isFinite(age) || Math.abs(age) > ALERT_THRESHOLDS.heartbeatFreshMs) continue;
+      if (!isHeartbeatFresh(Date.parse(entry.at), now)) continue;
       const problems = entry.runtime?.['problems'];
       if (!Array.isArray(problems)) continue;
       for (const problem of problems) {
@@ -302,7 +302,12 @@ const serviceRule: AlertRule = {
         detail: `pg-boss queues missing: ${[...missingQueues].sort().join(', ')}; run the migrate job (pnpm db:migrate or the deploy migration step).`,
       });
     }
-    const newest = Math.max(0, ...Object.values(heartbeats).map((entry) => Date.parse(entry.at)));
+    const newest = Math.max(
+      0,
+      ...Object.values(heartbeats)
+        .map((entry) => Date.parse(entry.at))
+        .filter((at) => Number.isFinite(at) && at <= now.getTime() + HEARTBEAT_FRESH_MS),
+    );
     if (now.getTime() - newest >= ALERT_THRESHOLDS.heartbeatStaleMs) {
       out.push({
         key: 'service.heartbeat',
