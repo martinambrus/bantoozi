@@ -1063,3 +1063,11 @@ it('uses the active pin rather than a dormant resolution when choosing one relea
   await app.user.click(radio(PINNED_RADIO));
   expect(input()).toHaveValue(DEFAULT);
 });
+
+it.each([0, 1])('shows an alias resolution checked %i ms after a recent save', async (gap) => {
+  const savedAt = modelAgo(1);
+  const checkedAt = new Date(Date.parse(savedAt) + gap).toISOString();
+  await open({ saved: ALIAS, savedAt, status: aliasStatus('jev-1.14.0', checkedAt) });
+  expect(group()).toHaveTextContent(`Resolves to jev-1.14.0 · checked ${printedTime(checkedAt)}`);
+  expect(group()).not.toHaveTextContent('Not resolved yet.');
+});
