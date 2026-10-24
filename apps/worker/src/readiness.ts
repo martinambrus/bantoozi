@@ -54,7 +54,7 @@ function missingMessage(missing: readonly string[]): string {
 
 export interface QueueReadiness {
   missing(): string[];
-  problems(): { key: string; message: string }[];
+  problems(): { key: string; message: string; missingQueues: string[] }[];
   refresh(): Promise<void>;
   stop(): void;
 }
@@ -125,7 +125,15 @@ export async function startQueueReadiness(options: {
   return {
     missing: () => [...missing],
     problems: () =>
-      missing.length === 0 ? [] : [{ key: QUEUES_MISSING_KEY, message: missingMessage(missing) }],
+      missing.length === 0
+        ? []
+        : [
+            {
+              key: QUEUES_MISSING_KEY,
+              message: missingMessage(missing),
+              missingQueues: [...missing],
+            },
+          ],
     refresh,
     stop() {
       stopped = true;

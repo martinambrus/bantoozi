@@ -265,7 +265,7 @@ const serviceRule: AlertRule = {
     const { deps, now } = context;
     const out: Condition[] = [];
     const heartbeats = (await read(context, 'worker.heartbeat')) ?? {};
-    const queueProblems = new Set<string>();
+    const missingQueues = new Set<string>();
     for (const entry of Object.values(heartbeats)) {
       const age = now.getTime() - Date.parse(entry.at);
       if (!Number.isFinite(age) || Math.abs(age) > ALERT_THRESHOLDS.heartbeatFreshMs) continue;
@@ -273,24 +273,32 @@ const serviceRule: AlertRule = {
       if (!Array.isArray(problems)) continue;
       for (const problem of problems) {
         if (
-          problem !== null &&
-          typeof problem === 'object' &&
-          !Array.isArray(problem) &&
-          problem['key'] === 'queues.missing' &&
+          problem === null ||
+          typeof problem !== 'object' ||
+          Array.isArray(problem) ||
+          problem['key'] !== 'queues.missing'
+        )
+          continue;
+        // Structured names preserve the full set; older workers only send the bounded message.
+        const legacy =
           typeof problem['message'] === 'string'
-        ) {
-          queueProblems.add(problem['message']);
+            ? /^pg-boss queues missing: (.+?)(?: \(\d+\))? — /u.exec(problem['message'])?.[1]
+            : undefined;
+        const names = Array.isArray(problem['missingQueues'])
+          ? problem['missingQueues']
+          : (legacy?.replace(/ and \d+ more$/u, '').split(', ') ?? []);
+        for (const name of names) {
+          if (typeof name === 'string' && /^[a-zA-Z0-9_.-]{1,128}$/u.test(name)) {
+            missingQueues.add(name);
+          }
         }
       }
     }
-    if (queueProblems.size > 0) {
+    if (missingQueues.size > 0) {
       out.push({
         key: 'service.queues_missing',
         title: 'Missing pg-boss queues',
-        detail: safeText(
-          `Run the migrate job (pnpm db:migrate or the deploy migration step). ${[...queueProblems].join(' ')}`,
-          600,
-        ),
+        detail: `pg-boss queues missing: ${[...missingQueues].sort().join(', ')}; run the migrate job (pnpm db:migrate or the deploy migration step).`,
       });
     }
     const newest = Math.max(0, ...Object.values(heartbeats).map((entry) => Date.parse(entry.at)));

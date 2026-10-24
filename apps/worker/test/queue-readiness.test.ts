@@ -125,3 +125,20 @@ describe('ongoing queue readiness', () => {
     }
   });
 });
+
+it('puts every missing name in a structured heartbeat field, including names beyond the log limit', async () => {
+  const queues = Array.from({ length: 15 }, (_, i) => `test.queue-${i}`);
+  const readiness = await startQueueReadiness({
+    db: { execute: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as Executor,
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    queues,
+  });
+  try {
+    expect(readiness.problems()[0]).toMatchObject({ key: 'queues.missing', missingQueues: queues });
+    const problem = readiness.problems()[0] as unknown as { missingQueues: string[] };
+    problem.missingQueues.pop();
+    expect(readiness.missing()).toEqual(queues);
+  } finally {
+    readiness.stop();
+  }
+});

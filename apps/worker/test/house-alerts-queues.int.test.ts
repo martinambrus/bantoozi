@@ -1,3 +1,4 @@
+import { REQUIRED_PG_BOSS_QUEUES } from '@bantoozi/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ClassifyHarness } from './support/classify.js';
@@ -58,6 +59,31 @@ describe('missing queue alerts', () => {
     expect(mailer.lastEmail()?.text).toContain('Missing pg-boss queues');
     await w.run(NOW, { mailer });
     expect(mailer.to(ADMIN)).toHaveLength(2);
+  });
+
+  it('unions different missing sets without truncating names or repeating migrate advice', async () => {
+    const mailer = new RecordingMailer();
+    const first = REQUIRED_PG_BOSS_QUEUES.slice(0, 22);
+    const second = REQUIRED_PG_BOSS_QUEUES.slice(18);
+    const problem = (missingQueues: readonly string[]) => [
+      {
+        key: 'queues.missing',
+        missingQueues,
+        message: `pg-boss queues missing: ${missingQueues.slice(0, 10).join(', ')} and more — run the migrate job`,
+      },
+    ];
+    await w.setting('worker.heartbeat', {
+      first: heartbeat(0, problem(first)),
+      second: heartbeat(0, problem(second)),
+      legacy: heartbeat(0, [{ key: 'queues.missing', message: MESSAGE }]),
+    });
+    await w.run(NOW, { mailer });
+    expect(mailer.to(ADMIN)).toHaveLength(1);
+    const text = mailer.lastEmail()?.text ?? '';
+    expect(text).toContain(
+      `pg-boss queues missing: ${[...REQUIRED_PG_BOSS_QUEUES].sort().join(', ')}; run the migrate job (pnpm db:migrate or the deploy migration step).`,
+    );
+    expect(text.match(/run the migrate job/giu)).toHaveLength(1);
   });
 
   it('ignores expired, far-future, malformed and unrelated heartbeat problems', async () => {
