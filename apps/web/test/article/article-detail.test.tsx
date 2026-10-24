@@ -10,6 +10,7 @@ import { FOCUS_RING } from '../../src/components/cx.js';
 import { ArticleDetail } from '../../src/features/article/article-detail.js';
 import { failure, json, noContent } from '../api/fake-fetch.js';
 import type { ApiRouteHandler } from '../support/app.js';
+import { failOnReactWarnings } from '../support/react-warnings.js';
 import { FAR_ZONE } from '../support/zones.js';
 import { acked } from '../reader/actions/fake-transport.js';
 import { USER_B_ID } from '../session/fixtures.js';
@@ -53,6 +54,8 @@ afterEach(() => {
   restoreVisibility();
   vi.restoreAllMocks();
 });
+
+failOnReactWarnings();
 
 describe('ArticleDetail loading', () => {
   it('asks for the detail of the article and shows its excerpt', async () => {

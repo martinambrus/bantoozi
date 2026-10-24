@@ -9,11 +9,14 @@ import { createHarness } from '../auth/harness.js';
 import { gate } from '../interests/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
+import { failOnReactWarnings } from '../support/react-warnings.js';
 
 // Every test boots the whole app; on a busy machine a query can take longer than the default 1 s.
 configure({ asyncUtilTimeout: 5_000 });
 
 const { open: boot } = createHarness();
+
+failOnReactWarnings();
 
 const NOW = '2026-10-08T09:00:00.000Z';
 const MINUTE = 60_000;
