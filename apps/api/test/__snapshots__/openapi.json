@@ -19557,6 +19557,7 @@
                           "minimum": 0
                         },
                         "exemptSpendTodayUsd": {
+                          "default": 0,
                           "type": "number",
                           "minimum": 0
                         },
