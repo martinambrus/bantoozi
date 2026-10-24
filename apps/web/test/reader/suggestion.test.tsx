@@ -478,6 +478,7 @@ describe('when there is no offer', () => {
   it.each([undefined, 'another-batch'])(
     'drops a delayed batch offer after an unrelated rating from %s',
     async (nextBatchId) => {
+      vi.useFakeTimers();
       const first = makeItem();
       const second = makeItem({ id: '102', title: 'Another article' });
       const list = deferred<Response>();
@@ -517,15 +518,17 @@ describe('when there is no offer', () => {
       await app.user.click(screen.getByRole('button', { name: 'First rating' }));
       await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
       await app.user.click(screen.getByRole('button', { name: 'Next rating' }));
-      await findToast('Marked as liked');
+      await waitFor(() => expect(app.toasts.getSnapshot()).toHaveLength(2));
 
       list.resolve(json(200, CARDS));
       await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await vi.advanceTimersByTimeAsync(20);
       });
 
       expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
-      expect(app.toasts.getSnapshot()).toHaveLength(1);
+      expect(app.toasts.getSnapshot()).toHaveLength(2);
+      expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
+      expect(app.toasts.getSnapshot().every((toast) => toast.durationMs === 5000)).toBe(true);
     },
   );
 
@@ -580,7 +583,9 @@ describe('when there is no offer', () => {
     });
 
     expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
-    expect(app.toasts.getSnapshot()).toHaveLength(1);
+    expect(app.toasts.getSnapshot()).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
+    expect(app.toasts.getSnapshot().every((toast) => toast.durationMs === 5000)).toBe(true);
   });
 
   it('shows no offer that arrives after the account was reset', async () => {
