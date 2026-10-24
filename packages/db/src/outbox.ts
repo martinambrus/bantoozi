@@ -46,10 +46,10 @@ async function insertIntents(
     ON CONFLICT DO NOTHING`);
 }
 
-async function insertDelayedWorkerIntents(
+async function insertWorkerIntents(
   tx: Executor,
   intents: readonly JobIntent[],
-  availableAt: Date,
+  availableAt?: Date,
 ) {
   if (intents.length === 0) return;
   // A single upsert cannot affect the same row twice. Match sequential inserts by keeping the
@@ -65,7 +65,7 @@ async function insertDelayedWorkerIntents(
   await tx.execute(sql`
     INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
     SELECT queue, payload, dedupe_key, NULL,
-           greatest(now(), ${availableAt.toISOString()}::timestamptz)
+           greatest(now(), ${availableAt?.toISOString() ?? null}::timestamptz)
       FROM (${intentRows(distinct)}) batch
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
@@ -74,7 +74,8 @@ async function insertDelayedWorkerIntents(
                                      ELSE least(job_outbox.available_at, excluded.available_at) END,
                   lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND (job_outbox.lease_until > now() OR excluded.available_at < job_outbox.available_at)`);
+        AND (job_outbox.lease_until > now()
+             OR (${availableAt !== undefined} AND excluded.available_at < job_outbox.available_at))`);
 }
 
 /**
@@ -103,10 +104,19 @@ export async function enqueueDelayedWorkerIntent(
   intent: JobIntent,
   availableAt: Date,
 ): Promise<boolean> {
+  return insertWorkerIntent(tx, intent, availableAt);
+}
+
+/** Immediate worker writes also re-arm live leases; pending delayed work keeps its due time. */
+async function insertWorkerIntent(
+  tx: Executor,
+  intent: JobIntent,
+  availableAt?: Date,
+): Promise<boolean> {
   const result = await tx.execute(sql`
     INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
     VALUES (${intent.queue}, ${JSON.stringify(intent.payload)}::jsonb, ${intent.dedupeKey}, NULL,
-            greatest(now(), ${availableAt.toISOString()}::timestamptz))
+            greatest(now(), ${availableAt?.toISOString() ?? null}::timestamptz))
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
     DO UPDATE SET available_at = CASE WHEN job_outbox.lease_until > now()
@@ -114,7 +124,8 @@ export async function enqueueDelayedWorkerIntent(
                                      ELSE least(job_outbox.available_at, excluded.available_at) END,
                   lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND (job_outbox.lease_until > now() OR excluded.available_at < job_outbox.available_at)
+        AND (job_outbox.lease_until > now()
+             OR (${availableAt !== undefined} AND excluded.available_at < job_outbox.available_at))
     RETURNING id`);
   return result.rows.length > 0;
 }
@@ -138,13 +149,9 @@ export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = 
   const { availableAt } = options;
   return {
     enqueue: async (intent) => {
-      if (availableAt === undefined) await insertIntent(tx, intent, null);
-      else await enqueueDelayedWorkerIntent(tx, intent, availableAt);
+      await insertWorkerIntent(tx, intent, availableAt);
     },
-    enqueueMany: (intents) =>
-      availableAt === undefined
-        ? insertIntents(tx, intents, null)
-        : insertDelayedWorkerIntents(tx, intents, availableAt),
+    enqueueMany: (intents) => insertWorkerIntents(tx, intents, availableAt),
   };
 }
 

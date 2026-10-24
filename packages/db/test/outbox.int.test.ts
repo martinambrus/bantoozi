@@ -710,3 +710,56 @@ it('retains failure details without counting a future re-arm as backlog', async 
   expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
   expect(await oldestPendingOutboxAgeSeconds(ctx.worker, due)).toBeGreaterThan(3_000);
 });
+
+it.each([false, true])(
+  'preserves immediate worker work before relay acknowledgement (batch %s)',
+  async (batch) => {
+    await drain();
+    const intent = buildJobIntent('house.reconcile', {}, { revision: 'immediate-live' });
+    await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    await ctx.worker.transaction(async (tx) => {
+      const sender = workerOutbox(tx);
+      if (batch) await sender.enqueueMany!([intent, intent]);
+      else await sender.enqueue(intent);
+    });
+    expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(false);
+    expect(
+      await failOutboxIntent(ctx.worker, claimed!, { error: 'late', retryInSeconds: 900 }),
+    ).toBe(false);
+    const pending = (await outboxRows()).filter((row) => row.delivered_at === null);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ id: claimed!.id, lease_token: null });
+    expect(
+      (await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 })).map((row) => row.id),
+    ).toEqual([claimed!.id]);
+  },
+);
+
+it.each([false, true])(
+  'keeps API immediate writes INSERT-only with a live lease (batch %s)',
+  async (batch) => {
+    await drain();
+    const user = await createUser(ctx.owner);
+    const intent = buildJobIntent('user.learn', { userId: user.id });
+    const write = () =>
+      withTenant(ctx.app, user.id, async (tx) => {
+        const sender = tenantOutbox(tx);
+        if (batch) await sender.enqueueMany!([intent]);
+        else await sender.enqueue(intent);
+      });
+    await write();
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    await write();
+    expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(true);
+    expect((await outboxRows()).filter((row) => row.delivered_at === null)).toHaveLength(0);
+    for (const statement of [
+      'SELECT * FROM job_outbox',
+      'UPDATE job_outbox SET attempts = attempts',
+    ]) {
+      expect(
+        await sqlStateOf(asTenant(ctx.appPool, user.id, (client) => client.query(statement))),
+      ).toBe('42501');
+    }
+  },
+);
