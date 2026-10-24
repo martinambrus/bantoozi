@@ -243,6 +243,6 @@ export function pipelineContext(
   };
 }
 
-export function nowOf(deps: WorkerDeps): Date {
+export function nowOf(deps: Pick<WorkerDeps, 'now'>): Date {
   return deps.now?.() ?? new Date();
 }

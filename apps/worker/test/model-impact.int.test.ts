@@ -158,20 +158,20 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
 
   it('I7 the engine.model-probe handler records the impact, also for a throwing prober', async () => {
     await seedModel(h.owner, await user());
-    const started = Date.now();
+    const injectedNow = new Date(A);
     const throwing = {
       probe: async () => {
         throw new Error('boom');
       },
     } as unknown as Prober;
-    await createModelProbeHandler({ db: h.db, prober: throwing, logger })(
+    await createModelProbeHandler({ db: h.db, prober: throwing, logger, now: () => injectedNow })(
       { model: ALIAS },
       { queue: 'engine.model-probe', jobId: 'impact' },
     );
     expect(await probeOf(h.owner)).toMatchObject({ ok: false, error: 'internal_error' });
     const impact = await impactOf(h.owner);
     expect(impact?.activeModels).toBe(1);
-    expect(Date.parse(impact!.at)).toBeGreaterThanOrEqual(started - 1000);
+    expect(impact!.at).toBe(A);
     expect((await probeOf(h.owner))?.at).toBe(impact!.at);
   });
 

@@ -253,6 +253,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
             createModelProbeHandler({
               db: deps.db,
               logger: deps.logger,
+              ...(deps.now === undefined ? {} : { now: deps.now }),
               prober: createModelProber({
                 ledger: providerValidation.router,
                 credentials: providerValidation.credentials,
