@@ -37,7 +37,7 @@ import { isInferenceAuthorized } from './authorization.js';
  * `uncertain` at the reserved amount. `engine_calls` is the per-attempt audit linked by the unique
  * `reservation_id`, so one reservation and its audit row are never counted twice. Budget queries
  * select by the reservation's UTC `day`, so a settlement after midnight stays on the day of its
- * send, and `kind = 'eval'` never counts against the production budget.
+ * send. The call-kind table defines production-budget exemptions, including settlement crossings.
  *
  * **Admission** (`reserveSpend`) runs under a transaction advisory lock of the UTC day: recheck
  * the inference authorization (with its row locks), then the call cap (same engine, same cap
