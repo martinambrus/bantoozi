@@ -247,3 +247,21 @@ it('keeps the metrics size limit strict after restoring future fields', async ()
   ).rejects.toThrow('metrics snapshot too large');
   expect(await get(key)).toEqual(old);
 });
+
+it('preserves nested stored extensions through EngineStore.setSetting and rejects unknown input fields', async () => {
+  const store = createPgEngineStore(ctx.worker, { dailyBudgetUsd: 10 });
+  const stored = { model: { historyDays: 90, future: 2 }, future: 1 };
+  await put('ranker.thresholds', stored);
+  await store.setSetting('ranker.thresholds', { model: { historyDays: 120 } });
+  expect(await get('ranker.thresholds')).toEqual({
+    model: { historyDays: 120, future: 2 },
+    future: 1,
+  });
+  await expect(
+    store.setSetting('ranker.thresholds', { model: { historyDays: 130 }, injected: true }),
+  ).rejects.toThrow();
+  expect(await get('ranker.thresholds')).toEqual({
+    model: { historyDays: 120, future: 2 },
+    future: 1,
+  });
+});

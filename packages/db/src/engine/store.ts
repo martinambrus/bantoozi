@@ -29,7 +29,7 @@ import {
 import { sql } from 'drizzle-orm';
 
 import type { Database, Executor, Transaction } from '../client.js';
-import { readStoredSetting } from '../settings.js';
+import { readStoredSetting, updateSettingLocked } from '../settings.js';
 import { isInferenceAuthorized } from './authorization.js';
 
 /**
@@ -552,9 +552,10 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
 
     async setSetting<T>(key: string, value: T): Promise<void> {
       const parsed = settingSchema(key).parse(value);
-      await db.execute(sql`
-        INSERT INTO settings AS s (key, value, updated_at) VALUES (${key}, ${JSON.stringify(parsed)}::jsonb, now())
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = NULL`);
+      await db.transaction(async (tx) => {
+        await updateSettingLocked(tx, key, parsed, () => parsed);
+        await tx.execute(sql`UPDATE settings SET updated_by = NULL WHERE key = ${key}`);
+      });
     },
 
     async readCircuit() {
