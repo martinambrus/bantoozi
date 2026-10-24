@@ -4,60 +4,116 @@ const readers = new WeakMap<z.ZodType, z.ZodType>();
 
 /** Derive a stored-value reader without changing writer constraints or refinements. */
 export function readerSchema<S extends z.core.$ZodType>(input: S): S {
-  const schema = input as unknown as z.ZodType;
-  const cached = readers.get(schema);
-  if (cached) return cached as unknown as S;
-  const def = schema.def;
-  let result: z.ZodType = schema;
-  if (schema instanceof z.ZodObject) {
-    result = schema.clone({
-      ...schema.def,
-      shape: Object.fromEntries(
-        Object.entries(schema.shape).map(([key, field]) => [key, readerSchema(field as z.ZodType)]),
-      ),
-      catchall:
-        schema.def.catchall instanceof z.ZodNever
-          ? undefined
-          : schema.def.catchall && readerSchema(schema.def.catchall),
-    });
-  } else if (schema instanceof z.ZodArray) {
-    result = schema.clone({ ...schema.def, element: readerSchema(schema.element) });
-  } else if (schema instanceof z.ZodRecord) {
-    result = schema.clone({ ...schema.def, valueType: readerSchema(schema.valueType) });
-  } else if (schema instanceof z.ZodUnion) {
-    result = schema.clone({ ...schema.def, options: schema.options.map(readerSchema) });
-  } else if (schema instanceof z.ZodIntersection) {
-    result = schema.clone({
-      ...schema.def,
-      left: readerSchema(schema.def.left),
-      right: readerSchema(schema.def.right),
-    });
-  } else if (schema instanceof z.ZodTuple) {
-    result = schema.clone({
-      ...schema.def,
-      items: schema.def.items.map(readerSchema),
-      rest: schema.def.rest && readerSchema(schema.def.rest),
-    });
-  } else if (schema instanceof z.ZodLazy) {
-    result = schema.clone({ ...schema.def, getter: () => readerSchema(schema.def.getter()) });
-  } else if (schema instanceof z.ZodPipe) {
-    result = schema.clone({
-      ...schema.def,
-      in: readerSchema(schema.def.in),
-      out: readerSchema(schema.def.out),
-    });
-  } else if ('innerType' in def) {
-    // Optional, nullable, default, prefault, catch, readonly and nonoptional wrappers.
-    // Preserve Zod's defaultValue getter: spreading the definition evaluates a function default
-    // once and shares mutable defaults across parses.
-    const rebuilt = Object.defineProperties({}, Object.getOwnPropertyDescriptors(def));
-    Object.defineProperty(rebuilt, 'innerType', {
-      value: readerSchema(def.innerType as z.ZodType),
-      enumerable: true,
-    });
-    result = schema.clone(rebuilt as typeof def);
+  // Publish only a completely derived graph. A failed derivation must not poison the cache.
+  const pending = new Map<z.ZodType, z.ZodType>();
+  function derive(input: z.core.$ZodType): z.ZodType {
+    const schema = input as z.ZodType;
+    const cached = readers.get(schema) ?? pending.get(schema);
+    if (cached) return cached;
+    const def = schema.def;
+    let result: z.ZodType;
+    if (schema instanceof z.ZodObject) {
+      const shape: Record<string, z.ZodType> = {};
+      result = schema.clone({ ...schema.def, shape, catchall: undefined });
+      // Getter-based recursive objects can revisit this object while walking its shape.
+      pending.set(schema, result);
+      for (const [key, field] of Object.entries(schema.shape))
+        shape[key] = derive(field as z.ZodType);
+      if (!(schema.def.catchall instanceof z.ZodNever) && schema.def.catchall) {
+        (result as z.ZodObject).def.catchall = derive(schema.def.catchall);
+      }
+    } else if (schema instanceof z.ZodArray) {
+      result = schema.clone({ ...schema.def, element: derive(schema.element) });
+    } else if (schema instanceof z.ZodRecord) {
+      result = schema.clone({
+        ...schema.def,
+        keyType: derive(schema.keyType),
+        valueType: derive(schema.valueType),
+      });
+    } else if (schema instanceof z.ZodMap) {
+      result = schema.clone({
+        ...schema.def,
+        keyType: derive(schema.keyType),
+        valueType: derive(schema.valueType),
+      });
+    } else if (schema instanceof z.ZodSet) {
+      result = schema.clone({ ...schema.def, valueType: derive(schema.def.valueType) });
+    } else if (schema instanceof z.ZodUnion) {
+      result = schema.clone({ ...schema.def, options: schema.options.map(derive) });
+    } else if (schema instanceof z.ZodIntersection) {
+      result = schema.clone({
+        ...schema.def,
+        left: derive(schema.def.left),
+        right: derive(schema.def.right),
+      });
+    } else if (schema instanceof z.ZodTuple) {
+      result = schema.clone({
+        ...schema.def,
+        items: schema.def.items.map(derive),
+        rest: schema.def.rest && derive(schema.def.rest),
+      });
+    } else if (schema instanceof z.ZodLazy) {
+      // Register the lazy node before evaluating its getter as well.
+      result = schema.clone({ ...schema.def, getter: () => inner });
+      pending.set(schema, result);
+      const inner = derive(schema.def.getter());
+    } else if (schema instanceof z.ZodPipe) {
+      result = schema.clone({
+        ...schema.def,
+        in: derive(schema.def.in),
+        out: derive(schema.def.out),
+      });
+    } else if (
+      [
+        'optional',
+        'nullable',
+        'default',
+        'prefault',
+        'catch',
+        'readonly',
+        'nonoptional',
+        'success',
+      ].includes(def.type) &&
+      'innerType' in def
+    ) {
+      // Preserve defaultValue getters, including fresh mutable values and function defaults.
+      const rebuilt = Object.defineProperties({}, Object.getOwnPropertyDescriptors(def));
+      Object.defineProperty(rebuilt, 'innerType', {
+        value: derive(def.innerType as z.ZodType),
+        enumerable: true,
+      });
+      result = schema.clone(rebuilt as typeof def);
+    } else if (
+      [
+        'string',
+        'number',
+        'bigint',
+        'boolean',
+        'date',
+        'symbol',
+        'undefined',
+        'null',
+        'any',
+        'unknown',
+        'never',
+        'void',
+        'nan',
+        'enum',
+        'literal',
+        'template_literal',
+        'file',
+        'transform',
+      ].includes(def.type)
+    ) {
+      result = schema;
+    } else {
+      throw new Error(`Unsupported reader schema construct: ${def.type}`);
+    }
+    pending.set(schema, result);
+    return result;
   }
-  readers.set(schema, result);
+  const result = derive(input);
+  for (const [schema, reader] of pending) readers.set(schema, reader);
   return result as unknown as S;
 }
 
