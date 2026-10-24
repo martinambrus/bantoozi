@@ -3236,3 +3236,17 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   isolates each reader's learn check (warn per reader, `failed` counted, the estimate sweep and progress still run); a
   run with failures logs its summary at error, and a run in which every examined reader failed throws after the sweep
   and progress write, so pg-boss retries it and the failures alert sees it.
+- D-317: 2026-10-24 (FNF-VL-8, task #31; completes D-300 item 2) — Missing pg-boss queues are visible where operators
+  look. Admin → Settings "Applied by workers" lists worker problems that belong to no editor (e.g. `queues.missing`). The
+  `service` alert rule raises `service.queues_missing` ("Missing pg-boss queues") from live heartbeats only, naming the
+  union of missing queues (a structured field of the problem) and the migrate-job fix once; it resolves when no live
+  heartbeat reports it. `/readyz` answers 503 with `checks.queues` and `missingQueues` when a registry or the internal cron
+  queue is absent (read through `queue_state_counts()`, the only queue view the API role may use; `unknown` when the
+  database is unreachable); a healthy result is cached for 60 s with one shared in-flight query, a miss or an error is
+  never cached (measured 28–45 ms with 100k job rows). Deploys are unaffected: the migrate job runs before the services,
+  and an older image has no queue check. `restore:verify` fails only when the internal cron queue is missing; registry
+  queues a backup from an older release lacks are a `WARN … run the migrate job` line, because the check runs with the
+  current registry against an older backup. The worker reports `queue_consumed=0` for missing queues, exits through the
+  normal shutdown when scheduling a missing cron queue fails, scopes the comparison to the queues it consumes
+  (EVAL_INGEST_ONLY, WORKER_QUEUES), keeps re-checking after a healthy result (slower cadence) and re-reads an unreadable
+  catalog every 30 s with an in-flight guard, warning only on a state change.

@@ -1,5 +1,5 @@
-import { PG_BOSS_CRON_QUEUE, listPgBossQueueNames, type Executor } from '@bantoozi/db';
-import { QUEUE_NAMES, type QueueName } from '@bantoozi/shared';
+import { REQUIRED_PG_BOSS_QUEUES, listPgBossQueueNames, type Executor } from '@bantoozi/db';
+import type { QueueName } from '@bantoozi/shared';
 import type { NodeEnv } from '@bantoozi/shared/server';
 
 import { unavailableQueues, type HandlerMap } from './handlers/index.js';
@@ -30,7 +30,7 @@ const NAMED_AT_MOST = 10;
  * pg-boss's internal cron queue (migration 0017, D-142), without which `boss.schedule` succeeds and
  * no cron ever fires.
  */
-export const REQUIRED_QUEUES: readonly string[] = [...QUEUE_NAMES, PG_BOSS_CRON_QUEUE];
+export const REQUIRED_QUEUES = REQUIRED_PG_BOSS_QUEUES;
 
 /** The required queues that pg-boss does not hold, in registry order. */
 export async function missingRegistryQueues(
@@ -54,7 +54,7 @@ function missingMessage(missing: readonly string[]): string {
 
 export interface QueueReadiness {
   missing(): string[];
-  problems(): { key: string; message: string }[];
+  problems(): { key: string; message: string; missingQueues: string[] }[];
   refresh(): Promise<void>;
   stop(): void;
 }
@@ -66,8 +66,9 @@ export interface QueueReadinessLogger {
 }
 
 /**
- * Reports registry queues missing from pg-boss: an error log and a heartbeat problem while any is
- * missing, re-checked every `intervalMs` until they appear. An unreadable table is unknown, not missing.
+ * Reports missing queues in logs and heartbeat problems. Retry missing or unreadable catalogs every
+ * 30 seconds; keep checking healthy catalogs every 10 minutes so later deletions are detected.
+ * A timer or manual refresh shares an in-flight read; unreadable warnings mark state changes only.
  */
 export async function startQueueReadiness(options: {
   db: Executor;
@@ -77,41 +78,66 @@ export async function startQueueReadiness(options: {
 }): Promise<QueueReadiness> {
   let missing: string[] = [];
   let timer: NodeJS.Timeout | undefined;
-  const refresh = async (): Promise<void> => {
-    let now: string[];
-    try {
-      now = await missingRegistryQueues(options.db, options.queues);
-    } catch (error) {
-      options.logger.warn(
-        { err: error },
-        'pg-boss queues could not be read: queue readiness unknown',
-      );
-      return;
-    }
-    const previous = new Set(missing);
-    const added = now.filter((name) => !previous.has(name));
-    missing = now;
-    if (now.length > 0 && added.length > 0) {
-      options.logger.error({ missing: now }, missingMessage(now));
-    } else if (now.length === 0 && previous.size > 0) {
-      options.logger.info({}, 'pg-boss queues are present again');
-    }
-    if (now.length > 0 && timer === undefined) {
-      timer = setInterval(() => void refresh(), options.intervalMs ?? 30_000);
-      timer.unref();
-    } else if (now.length === 0 && timer !== undefined) {
-      clearInterval(timer);
-      timer = undefined;
-    }
+  let stopped = false;
+  let unreadable = false;
+  let inFlight: Promise<void> | undefined;
+  const refresh = (): Promise<void> => {
+    if (stopped) return Promise.resolve();
+    if (inFlight !== undefined) return inFlight;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    inFlight = (async () => {
+      let now: string[];
+      try {
+        now = await missingRegistryQueues(options.db, options.queues);
+      } catch (error) {
+        if (stopped) return;
+        if (!unreadable) {
+          options.logger.warn(
+            { err: error },
+            'pg-boss queues could not be read: queue readiness unknown',
+          );
+        }
+        unreadable = true;
+        return;
+      }
+      if (stopped) return;
+      unreadable = false;
+      const previous = new Set(missing);
+      const added = now.filter((name) => !previous.has(name));
+      missing = now;
+      if (now.length > 0 && added.length > 0) {
+        options.logger.error({ missing: now }, missingMessage(now));
+      } else if (now.length === 0 && previous.size > 0) {
+        options.logger.info({}, 'pg-boss queues are present again');
+      }
+    })().finally(() => {
+      inFlight = undefined;
+      if (!stopped) {
+        const delay = unreadable || missing.length > 0 ? (options.intervalMs ?? 30_000) : 600_000;
+        timer = setTimeout(() => void refresh(), delay);
+        timer.unref();
+      }
+    });
+    return inFlight;
   };
   await refresh();
   return {
     missing: () => [...missing],
     problems: () =>
-      missing.length === 0 ? [] : [{ key: QUEUES_MISSING_KEY, message: missingMessage(missing) }],
+      missing.length === 0
+        ? []
+        : [
+            {
+              key: QUEUES_MISSING_KEY,
+              message: missingMessage(missing),
+              missingQueues: [...missing],
+            },
+          ],
     refresh,
     stop() {
-      if (timer !== undefined) clearInterval(timer);
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
     },
   };

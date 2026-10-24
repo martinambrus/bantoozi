@@ -1,4 +1,9 @@
-import { migrationStatus, type Database, type MigrationJournal } from '@bantoozi/db';
+import {
+  migrationStatus,
+  missingReadinessQueues,
+  type Database,
+  type MigrationJournal,
+} from '@bantoozi/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -7,25 +12,46 @@ export interface HealthRoutesOptions {
   journal: MigrationJournal;
 }
 
-type ReadyCheck = 'ok' | 'pending' | 'unreachable';
+type ReadyCheck = 'ok' | 'pending' | 'unreachable' | 'unknown';
 
 const TAGS = ['health'];
 const HealthResponseSchema = z.object({ status: z.literal('ok') });
-const ReadyCheckSchema = z.enum(['ok', 'pending', 'unreachable']);
+const ReadyCheckSchema = z.enum(['ok', 'pending', 'unreachable', 'unknown']);
 const ReadyResponseSchema = z.object({
   status: z.enum(['ready', 'not_ready']),
-  checks: z.object({ database: ReadyCheckSchema, migrations: ReadyCheckSchema }),
+  checks: z.object({
+    database: ReadyCheckSchema,
+    migrations: ReadyCheckSchema,
+    queues: ReadyCheckSchema,
+  }),
+  missingQueues: z.array(z.string()),
 });
 
 /**
  * Liveness and readiness (spec 08 §10, spec 01 §4). Readiness checks only this process's own
- * prerequisites — the database is reachable and its newest applied migration is the newest bundled
- * one — never provider uptime. Neither response contains secrets.
+ * prerequisites — the database is reachable, bundled migrations are applied and required queues
+ * exist — never provider uptime. Neither response contains secrets.
  */
 export async function healthRoutes(
   app: FastifyInstance,
   options: HealthRoutesOptions,
 ): Promise<void> {
+  // The aggregate scans job rows. Share in-flight work and retain only healthy results.
+  let queuesHealthyUntil = 0;
+  let queueCheck: Promise<string[]> | undefined;
+  const checkQueues = (): Promise<string[]> => {
+    if (Date.now() < queuesHealthyUntil) return Promise.resolve([]);
+    queueCheck ??= missingReadinessQueues(options.db)
+      .then((missing) => {
+        if (missing.length === 0) queuesHealthyUntil = Date.now() + 60_000;
+        return missing;
+      })
+      .finally(() => {
+        queueCheck = undefined;
+      });
+    return queueCheck;
+  };
+
   app.get(
     '/healthz',
     {
@@ -43,13 +69,15 @@ export async function healthRoutes(
       config: { auth: 'public', healthProbe: true },
       schema: {
         tags: TAGS,
-        summary: 'Readiness: database reachable and migrations current',
+        summary: 'Readiness: database reachable, migrations current and queues present',
         response: { 200: ReadyResponseSchema, 503: ReadyResponseSchema },
       },
     },
     async (request, reply) => {
       let database: ReadyCheck = 'ok';
       let migrations: ReadyCheck = 'pending';
+      let queues: ReadyCheck = 'unknown';
+      let missingQueues: string[] = [];
       try {
         const status = await migrationStatus(options.db, options.journal);
         migrations = status.ready ? 'ok' : 'pending';
@@ -57,11 +85,24 @@ export async function healthRoutes(
         request.log.warn({ err: error }, 'readiness: database check failed');
         database = 'unreachable';
       }
-      const ready = database === 'ok' && migrations === 'ok';
+      if (database === 'ok') {
+        try {
+          missingQueues = await checkQueues();
+          queues = missingQueues.length === 0 ? 'ok' : 'pending';
+        } catch (error) {
+          request.log.warn({ err: error }, 'readiness: queue check failed');
+          queues = 'unreachable';
+        }
+      }
+      const ready = database === 'ok' && migrations === 'ok' && queues === 'ok';
       await reply
         .code(ready ? 200 : 503)
         .header('cache-control', 'no-store')
-        .send({ status: ready ? 'ready' : 'not_ready', checks: { database, migrations } });
+        .send({
+          status: ready ? 'ready' : 'not_ready',
+          checks: { database, migrations, queues },
+          missingQueues,
+        });
     },
   );
 }

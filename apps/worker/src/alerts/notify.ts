@@ -77,9 +77,11 @@ export function planNotifications(
 export function alertEmail(alerts: readonly Condition[]): { subject: string; text: string } {
   const first = alerts[0];
   const more = alerts.length > 1 ? ` (+${alerts.length - 1} more)` : '';
-  const lines = alerts
-    .slice(0, DIGEST_MAX)
-    .map((a) => `* ${safeText(a.title, 120)}\n  ${safeText(a.detail, 600)}`);
+  const lines = alerts.slice(0, DIGEST_MAX).map((a) => {
+    // Queue details contain validated names, and every missing name must reach the operator.
+    const max = a.key === 'service.queues_missing' ? a.detail.length : 600;
+    return `* ${safeText(a.title, 120)}\n  ${safeText(a.detail, max)}`;
+  });
   if (alerts.length > DIGEST_MAX) lines.push(`... and ${alerts.length - DIGEST_MAX} more`);
   return {
     subject: `[Bantoozi] ALERT: ${safeText(first?.title ?? 'alert', 120)}${more}`,

@@ -18,6 +18,8 @@ export interface HealthServerOptions {
   port: number;
   token: string | undefined;
   queues: readonly string[];
+  /** Current missing queues from queue readiness, re-read on each scrape. */
+  missingQueues?: () => readonly string[];
   /** When this worker's last heartbeat write landed; undefined when none; may reject. */
   readHeartbeatAt: () => Promise<Date | undefined>;
   startedAt?: Date;
@@ -74,6 +76,7 @@ export async function startHealthServer(options: HealthServerOptions): Promise<H
           send(ok ? 200 : 503, 'application/json', JSON.stringify({ ok }));
           return;
         }
+        const missing = new Set(options.missingQueues?.() ?? []);
         const lines = [
           '# TYPE bantoozi_worker_uptime_seconds gauge',
           `bantoozi_worker_uptime_seconds ${Math.floor((now().getTime() - startedAt.getTime()) / 1000)}`,
@@ -82,7 +85,9 @@ export async function startHealthServer(options: HealthServerOptions): Promise<H
             ? []
             : [`bantoozi_worker_heartbeat_age_seconds ${Math.floor(age / 1000)}`]),
           '# TYPE bantoozi_worker_queue_consumed gauge',
-          ...options.queues.map((q) => `bantoozi_worker_queue_consumed{queue="${q}"} 1`),
+          ...options.queues.map(
+            (q) => `bantoozi_worker_queue_consumed{queue="${q}"} ${missing.has(q) ? 0 : 1}`,
+          ),
           '# TYPE bantoozi_worker_rating_fingerprint_evicted_total counter',
           `bantoozi_worker_rating_fingerprint_evicted_total ${fingerprintCounters.evicted}`,
           '# TYPE bantoozi_worker_rating_fingerprint_registration_failed_total counter',

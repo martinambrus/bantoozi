@@ -161,7 +161,12 @@ const HealthResponseSchema = z.object({ status: z.literal('ok') });
 const ReadyCheckSchema = z.enum(['ok', 'pending', 'unreachable']);
 const ReadyResponseSchema = z.object({
   status: z.enum(['ready', 'not_ready']),
-  checks: z.object({ database: ReadyCheckSchema, migrations: ReadyCheckSchema }),
+  checks: z.object({
+    database: ReadyCheckSchema,
+    migrations: ReadyCheckSchema,
+    queues: ReadyCheckSchema,
+  }),
+  missingQueues: z.array(z.string()),
 });
 
 /**

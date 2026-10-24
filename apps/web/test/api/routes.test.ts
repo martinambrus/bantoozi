@@ -17,6 +17,15 @@ const entries = Object.entries(routes) as [string, AnyRoute][];
 const operation = (route: AnyRoute) => `${route.method} ${route.path}`;
 
 describe('route table', () => {
+  it('preserves missing queue names and status in readiness responses', () => {
+    const response = {
+      status: 'not_ready',
+      checks: { database: 'ok', migrations: 'ok', queues: 'pending' },
+      missingQueues: ['user.estimate'],
+    };
+    expect((routes.readyz.response as z.ZodType).parse(response)).toEqual(response);
+  });
+
   it('lists the 119 operations of apps/api/test/expected-operations.txt', () => {
     expect(EXPECTED_OPERATIONS).toHaveLength(119);
     expect(entries.map(([, route]) => operation(route)).sort()).toEqual(

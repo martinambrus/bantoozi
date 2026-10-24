@@ -260,7 +260,8 @@ period), so the pin moves at most once, to what Jev answers now, with no mail (D
 `engine.model_impact`.
 **A queue is missing (D-300).** A worker started on a database where `pnpm db:migrate` was not run after a queue was
 added logs one error naming the queue, reports `queues.missing` in its heartbeat problems (raw in
-`GET /admin/settings`, not yet shown in Admin) and keeps working; the relay keeps the intents with
+`GET /admin/settings` and Admin → Settings "Applied by workers"; the `service.queues_missing` alert names them; `/readyz`
+answers 503) and keeps working; the relay keeps the intents with
 `last_error = 'queue_missing'`. Run the migrate job; the worker notices within 30 s. A missing cron queue still stops
 the worker at start ("Queue X not found").
 

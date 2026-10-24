@@ -188,6 +188,7 @@
       "none": "No live workers",
       "pendingRestart": "Pending restart: {{pending}} of {{total}} workers",
       "problem": "Rejected by worker: {{message}}",
+      "generalProblem": "Worker problem: {{message}}",
       "restarting": "Workers are restarting to apply the change…"
     },
     "reprocessing": "Re-processing articles and cards in the background…",
