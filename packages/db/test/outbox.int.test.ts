@@ -526,6 +526,33 @@ it('inserts a new delayed intent when delivery commits while deduplication waits
   }
 });
 
+it.each([false, true])(
+  'coalesces two new identical intents in a batch (delayed: %s)',
+  async (delayed) => {
+    await drain();
+    const user = await createUser(ctx.owner);
+    const intent = buildJobIntent('user.learn', { userId: user.id });
+    expect((await outboxRows()).filter((row) => row.dedupe_key === intent.dedupeKey)).toEqual([]);
+    const availableAt = new Date(Date.now() + 60_000);
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, delayed ? { availableAt } : {}).enqueueMany!([intent, intent]);
+    });
+    const rows = (await outboxRows()).filter((row) => row.dedupe_key === intent.dedupeKey);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      queue: intent.queue,
+      payload: intent.payload,
+      user_id: null,
+      delivered_at: null,
+      attempts: 0,
+      lease_token: null,
+      last_error: null,
+    });
+    if (delayed) expect(rows[0]!.available_at).toEqual(availableAt);
+    else expect(rows[0]!.available_at.getTime()).toBeLessThanOrEqual(Date.now());
+  },
+);
+
 it('batch inserts preserve pending duplicates, null keys and delivered history', async () => {
   await drain();
   const user = await createUser(ctx.owner);

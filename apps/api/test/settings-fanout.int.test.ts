@@ -19,11 +19,12 @@ beforeAll(async () => {
   // A statement trigger observes actual INSERT statements, including ON CONFLICT, without
   // changing the API executor or granting the API any read/update access to the outbox.
   await h.owner.query(`
-    CREATE TABLE test_outbox_statements (queues text[], writer text);
+    CREATE TABLE test_outbox_statements (
+      id bigint GENERATED ALWAYS AS IDENTITY, queues text[], writer text);
     CREATE FUNCTION test_count_outbox_statements() RETURNS trigger
       LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
     BEGIN
-      INSERT INTO test_outbox_statements
+      INSERT INTO test_outbox_statements (queues, writer)
         SELECT array_agg(DISTINCT queue), session_user FROM inserted;
       RETURN NULL;
     END $$;
@@ -66,7 +67,7 @@ it.each([1, 50])(
     const rows = await h.owner.query(`SELECT queue, payload, dedupe_key, user_id,
     available_at = created_at AND available_at <= now() AS immediately_available,
     delivered_at, attempts, lease_token, lease_until, last_error
-    FROM job_outbox ORDER BY queue, payload->>'userId'`);
+    FROM job_outbox ORDER BY queue, id`);
     expect(rows.rows).toEqual(
       ['user.estimate', 'user.learn', 'user.rank'].flatMap((queue) =>
         ids.map((userId) => {
@@ -95,7 +96,9 @@ it.each([1, 50])(
         .map((user) => ({ id: user.id, revision: ids.includes(user.id) ? 1 : 0 }))
         .sort((a, b) => a.id.localeCompare(b.id)),
     );
-    const statements = await h.owner.query('SELECT queues, writer FROM test_outbox_statements');
+    const statements = await h.owner.query(
+      'SELECT queues, writer FROM test_outbox_statements ORDER BY id',
+    );
     expect(statements.rows).toEqual([
       { queues: ['user.rank'], writer: 'bantoozi_app' },
       { queues: ['user.learn'], writer: 'bantoozi_app' },
