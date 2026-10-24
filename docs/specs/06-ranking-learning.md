@@ -815,7 +815,8 @@ A free per-user word model scores the rows that would otherwise have no P (desig
   changed a rating's value or time, its undo, an account restore, a change of `prefs.estimates`, and the rank
   handler's self-heal (no model while the gate is open, or a model of another spec), and the nightly sweep at the
   end of `house.nightly-learn`, which records `user.estimate` for every reader whose stored model, or missing one,
-  went stale untriggered (a rating aging out, a merge, a subscription or threshold change; D-300). It trains
+  went stale untriggered (D-300); merges, subscription changes, title or excerpt changes, a new carrier and an admin or
+  G1 change of the estimate settings also record it at once (D-316). It trains
   whatever `prefs.estimates` says; the preference gates scoring only.
 - **Ranking (§2):** at exits 1b, 2 and 4d, with a current model and `prefs.estimates = 'on'`: lane `new`, source
   `estimate`, P the calibrated estimate, tier `tierFromP(P)`, rules `[inference_not_requested, estimate]` at 1b and

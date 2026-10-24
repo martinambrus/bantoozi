@@ -3224,3 +3224,15 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
 - D-315: 2026-10-24 (PRG, bundled items) — `GET /me/learning.deactivated` reads the newest stamped `user_models` version
   (`loadLastDeactivation`), not the newest row, so the note survives a later rejected attempt; the New lane's empty text
   says "analyzed" and mentions estimates.
+- D-316: 2026-10-24 (FNF-VL-7, task #30; amends D-300's "known, not changed" list) — Immediate estimate triggers and
+  nightly isolation. `user.estimate` is now recorded in the transaction of each input change: an admin PATCH or a G1
+  apply of `ranker.thresholds` that changes `estimate.minRatings`, `estimate.minEachClass` or `model.historyDays` (for the
+  recently active users, like `user.learn`; a stored value that no longer merges counts as changed, so its repair PATCH
+  never fails), article and feed merges, subscribe/unsubscribe (also OPML and the dev CLI), a title or excerpt change,
+  and a new carrier of a known article (bounded to explicit raters of the affected articles, and for feed changes to
+  those whose rated articles the feed carries). The job treats a stored model of the current spec that does not parse
+  as stale (retrain, or delete below the gate); the staleness check stays on the light SQL read with an in-SQL
+  parseability flag, and the rank self-heal skips the enqueue while an estimate job is pending. `house.nightly-learn`
+  isolates each reader's learn check (warn per reader, `failed` counted, the estimate sweep and progress still run); a
+  run with failures logs its summary at error, and a run in which every examined reader failed throws after the sweep
+  and progress write, so pg-boss retries it and the failures alert sees it.

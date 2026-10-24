@@ -16,6 +16,8 @@ import {
   AppError,
   RUNTIME_SETTING_KEYS,
   canonicalJson,
+  enqueueEstimate,
+  estimateSettingsChanged,
   enqueueLearn,
   enqueueReenrich,
   enqueueRematch,
@@ -541,6 +543,9 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
               // for every recently active user; the handler trains only when its model context or
               // eligible samples changed (spec 06 §8.4).
               for (const userId of users) await enqueueLearn(outbox, { userId });
+            }
+            if (estimateSettingsChanged(prev, upd)) {
+              for (const userId of users) await enqueueEstimate(outbox, { userId });
             }
           }
           if (changed.includes('question_sets.active')) {

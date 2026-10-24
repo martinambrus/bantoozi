@@ -7,6 +7,7 @@ import {
   retryTransaction,
   workerOutbox,
   writeRankBatch,
+  hasPendingEquivalentJob,
   type RankCursor,
   type RankWrite,
   type StoredRankRow,
@@ -147,7 +148,16 @@ export function createUserRankHandler(
       (estimateState.status === 'none' && estimateState.backfill)
     ) {
       await retryTransaction(deps.db, async (tx) => {
-        await enqueueEstimate(workerOutbox(tx), { userId: user.userId });
+        if (
+          !(await hasPendingEquivalentJob(tx, {
+            queue: 'user.estimate',
+            singletonKey: `estimate:${user.userId}`,
+            payload: { userId: user.userId },
+            anyPayload: true,
+          }))
+        ) {
+          await enqueueEstimate(workerOutbox(tx), { userId: user.userId });
+        }
       });
     }
     const loaded = await loadRankContext(deps.db, {

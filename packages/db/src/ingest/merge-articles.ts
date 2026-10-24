@@ -2,6 +2,7 @@ import { enqueueCaptureBookmark, enqueueLearn, type JobSender } from '@bantoozi/
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
+import { recordArticleEstimateIntents } from '../estimate/intents.js';
 import { lockUrlKeys } from './articles.js';
 import { reconcileClusters } from './clusters.js';
 import { applyMediaSignals, EXCERPT_ONLY_REASON, type MediaSignalUpdate } from './media.js';
@@ -195,6 +196,7 @@ export async function mergeArticles(
     };
   }
 
+  await recordArticleEstimateIntents(tx, sender, ids);
   const movedFeedIds = await moveFeedItems(tx, sourceId, targetId);
   await moveAliases(tx, sourceId, targetId);
   const droppedSnapshotIds = await mergeReaderRows(tx, sourceId, targetId);

@@ -57,11 +57,17 @@ export async function loadEstimateInputs(
 
 /**
  * What `user.estimate` does with these inputs: `unchanged` (a model of the current spec with the same
- * input hash), `idle` (gate closed, nothing stored), `delete` (gate closed, a model stored), `train`.
+ * input hash and a parseable model), `idle` (gate closed, nothing stored), `delete` (gate closed,
+ * a model stored), `train`.
  */
 export function estimateAction(inputs: EstimateInputs): 'unchanged' | 'idle' | 'delete' | 'train' {
   const { state, inputSha, counts, options } = inputs;
-  if (state !== null && state.spec === ESTIMATE_SPEC && state.metrics['inputSha'] === inputSha) {
+  if (
+    state !== null &&
+    state.spec === ESTIMATE_SPEC &&
+    state.metrics['inputSha'] === inputSha &&
+    state.parseable
+  ) {
     return 'unchanged';
   }
   if (!estimateGate(counts, options).open) return state === null ? 'idle' : 'delete';

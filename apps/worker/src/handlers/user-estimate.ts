@@ -67,7 +67,8 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
       if (
         current !== null &&
         current.spec === ESTIMATE_SPEC &&
-        current.metrics['inputSha'] === inputSha
+        current.metrics['inputSha'] === inputSha &&
+        current.parseable
       ) {
         return 'duplicate';
       }

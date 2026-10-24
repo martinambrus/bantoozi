@@ -165,7 +165,7 @@ describe('loadEstimateState and loadEstimateModel', () => {
     });
     expect(state?.trainedAt).toBeInstanceOf(Date);
     expect(Object.keys(state ?? {}).sort()).toEqual(
-      ['metrics', 'n', 'nNeg', 'nPos', 'spec', 'trainedAt', 'version'].sort(),
+      ['metrics', 'n', 'nNeg', 'nPos', 'parseable', 'spec', 'trainedAt', 'version'].sort(),
     );
     const full = await loadEstimateModel(ctx.worker, s.userId);
     expect(full).toMatchObject({ version: 2, spec: 'new', n: 14 });
