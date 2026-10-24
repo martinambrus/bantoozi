@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { json } from '../api/fake-fetch.js';
 import { actionResponse, findToast, restoreVisibility, setVisibility } from '../article/harness.js';
 import { cardResult, makeCard } from '../interests/support.js';
-import { LEARNING, learningRoute, makeEstimates, makeLearning } from '../learning/fixtures.js';
+import {
+  LEARNING_ESTIMATES,
+  learningEstimatesRoute,
+  makeEstimates,
+  makeLearning,
+} from '../learning/fixtures.js';
 import { acked } from './actions/fake-transport.js';
 import { holdExits } from './exit-hold.js';
 import { countsQueries, createReaderHarness, item, listQueries, rowTitles } from './support.js';
@@ -13,7 +18,7 @@ import { VERGE, likeOf, openMore, writeRoutes } from './surfaces.js';
 
 /*
  * The effect notice (visible-learning 4.5, PRG-3): after the reader's own rating the page asks
- * GET /me/learning every 5 s (at most 60 s after the last rating); when a refresh that followed
+ * GET /me/learning/estimates every 5 s (at most 60 s after the last rating); when a refresh that followed
  * ratings finishes ("lastRun" with a new "at" and fromRatings true) a bar above the list says how
  * many unread articles moved, and the list reloads only when Show is pressed.
  */
@@ -29,7 +34,7 @@ const advance = (ms: number) =>
     await vi.advanceTimersByTimeAsync(ms);
   });
 const lists = (app: App) => app.calls('GET /articles').length;
-const polls = (app: App) => app.calls(LEARNING).length;
+const polls = (app: App) => app.calls(LEARNING_ESTIMATES).length;
 
 const run = (at: string, movedUp: number, movedDown: number, fromRatings = true): Run => ({
   at,
@@ -46,7 +51,7 @@ const SENTENCE_L2 = 'Updated from your ratings: 3 unread articles moved up';
 const SHOW = 'Show articles in their new order';
 const DISMISS = 'Dismiss the update notice';
 
-/** What GET /me/learning answers next; a test changes it between polls. */
+/** What GET /me/learning/estimates answers next; a test changes it between polls. */
 let status: LearningStatus;
 const withRun = (lastRun: Run | null) => {
   status = makeLearning({}, [], { estimates: makeEstimates({ lastRun }) });
@@ -87,13 +92,17 @@ async function openReader({ path = '/read/feed/7', routes = {} }: OpenOptions = 
     path,
     subscriptions: [VERGE],
     items: THREE,
-    routes: { [LEARNING]: learningRoute(() => status), ...writeRoutes().routes, ...routes },
+    routes: {
+      [LEARNING_ESTIMATES]: learningEstimatesRoute(() => status),
+      ...writeRoutes().routes,
+      ...routes,
+    },
   });
   await screen.findByRole('article', { name: 'Article 1' });
   return { ...opened, exits };
 }
 
-/** Lets exactly one more GET /me/learning happen (and be handled). */
+/** Lets exactly one more GET /me/learning/estimates happen (and be handled). */
 async function nextPoll(app: App) {
   const before = polls(app);
   for (let waited = 0; waited < 12_000 && polls(app) === before; waited += 500) {

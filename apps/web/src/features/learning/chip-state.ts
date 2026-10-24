@@ -1,5 +1,6 @@
 import {
   hasAgreement,
+  type LearningEstimates,
   type LearningFeedAgreement,
   type LearningFeedEntry,
   type LearningStatus,
@@ -33,7 +34,7 @@ export type ChipState =
   | { kind: 'shown'; estimate: EstimateSegment; cards: CardsSegment };
 
 export interface ChipInput {
-  learning: LearningStatus;
+  learning: LearningStatus | LearningEstimates;
   feedId: string;
   inferenceMode: Subscription['inferenceMode'];
   estimatesPreference: 'on' | 'off';
@@ -59,14 +60,17 @@ export function chipState({
   inferenceMode,
   estimatesPreference,
 }: ChipInput): ChipState {
-  if (learning.classification.state === 'paused') {
+  if ('classification' in learning && learning.classification.state === 'paused') {
     return { kind: 'paused', classification: learning.classification };
   }
-  const entry: LearningFeedEntry | undefined = learning.feeds.find(
+  const entry: LearningFeedEntry | undefined = ('feeds' in learning ? learning.feeds : []).find(
     (feed) => feed.feedId === feedId,
   );
   const agreement = entry !== undefined && hasAgreement(entry) ? entry : undefined;
-  const cards = cardsSegment(inferenceMode, agreement, learning.model.thresholds.minCvAuc);
+  const cards: CardsSegment =
+    'model' in learning
+      ? cardsSegment(inferenceMode, agreement, learning.model.thresholds.minCvAuc)
+      : { kind: 'none' };
 
   if (estimatesPreference === 'off') return { kind: 'shown', estimate: { kind: 'off' }, cards };
   const { estimates, estimateGate } = learning;

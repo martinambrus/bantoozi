@@ -12,6 +12,7 @@ import { json } from '../api/fake-fetch.js';
 import type { ApiRouteHandler } from '../support/app.js';
 
 export const LEARNING = 'GET /me/learning';
+export const LEARNING_ESTIMATES = 'GET /me/learning/estimates';
 export const LEARNING_HISTORY = 'GET /me/learning/history';
 
 /** A schema-valid status: no ratings yet, no model, no feed in training. */
@@ -112,3 +113,10 @@ export const learningHistoryRoute =
   (history: () => LearningHistory = () => makeHistory()): ApiRouteHandler =>
   () =>
     json(200, history());
+
+export const learningEstimatesRoute =
+  (status: () => LearningStatus = () => makeLearning()): ApiRouteHandler =>
+  () => {
+    const { estimates, estimateGate } = status();
+    return json(200, { estimates, estimateGate });
+  };

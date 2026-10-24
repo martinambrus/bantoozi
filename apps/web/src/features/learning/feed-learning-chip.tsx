@@ -14,6 +14,7 @@ import { useSettledActions } from '../reader/actions/provider.js';
 import { chipState, type CardsSegment, type EstimateSegment } from './chip-state.js';
 import { LearningPaused } from './learning-paused.js';
 import { learningKey, useLearning } from './use-learning.js';
+import { learningEstimatesKey, useLearningEstimates } from './use-learning-estimates.js';
 
 const CHIP = 'rounded border border-slate-300 px-2.5 py-1.5 text-sm dark:border-slate-600';
 const TEXT = 'text-slate-700 dark:text-slate-200';
@@ -67,18 +68,20 @@ export function FeedLearningChip({ subscription }: { subscription: Subscription 
   const queryClient = useQueryClient();
   const accountId = useAccountId();
   const shown = subscription.inferenceMode !== 'active';
-  const learning = useLearning(shown);
+  const training = subscription.inferenceMode === 'training';
+  const learning = useLearning(training);
+  const estimates = useLearningEstimates(subscription.inferenceMode === 'off');
   useSettledActions((handle) => {
     if (handle.action.type !== 'rate' || !shown) return;
     // The sidebar asks the same question for a feed in training in the same turn: one refetch is
     // enough for both, so this one waits for the turn to end and only asks if nobody has.
     queueMicrotask(() => {
-      const key = learningKey(accountId);
+      const key = training ? learningKey(accountId) : learningEstimatesKey(accountId);
       if (queryClient.isFetching({ queryKey: key }) === 0) invalidateCoalesced(queryClient, key);
     });
   });
 
-  const status = learning.data;
+  const status = training ? learning.data : estimates.data;
   const feedId = subscription.feed.id;
   const state = useMemo(
     () =>
@@ -128,7 +131,9 @@ export function FeedLearningChip({ subscription }: { subscription: Subscription 
   const cards = cardsText(state.cards, t, number, tFeeds('agreement.short.not_yet'));
   if (cards !== null) parts.push(cards);
 
-  const agreement = status.feeds.filter(hasAgreement).find((entry) => entry.feedId === feedId);
+  const agreement = learning.data?.feeds
+    .filter(hasAgreement)
+    .find((entry) => entry.feedId === feedId);
 
   return (
     <div role="group" aria-label={t('chip.label')} className={`${CHIP} ${TEXT}`}>

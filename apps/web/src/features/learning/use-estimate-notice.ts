@@ -13,7 +13,7 @@ import {
   type EstimateNotice,
   type EstimateRunState,
 } from './estimate-run.js';
-import { learningQueryOptions } from './use-learning.js';
+import { learningEstimatesQueryOptions } from './use-learning-estimates.js';
 
 const POLL_MS = 5000;
 
@@ -45,7 +45,7 @@ export interface EstimateNoticeControl {
 
 /**
  * Watches for the refresh of the estimated rows that follows the reader's own ratings (design
- * 4.5): polls `GET /me/learning` only while waiting for it, in a visible, online tab.
+ * 4.5): polls `GET /me/learning/estimates` only while waiting for it, in a visible, online tab.
  */
 export function useEstimateNoticeState(): EstimateNoticeControl {
   const api = useApi();
@@ -55,7 +55,7 @@ export function useEstimateNoticeState(): EstimateNoticeControl {
   const waiting = armedUntil !== null;
   // Asking at once gives the status the refresh will be compared with before it can finish.
   const query = useQuery({
-    ...learningQueryOptions(api, accountId),
+    ...learningEstimatesQueryOptions(api, accountId),
     enabled: waiting,
     refetchInterval: waiting ? POLL_MS : false,
   });

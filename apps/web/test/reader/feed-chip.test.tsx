@@ -6,6 +6,8 @@ import { formatDateTime } from '../../src/i18n/dates.js';
 import { json } from '../api/fake-fetch.js';
 import {
   LEARNING,
+  LEARNING_ESTIMATES,
+  learningEstimatesRoute,
   learningRoute,
   makeAgreement,
   makeEstimates,
@@ -79,7 +81,10 @@ async function openChip(setup: Setup = {}) {
     path: setup.path ?? '/read/feed/1',
     me,
     subscriptions: [sub(mode)],
-    routes: { [LEARNING]: learningRoute(() => status) },
+    routes: {
+      [LEARNING]: learningRoute(() => status),
+      [LEARNING_ESTIMATES]: learningEstimatesRoute(() => status),
+    },
   });
   const chip = () => screen.findByRole('group', { name: NAME[lang] });
   return { ...opened, chip, lang };
@@ -104,23 +109,28 @@ const withEstimate = (mode: Mode, n: number, auc: number | null): LearningFeedEn
     : [makeFeedEstimate('1', n, auc)];
 
 describe.each(MODES)('the feed header chip of a %s feed', (mode) => {
-  describe('paused analysis', () => {
-    it.each(['engine_unavailable'] as const)('shows only the paused text (%s)', async (reason) => {
-      const date = formatDateTime(SINCE, 'en', TIMEZONE);
-      const { group } = await chipShowing(
-        {
-          mode,
-          feeds: mode === 'training' ? [readyAgreement('1')] : [makeFeedEstimate('1', 23, 0.71)],
-          over: { classification: { state: 'paused', since: SINCE, reason } },
-        },
-        `Analysis paused since ${date}`,
-      );
+  if (mode === 'training')
+    describe('paused analysis', () => {
+      it.each(['engine_unavailable'] as const)(
+        'shows only the paused text (%s)',
+        async (reason) => {
+          const date = formatDateTime(SINCE, 'en', TIMEZONE);
+          const { group } = await chipShowing(
+            {
+              mode,
+              feeds:
+                mode === 'training' ? [readyAgreement('1')] : [makeFeedEstimate('1', 23, 0.71)],
+              over: { classification: { state: 'paused', since: SINCE, reason } },
+            },
+            `Analysis paused since ${date}`,
+          );
 
-      expect(group).not.toHaveTextContent(/Estimates/);
-      expect(group).not.toHaveTextContent(/Ready for automatic/);
-      expect(within(group).queryByRole('button', { name: /^Enable/ })).toBeNull();
+          expect(group).not.toHaveTextContent(/Estimates/);
+          expect(group).not.toHaveTextContent(/Ready for automatic/);
+          expect(within(group).queryByRole('button', { name: /^Enable/ })).toBeNull();
+        },
+      );
     });
-  });
 
   describe('below the estimate gate', () => {
     it.each([
@@ -161,7 +171,9 @@ describe.each(MODES)('the feed header chip of a %s feed', (mode) => {
         'Estimates on',
       );
 
-      expect(group).toHaveTextContent('23 rated in this feed');
+      expect(group).toHaveTextContent(
+        mode === 'training' ? '23 rated in this feed' : 'from 120 ratings',
+      );
       expect(group).not.toHaveTextContent('quality');
       expect(within(group).queryByRole('button', { name: HELP_LABEL.en })).toBeNull();
     });
@@ -172,8 +184,13 @@ describe.each(MODES)('the feed header chip of a %s feed', (mode) => {
         'Estimates on',
       );
 
-      expect(group).toHaveTextContent('30 rated in this feed');
-      expect(group).toHaveTextContent(`quality ${percent(0.714, 'en')}`);
+      if (mode === 'training') {
+        expect(group).toHaveTextContent('30 rated in this feed');
+        expect(group).toHaveTextContent(`quality ${percent(0.714, 'en')}`);
+      } else {
+        expect(group).toHaveTextContent('from 120 ratings');
+        expect(group).not.toHaveTextContent('quality');
+      }
     });
 
     it.each([
@@ -182,7 +199,7 @@ describe.each(MODES)('the feed header chip of a %s feed', (mode) => {
     ])('shows no quality with %s', async (_name, n, auc) => {
       const { group } = await chipShowing(
         { mode, feeds: withEstimate(mode, n, auc) },
-        `${n} rated in this feed`,
+        mode === 'training' ? `${n} rated in this feed` : 'from 120 ratings',
       );
 
       expect(group).not.toHaveTextContent('quality');
@@ -196,35 +213,36 @@ describe.each(MODES)('the feed header chip of a %s feed', (mode) => {
       expect(group).not.toHaveTextContent('quality');
     });
 
-    it('explains the quality in a tooltip on hover, on focus and until Escape', async () => {
-      const { app, group } = await chipShowing(
-        { mode, feeds: withEstimate(mode, 30, 0.714) },
-        'quality',
-      );
-      const help = within(group).getByRole('button', { name: HELP_LABEL.en });
-      const tip = () =>
-        screen
-          .getAllByRole('tooltip', { hidden: true })
-          .find((candidate) => candidate.textContent === QUALITY_HELP.en);
-      expect(help).toHaveAccessibleDescription(QUALITY_HELP.en);
-      expect(tip()).not.toBeVisible();
+    if (mode === 'training')
+      it('explains the quality in a tooltip on hover, on focus and until Escape', async () => {
+        const { app, group } = await chipShowing(
+          { mode, feeds: withEstimate(mode, 30, 0.714) },
+          'quality',
+        );
+        const help = within(group).getByRole('button', { name: HELP_LABEL.en });
+        const tip = () =>
+          screen
+            .getAllByRole('tooltip', { hidden: true })
+            .find((candidate) => candidate.textContent === QUALITY_HELP.en);
+        expect(help).toHaveAccessibleDescription(QUALITY_HELP.en);
+        expect(tip()).not.toBeVisible();
 
-      await app.user.hover(help);
-      expect(tip()).toBeVisible();
-      await app.user.unhover(help);
-      expect(tip()).not.toBeVisible();
+        await app.user.hover(help);
+        expect(tip()).toBeVisible();
+        await app.user.unhover(help);
+        expect(tip()).not.toBeVisible();
 
-      help.focus();
-      await app.user.keyboard('{Escape}');
-      expect(tip()).not.toBeVisible();
-      await app.user.tab({ shift: true });
-      await app.user.tab();
-      expect(help).toHaveFocus();
-      expect(tip()).toBeVisible();
-      await app.user.keyboard('{Escape}');
-      expect(tip()).not.toBeVisible();
-      expect(help).toHaveFocus();
-    });
+        help.focus();
+        await app.user.keyboard('{Escape}');
+        expect(tip()).not.toBeVisible();
+        await app.user.tab({ shift: true });
+        await app.user.tab();
+        expect(help).toHaveFocus();
+        expect(tip()).toBeVisible();
+        await app.user.keyboard('{Escape}');
+        expect(tip()).not.toBeVisible();
+        expect(help).toHaveFocus();
+      });
   });
 });
 
@@ -357,6 +375,9 @@ describe('switching the classification mode of the feed', () => {
             { estimates: makeEstimates({ n: 120 }) },
           ),
         ),
+        [LEARNING_ESTIMATES]: learningEstimatesRoute(() =>
+          makeLearning({}, [], { estimates: makeEstimates({ n: 120 }) }),
+        ),
         [SET_INFERENCE]: () => {
           training = true;
           const saved = { ...off, inferenceMode: 'training' as const, inferenceVersion: '4' };
@@ -366,7 +387,7 @@ describe('switching the classification mode of the feed', () => {
       },
     });
     const group = await screen.findByRole('group', { name: NAME.en });
-    await waitFor(() => expect(group).toHaveTextContent('23 rated in this feed'));
+    await waitFor(() => expect(group).toHaveTextContent('from 120 ratings'));
     expect(group).not.toHaveTextContent('Interests agree');
     const before = app.calls(LEARNING).length;
 
@@ -433,7 +454,10 @@ describe('the chip in Slovak', () => {
 
   it('explains the quality in Slovak', async () => {
     const { group } = await chipShowing(
-      sk({ mode: 'off', feeds: [makeFeedEstimate('1', 30, 0.714)] }),
+      sk({
+        mode: 'training',
+        feeds: [makeAgreement('1', 'collecting', { estimate: { n: 30, auc: 0.714 } })],
+      }),
       'kvalita',
     );
 
@@ -446,7 +470,10 @@ describe('the chip in Slovak', () => {
 describe('the chip for assistive technology', () => {
   it('is a named group whose help control is reachable by keyboard and named', async () => {
     const { app, group } = await chipShowing(
-      { mode: 'off', feeds: [makeFeedEstimate('1', 30, 0.714)] },
+      {
+        mode: 'training',
+        feeds: [makeAgreement('1', 'collecting', { estimate: { n: 30, auc: 0.714 } })],
+      },
       'quality',
     );
     expect(group).toHaveAttribute('role', 'group');
@@ -464,7 +491,6 @@ describe('the chip for assistive technology', () => {
   });
 
   it.each([
-    ['paused', { classification: { state: 'paused', since: SINCE, reason: 'engine_unavailable' } }],
     ['gated', { estimates: null, estimateGate: { needed: 4 } }],
     ['starting', { estimates: null, estimateGate: { needed: 0 } }],
   ] as const)('states the %s state in words', async (_name, over) => {
