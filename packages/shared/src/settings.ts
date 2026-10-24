@@ -120,7 +120,7 @@ export type EngineModelProbes = z.infer<typeof EngineModelProbesSchema>;
 export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
 
 /**
- * `settings['engine.model_watch']`, written only by the worker's `house.model-watch`
+ * `settings['engine.model_watch']`, written by the worker's `house.model-watch` and `requestModelWatch`
  * (visible-learning §4.1): when the retired-model trigger last queued a check (its 10-minute rate
  * limit), how the newest check ended, and the adoption whose mail is still to be delivered
  * (`major`: the new release is of another major, so personal models restart).
