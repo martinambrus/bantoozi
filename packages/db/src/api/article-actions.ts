@@ -1778,7 +1778,7 @@ async function applyRating(
             analysisRequestId: request.id,
             inputSha: request.inputSha,
             analysisRatingSha,
-            analysisRatingModel,
+            ...(analysisRatingModel ? { analysisRatingModel } : {}),
           }),
       ...(ratingSha === null ? {} : { ratingSha }),
       signalOrigin: 'explicit',

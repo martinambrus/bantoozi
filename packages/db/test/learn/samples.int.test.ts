@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { rateArticle } from '../../src/index.js';
 import { setupDbTest, type DbTestContext } from '../support/test-db.js';
 import {
   FEATURE_SPEC_SHA,
@@ -34,6 +35,26 @@ const only = (samples: LearnSample[]): LearnSample => {
   expect(samples).toHaveLength(1);
   return samples[0]!;
 };
+
+describe('selected rating model provenance', () => {
+  it('omits an unknown model when no stored pin or injected defaults exist', async () => {
+    const s = await Scenario.create(ctx);
+    const a = await s.article();
+    const request = await analysisRequest(s, a, { status: 'pending' });
+    await s.run(a, (tx, base) =>
+      rateArticle(tx, {
+        ...base,
+        rating: 1,
+        reason: null,
+        hide: false,
+        analysisRequestId: request.requestId,
+      }),
+    );
+    const event = await s.event(a, 'rate');
+    expect(event.value).toHaveProperty('analysisRatingSha');
+    expect(event.value).not.toHaveProperty('analysisRatingModel');
+  });
+});
 
 describe('the signal table (spec 06 §8.2)', () => {
   it('rating +1 is y1, weight 1.0, explicit, from the rate event, without any behavioral consent', async () => {

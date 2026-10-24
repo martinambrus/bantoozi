@@ -47,6 +47,7 @@ function derive(
     specSha: FEATURE_SNAPSHOT_SPEC_SHA,
     ratingSha,
     ...(typeof ratingModel === 'string' &&
+    ratingModel !== '' &&
     result.model !== undefined &&
     result.model !== ratingModel
       ? { staleAnswers: true }

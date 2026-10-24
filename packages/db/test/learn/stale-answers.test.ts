@@ -6,7 +6,11 @@ import { snapshot } from './fixtures.js';
 
 const at = new Date('2026-10-24T12:00:00Z');
 const sha = 'a'.repeat(64);
-function reduced(model: string, features: ReturnType<typeof snapshot> | null) {
+function reduced(
+  model: string,
+  features: ReturnType<typeof snapshot> | null,
+  ratingModel: unknown = 'jev-1.14.0',
+) {
   const event: LearnEvent = {
     id: '1',
     articleId: '10',
@@ -19,7 +23,7 @@ function reduced(model: string, features: ReturnType<typeof snapshot> | null) {
       inputSha: 'input',
       ratingSha: sha,
       analysisRatingSha: sha,
-      analysisRatingModel: 'jev-1.14.0',
+      analysisRatingModel: ratingModel,
     },
   };
   const result = Object.assign(
@@ -56,6 +60,9 @@ function reduced(model: string, features: ReturnType<typeof snapshot> | null) {
 }
 
 describe('selected analysis snapshot completion', () => {
+  it('treats an empty rating model as unknown instead of marking the derived snapshot stale', () => {
+    expect(reduced('jev-1.13.0', null, '')?.features).not.toHaveProperty('staleAnswers');
+  });
   it('marks a derived snapshot answered by an older release than the rating pin', () => {
     expect(reduced('jev-1.13.0', null)?.features).toMatchObject({ staleAnswers: true });
   });
