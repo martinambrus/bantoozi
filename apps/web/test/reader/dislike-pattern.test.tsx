@@ -120,6 +120,10 @@ describe('the dislike pattern in the undo toast', () => {
     const posted = app.calls('POST', '/cards/31/examples/batch');
     expect(posted).toHaveLength(1);
     expect(bodyOf(posted[0]!)).toEqual({ articleIds: ['201', '202'], side: 'no' });
+    expect(app.calls('POST', '/articles/101/pattern-offer').map(bodyOf)).toContainEqual({
+      offerId: OFFER.offerId,
+      event: 'accepted',
+    });
   });
 
   it('T2 "Not now" closes the toast and sends nothing', async () => {
@@ -286,6 +290,10 @@ describe('the dislike pattern in the undo toast', () => {
         }) !== null,
       ).toBe(estimates === 'on');
       await app.user.click(button);
+      expect(app.calls('POST', '/articles/101/pattern-offer').map(bodyOf)).toContainEqual({
+        offerId: OFFER.offerId,
+        event: 'accepted',
+      });
       const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
       expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
       await waitFor(() =>
