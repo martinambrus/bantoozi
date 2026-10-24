@@ -219,50 +219,57 @@ try {
   await shutdown('heartbeat-start');
 }
 
-if (!stopping) {
-  health = await startHealthServer({
-    host: config.workerMetricsHost,
-    port: config.workerMetricsPort,
-    token: config.metricsToken,
-    queues: workerQueues,
-    readHeartbeatAt: async () => {
-      const result = await pool.query<{ at: string | null }>(
-        `SELECT value -> $1 ->> 'at' AS at FROM settings WHERE key = 'worker.heartbeat'`,
-        [processId],
-      );
-      const at = result.rows[0]?.at;
-      return at === null || at === undefined ? undefined : new Date(at);
-    },
-  });
-  boss = createBoss(config.databaseUrlWorker);
-  boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
-  await boss.start();
-  const registration = await registerHandlers(boss, handlers, workerQueues, logger);
-  if (registration.consuming.includes('feed.schedule')) {
-    // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
-    await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
-  }
-  const houseSchedules = Object.entries(HOUSE_CRON_SCHEDULES) as Array<
-    [HouseCronQueue, HouseCronSchedule]
-  >;
-  for (const [queue, schedule] of houseSchedules) {
-    if (registration.consuming.includes(queue)) {
-      await boss.schedule(queue, schedule.cron, {}, { tz: 'UTC' });
+try {
+  if (!stopping) {
+    health = await startHealthServer({
+      host: config.workerMetricsHost,
+      port: config.workerMetricsPort,
+      token: config.metricsToken,
+      queues: workerQueues,
+      missingQueues: () => queueReadiness.missing(),
+      readHeartbeatAt: async () => {
+        const result = await pool.query<{ at: string | null }>(
+          `SELECT value -> $1 ->> 'at' AS at FROM settings WHERE key = 'worker.heartbeat'`,
+          [processId],
+        );
+        const at = result.rows[0]?.at;
+        return at === null || at === undefined ? undefined : new Date(at);
+      },
+    });
+    boss = createBoss(config.databaseUrlWorker);
+    boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
+    await boss.start();
+    const registration = await registerHandlers(boss, handlers, workerQueues, logger);
+    if (registration.consuming.includes('feed.schedule')) {
+      // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
+      await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
     }
+    const houseSchedules = Object.entries(HOUSE_CRON_SCHEDULES) as Array<
+      [HouseCronQueue, HouseCronSchedule]
+    >;
+    for (const [queue, schedule] of houseSchedules) {
+      if (registration.consuming.includes(queue)) {
+        await boss.schedule(queue, schedule.cron, {}, { tz: 'UTC' });
+      }
+    }
+    // Runs missed while no worker was up (spec 11 §6); the relay below delivers them.
+    const overdue = await enqueueOverdueHousekeeping(
+      db,
+      registration.consuming,
+      settingsEnv,
+      new Date(),
+    );
+    if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
+    relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
+    logger.info(
+      { ...registration, evalIngestOnly: config.evalIngestOnly, cpuThreads: cpuPool.size },
+      'worker started',
+    );
   }
-  // Runs missed while no worker was up (spec 11 §6); the relay below delivers them.
-  const overdue = await enqueueOverdueHousekeeping(
-    db,
-    registration.consuming,
-    settingsEnv,
-    new Date(),
-  );
-  if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
-  relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
-  logger.info(
-    { ...registration, evalIngestOnly: config.evalIngestOnly, cpuThreads: cpuPool.size },
-    'worker started',
-  );
+} catch (error) {
+  logger.error({ err: error }, 'worker startup failed');
+  process.exitCode = 1;
+  await shutdown('startup-failed');
 }
 
 shutdownGate.wire(shutdown);

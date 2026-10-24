@@ -12,12 +12,16 @@ import {
 const NOW = new Date('2026-10-10T12:00:00.000Z');
 let server: HealthServer | undefined;
 
-async function start(heartbeatAt: Date | undefined | Error): Promise<string> {
+async function start(
+  heartbeatAt: Date | undefined | Error,
+  missingQueues?: () => string[],
+): Promise<string> {
   server = await startHealthServer({
     host: '127.0.0.1',
     port: 0,
     token: 'secret-token',
     queues: ['feed.fetch', 'house.alerts'],
+    ...(missingQueues === undefined ? {} : { missingQueues }),
     now: () => NOW,
     startedAt: new Date(NOW.getTime() - 5000),
     readHeartbeatAt: async () => {
@@ -34,6 +38,22 @@ afterEach(async () => {
 });
 
 describe('worker health server', () => {
+  it('reports missing queues as unconsumed and reflects recovery on the next scrape', async () => {
+    let missing = ['house.alerts'];
+    const base = await start(NOW, () => missing);
+    const scrape = async () =>
+      (
+        await fetch(`${base}/metrics`, {
+          headers: { authorization: 'Bearer secret-token' },
+        })
+      ).text();
+    const initial = await scrape();
+    expect(initial).toContain('bantoozi_worker_queue_consumed{queue="feed.fetch"} 1');
+    expect(initial).toContain('bantoozi_worker_queue_consumed{queue="house.alerts"} 0');
+    missing = [];
+    expect(await scrape()).toContain('bantoozi_worker_queue_consumed{queue="house.alerts"} 1');
+  });
+
   it('answers /healthz 200 with a fresh heartbeat', async () => {
     const base = await start(new Date(NOW.getTime() - 30_000));
     const res = await fetch(`${base}/healthz`);
