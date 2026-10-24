@@ -1,3 +1,4 @@
+import { EngineModelPinSchema } from '@bantoozi/shared';
 import {
   startFakeLibreTranslate,
   type FakeLibreTranslate,
@@ -85,6 +86,7 @@ async function stored(key: string): Promise<unknown> {
 }
 
 async function setRow(key: string, value: unknown): Promise<void> {
+  if (key === 'engine.model_pin') EngineModelPinSchema.parse(value);
   await h.owner.query(
     `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
@@ -344,7 +346,6 @@ describe('production validation', () => {
     // JEV-2: the alias is accepted in production (stored, no pin write, no intent), like a model change.
     await setRow('engine.model_pin', {
       model: 'jev-1.13.0',
-      llm: null,
       since: '2026-10-01T00:00:00Z',
     });
     await h.owner.query('DELETE FROM job_outbox');
@@ -361,7 +362,6 @@ describe('production validation', () => {
     expect(await stored('engine.typesafe_model')).toBe('jev-latest');
     expect(await stored('engine.model_pin')).toEqual({
       model: 'jev-1.13.0',
-      llm: null,
       since: '2026-10-01T00:00:00Z',
     });
     expect(await outbox()).toEqual([]);
@@ -387,7 +387,6 @@ describe('model-affecting keys need acknowledge', () => {
   it('answers 409 confirmation_required without acknowledge and writes nothing', async () => {
     await setRow('engine.model_pin', {
       model: 'jev-1.13.0',
-      llm: null,
       since: '2026-10-01T00:00:00Z',
     });
     // Another family than the env model jev-1.13.0, with a fresh confirming probe: personal models restart.
@@ -411,7 +410,7 @@ describe('model-affecting keys need acknowledge', () => {
   });
 
   it('with acknowledge stores the value and writes no pin and no rebuild intent', async () => {
-    const pin = { model: 'jev-1.13.0', llm: null, since: '2026-10-01T00:00:00Z' };
+    const pin = { model: 'jev-1.13.0', since: '2026-10-01T00:00:00Z' };
     await setRow('engine.model_pin', pin);
     await seedModelState(h, { probes: [{ requested: 'jev-1.14.0', answered: 'jev-1.14.0' }] });
     const res = await patch({
