@@ -756,6 +756,8 @@ interface FeatureCapture {
  * usable when its model is the pin or another release of the pin's Jev major. `values` holds the
  * raw observed inputs and the story group. Without an authorized carrier (no valid inputs) the
  * snapshot is `null`; a rating on an older saved snapshot never borrows current features either.
+ * Included answers from another exact pin set `staleAnswers: true`; strict training skips the
+ * marked snapshot while relaxed training can still use its family-compatible answers.
  */
 async function captureFeatures(
   tx: TenantTx,
@@ -1620,18 +1622,18 @@ interface RatingTarget {
 }
 
 /**
- * The rating fingerprint to record for a rating that carries a selected-analysis request but no
- * live features, or null when the request was frozen under another manifest than the locked
+ * The rating fingerprint and comparison model for a rating carrying a selected-analysis request.
+ * The fingerprint is null when the request was frozen under another manifest than the locked
  * settings now stamping it (active enrich/match sets, a pinned model of another family, the article language's mode,
  * card text mode): its result must not stand in for the rater's snapshot. Settings without a stored
  * value (model pin, language mode) keep their environment default, which the fingerprint cannot
  * have changed; a manifest field the snapshot lacks is not a disagreement.
  */
-async function requestRatingSha(
+async function requestRatingContext(
   tx: Executor,
   snapshot: unknown,
   injected: RatingDefaults | undefined,
-): Promise<string | null> {
+): Promise<{ ratingSha: string | null; model: string | null }> {
   const defaults = injected ?? NO_DEFAULTS;
   const stored = await readRatingSettingsLocked(tx, injected);
   const sets = stored.get('question_sets.active');
@@ -1663,9 +1665,9 @@ async function requestRatingSha(
       (current === null || (frozenText !== null && sameModelFamily(frozenText, current)))
     )
       continue;
-    return null;
+    return { ratingSha: null, model };
   }
-  return ratingShaOf(stored, defaults);
+  return { ratingSha: ratingShaOf(stored, defaults), model };
 }
 
 /** Release only an unseen, unanswered offer belonging to the rating being replaced or undone. */
@@ -1733,18 +1735,13 @@ async function applyRating(
   });
   // The request's own fingerprint, null when it was frozen under another manifest: the reducer
   // completes or derives from the request only when this equals the snapshot's rating sha.
-  const analysisRatingSha =
+  const ratingContext =
     request === null
       ? null
-      : await requestRatingSha(tx, request.snapshot, options.matchFingerprint?.defaults);
+      : await requestRatingContext(tx, request.snapshot, options.matchFingerprint?.defaults);
+  const analysisRatingSha = ratingContext?.ratingSha ?? null;
   // Freeze the comparison model with the event: a linked request may complete after another pin change.
-  const analysisRatingModel =
-    request === null
-      ? null
-      : effectiveModel(
-          await readRatingSettingsLocked(tx, options.matchFingerprint?.defaults),
-          options.matchFingerprint?.defaults ?? NO_DEFAULTS,
-        );
+  const analysisRatingModel = ratingContext?.model ?? null;
   const ratingSha = capture.features === null ? analysisRatingSha : null;
   const row = article.row;
   const patch: ReaderPatch =

@@ -37,6 +37,40 @@ const only = (samples: LearnSample[]): LearnSample => {
 };
 
 describe('selected rating model provenance', () => {
+  it.each([false, true])(
+    'freezes the effective model even when the request fingerprint differs: %s',
+    async (mismatch) => {
+      const s = await Scenario.create(ctx);
+      const a = await s.article();
+      const request = mismatch
+        ? await frozenRequest(s, a, {
+            firstSeenAt: new Date(),
+            publishedAt: null,
+            cards: [],
+            facets: {},
+          })
+        : await analysisRequest(s, a, { status: 'pending' });
+      const matchFingerprint = Object.assign(async () => null, {
+        defaults: { model: 'jev-1.14.0', languageModes: {}, cardTextMode: 'as_written' as const },
+      });
+      await s.run(a, (tx, base) =>
+        rateArticle(tx, {
+          ...base,
+          rating: 1,
+          reason: null,
+          hide: false,
+          analysisRequestId: request.requestId,
+          matchFingerprint,
+        }),
+      );
+      const event = await s.event(a, 'rate');
+      expect(event.value.analysisRatingModel).toBe('jev-1.14.0');
+      expect(event.value.analysisRatingSha).toEqual(
+        mismatch ? null : expect.stringMatching(/^[0-9a-f]{64}$/),
+      );
+    },
+  );
+
   it('omits an unknown model when no stored pin or injected defaults exist', async () => {
     const s = await Scenario.create(ctx);
     const a = await s.article();

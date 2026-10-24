@@ -16,7 +16,10 @@ import {
   type TrainingSample,
 } from './samples.js';
 
-/** The rating scope of a training: no rating checks, or the exact sha with its family map. */
+/**
+ * The rating scope of a training: no rating checks, or the exact sha with its family map.
+ * `strict` admits only the exact sha and excludes snapshots marked `staleAnswers: true`.
+ */
 export type RatingScope =
   | { ratingSha: null }
   | {
