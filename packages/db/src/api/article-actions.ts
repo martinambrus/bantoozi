@@ -1503,7 +1503,7 @@ export async function recordPatternOfferEvent(
   const { user } = await lockReaderUser(tx);
   const result = await tx.execute(sql`
     UPDATE dislike_pattern_offers
-       SET seen_at = CASE WHEN ${input.event} = 'seen' THEN coalesce(seen_at, ${input.now.toISOString()}::timestamptz) ELSE seen_at END,
+       SET seen_at = coalesce(seen_at, ${input.now.toISOString()}::timestamptz),
            answer = CASE WHEN ${input.event} <> 'seen' THEN coalesce(answer, ${input.event}) ELSE answer END,
            answered_at = CASE WHEN ${input.event} <> 'seen' THEN coalesce(answered_at, ${input.now.toISOString()}::timestamptz) ELSE answered_at END
      WHERE id = ${input.offerId}::uuid AND user_id = ${user}::uuid AND article_ids[1] = ${input.articleId}::bigint

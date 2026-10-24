@@ -164,6 +164,26 @@ describe('rating pattern (DPF-3)', () => {
     expect(body.pattern!.offer).toBeNull();
   });
 
+  it.each(['accepted', 'dismissed'] as const)(
+    'D1 %s without seen blocks the next similar dislike',
+    async (event) => {
+      const w = await world();
+      const target = await candidate(w, TARGET);
+      const offerId = (await dislike(w, target)).pattern?.offerId;
+      expect(offerId).toEqual(expect.any(String));
+      expect(
+        (await w.api.post(`/articles/${target}/pattern-offer`, { offerId, event })).statusCode,
+      ).toBe(204);
+      expect((await dislike(w, await candidate(w, D3))).pattern?.offer).toBeNull();
+      const row = await h.owner.query(
+        'SELECT seen_at, answer FROM dislike_pattern_offers WHERE id = $1',
+        [offerId],
+      );
+      expect(row.rows[0].seen_at).not.toBeNull();
+      expect(row.rows[0].answer).toBe(event);
+    },
+  );
+
   it('DPF-6 unseen offers do not consume the cooldown', async () => {
     const w = await world();
     const target = await candidate(w, TARGET);
