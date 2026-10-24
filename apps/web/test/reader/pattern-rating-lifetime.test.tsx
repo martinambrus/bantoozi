@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useReaderActions } from '../../src/features/reader/actions/provider.js';
 import { ArticleRow } from '../../src/features/article/article-row.js';
-import { json } from '../api/fake-fetch.js';
-import { actionResponse, bodyOf, makeItem, renderReader } from '../article/harness.js';
+import { failure, json } from '../api/fake-fetch.js';
+import { actionResponse, bodyOf, deferred, makeItem, renderReader } from '../article/harness.js';
 import { makeCard } from '../interests/support.js';
 import { acked } from './actions/fake-transport.js';
 import { holdExits } from './exit-hold.js';
@@ -29,6 +29,55 @@ beforeEach(() => {
 });
 
 describe('an offer bound to its rating', () => {
+  it.each(['success', 'failure'] as const)(
+    'keeps the offer until a pending rating change settles with %s',
+    async (outcome) => {
+      const item = makeItem();
+      const pending = deferred<Response>();
+      let requests = 0;
+      const disliked = acked(item, { rating: -1, reason: 'off_topic', readAt: READ_AT });
+      const app = renderReader(<Row item={item} />, {
+        routes: {
+          'GET /cards': () => json(200, [CARD]),
+          'GET /subscriptions': () => json(200, []),
+          'POST /articles/:id/rating': () =>
+            ++requests === 1
+              ? actionResponse(disliked, { pattern, exampleSuggestion: null })
+              : pending.promise,
+          'POST /articles/:id/pattern-offer': () => new Response(null, { status: 204 }),
+        },
+      });
+      await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
+      await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+      await screen.findByRole('button', { name: 'Show fewer like these' });
+      await app.user.click(screen.getByRole('button', { name: 'Like' }));
+      await waitFor(() => expect(requests).toBe(2));
+      expect(screen.getByRole('button', { name: 'Show fewer like these' })).toBeVisible();
+      await act(async () => {
+        pending.resolve(
+          outcome === 'success'
+            ? actionResponse(acked(disliked, { rating: 1, reason: null }), {
+                pattern: null,
+                exampleSuggestion: null,
+              })
+            : failure(403, 'FORBIDDEN'),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      if (outcome === 'success') {
+        await waitFor(() =>
+          expect(screen.queryByRole('button', { name: 'Show fewer like these' })).toBeNull(),
+        );
+      } else {
+        await waitFor(() =>
+          expect(app.toasts.getSnapshot().some((toast) => toast.tone === 'error')).toBe(true),
+        );
+        expect(screen.getByRole('button', { name: 'Show fewer like these' })).toBeVisible();
+      }
+      expect(app.unhandled).toEqual([]);
+    },
+  );
+
   it('keeps a sticky offer after the undo window expires and unrelated store activity occurs', async () => {
     const item = makeItem();
     const unrelated = makeItem({ id: '102' });

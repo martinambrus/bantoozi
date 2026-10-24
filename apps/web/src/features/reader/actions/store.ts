@@ -1316,6 +1316,10 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       if (changed) bump();
     },
     view,
+    confirmed(item) {
+      const known = slots.get(item.id)?.known;
+      return known !== undefined && isNewerState(known, item) ? { ...item, ...known } : item;
+    },
     dispatch,
     release,
     cancel,

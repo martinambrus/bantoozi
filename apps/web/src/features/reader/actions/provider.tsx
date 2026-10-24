@@ -285,7 +285,7 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       showPlain(rated);
       void offers.patternActions(pattern, item.id).then((offered) => {
         if (turn !== latestOffer || !isRecent(handle)) return;
-        const current = store.view(item);
+        const current = store.confirmed(item);
         if (current.rating !== item.rating || current.reason !== item.reason) return;
         if (offered === null) {
           return;
@@ -314,7 +314,7 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       // A later acknowledgement in the same selection must not swallow its teaching offer.
       // Batch offers have their own toast, so they never replace a newer rating's undo toast.
       if (turn !== latestOffer || !isRecent(handle)) return;
-      const current = store.view(item);
+      const current = store.confirmed(item);
       if (current.rating !== item.rating || current.reason !== item.reason) return;
       if (offered === null) return;
       showRatingOffer(
@@ -490,7 +490,7 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
   store.subscribe(retryLater);
   store.subscribe(() => {
     for (const [id, { item }] of ratingOffers) {
-      const current = store.view(item);
+      const current = store.confirmed(item);
       if (current.rating !== item.rating || current.reason !== item.reason) {
         ratingOffers.delete(id);
         toast.dismiss(id);
