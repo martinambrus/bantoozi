@@ -216,7 +216,7 @@ describe('JEV-4 ratingFingerprintStateOf', () => {
     expect(unrelated.registered).toBe(false);
   });
 
-  it('S3 entries failing the schema are ignored', () => {
+  it('S3 ignores corrupt known fields and keeps entries carrying future fields', () => {
     const rows = pin('jev-1.14.0');
     const cur = fp(rows);
     const state = ratingFingerprintStateOf(
@@ -236,7 +236,11 @@ describe('JEV-4 ratingFingerprintStateOf', () => {
       }),
       defaults,
     );
-    expect(state.families).toEqual({ ['f'.repeat(64)]: fam, [cur.sha]: cur.familySha });
+    expect(state.families).toEqual({
+      [other]: fam,
+      ['f'.repeat(64)]: fam,
+      [cur.sha]: cur.familySha,
+    });
   });
 
   it.each([
@@ -291,4 +295,17 @@ describe('JEV-4 RATING_FINGERPRINT_STATE_KEYS', () => {
       ].sort(),
     );
   });
+});
+
+it('ignores future fields in active sets and nested laya when hashing effective settings', () => {
+  const laya = { checkpointSha: 'a'.repeat(64), calibrationVersion: 'v1' };
+  const rows = {
+    ...pin('jev-1.13.0', { laya }),
+    'question_sets.active': { enrich: '1', match: '2' },
+  };
+  const future = {
+    ...pin('jev-1.13.0', { laya: { ...laya, future: 1 }, future: 2 }),
+    'question_sets.active': { enrich: '1', match: '2', future: '3' },
+  };
+  expect(fp(future)).toEqual(fp(rows));
 });

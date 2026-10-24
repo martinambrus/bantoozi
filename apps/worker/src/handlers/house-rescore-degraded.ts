@@ -11,6 +11,8 @@ import {
   type RecoveryCursor,
 } from '@bantoozi/db';
 import {
+  readSettingFields,
+  parseStoredSetting,
   HOUSE_PROGRESS_CURSORS,
   RANK_WINDOW_DAYS,
   enqueueEnrich,
@@ -164,8 +166,7 @@ async function readCursor(deps: WorkerDeps): Promise<ProgressCursor> {
 
 /** The registered cursor schema (spec 02 §2); a malformed or foreign cursor restarts the pass. */
 export function parseProgressCursor(value: unknown): ProgressCursor {
-  const parsed = HOUSE_PROGRESS_CURSORS[JOB].safeParse(value);
-  return parsed.success ? parsed.data : {};
+  return readSettingFields(HOUSE_PROGRESS_CURSORS[JOB], value);
 }
 
 async function saveCursor(
@@ -175,7 +176,7 @@ async function saveCursor(
   now: Date,
 ): Promise<void> {
   await updateSettingLocked(tx, 'house.progress', {}, (current) => {
-    const progress = parseSetting('house.progress', current ?? {});
+    const progress = parseStoredSetting('house.progress', current ?? {});
     const previous = progress[JOB];
     return parseSetting('house.progress', {
       ...progress,

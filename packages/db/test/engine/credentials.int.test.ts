@@ -247,7 +247,7 @@ describe('credential state machine (spec 04 §1.2)', () => {
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
       [
         JSON.stringify({
-          typesafe: { state: 'auth', reopenCount: 2 },
+          typesafe: { state: 'auth', reopenCount: 2, future: 1 },
           llm: { state: 'open', reopenCount: 1 },
           resetRequested: {},
         }),
@@ -290,7 +290,7 @@ describe('credential state machine (spec 04 §1.2)', () => {
       `SELECT value FROM settings WHERE key = 'engine.circuit'`,
     );
     expect(circuit[0]?.value).toMatchObject({
-      typesafe: { state: 'closed', reopenCount: 0 },
+      typesafe: { state: 'closed', reopenCount: 0, future: 1 },
       llm: { state: 'open', reopenCount: 1 },
     });
     const active = await readActiveCredentialSecret(ctx.worker, 'typesafe');

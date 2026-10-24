@@ -1,5 +1,5 @@
 import { readStoredSetting, retryTransaction, updateSettingLocked } from '@bantoozi/db';
-import { parseSetting } from '@bantoozi/shared';
+import { parseStoredSetting, parseSetting } from '@bantoozi/shared';
 
 import { alertRecipients, deliver } from '../alerts/mail.js';
 import {
@@ -39,7 +39,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     const { mailer } = deps;
     if (mailer === undefined) throw new Error('house.alerts needs a mailer');
     const admins = await alertRecipients(deps);
-    let state = parseSetting(
+    let state = parseStoredSetting(
       'alerts.state',
       (await readStoredSetting(deps.db, 'alerts.state')) ?? {},
     );
@@ -84,7 +84,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     await retryTransaction(deps.db, (tx) =>
       updateSettingLocked(tx, 'alerts.state', {}, (current) => {
         const decision = planWithQueueGrace(
-          parseSetting('alerts.state', current ?? {}),
+          parseStoredSetting('alerts.state', current ?? {}),
           conditions,
           skipped,
           now,
@@ -135,7 +135,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
         parseSetting(
           'alerts.state',
           applyRun(
-            parseSetting('alerts.state', current ?? {}),
+            parseStoredSetting('alerts.state', current ?? {}),
             plan,
             admins.length === 0 ? [] : conditions,
             outcome,

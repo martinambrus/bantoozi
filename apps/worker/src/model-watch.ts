@@ -7,6 +7,8 @@ import {
   type Transaction,
 } from '@bantoozi/db';
 import {
+  readerSchema,
+  readSettingFields,
   EngineModelCandidateSchema,
   EngineModelWatchSchema,
   enqueueModelWatch,
@@ -82,7 +84,7 @@ export async function observeModelCandidate(
       MODEL_CANDIDATE_KEY,
       null,
       (current) => {
-        const parsed = EngineModelCandidateSchema.safeParse(current);
+        const parsed = readerSchema(EngineModelCandidateSchema).safeParse(current);
         const old = parsed.success ? parsed.data : undefined;
         started =
           old === undefined ||
@@ -118,7 +120,7 @@ export async function retryModelCandidate(tx: Transaction, now: Date): Promise<v
     MODEL_CANDIDATE_KEY,
     null,
     (current) => {
-      const parsed = EngineModelCandidateSchema.safeParse(current);
+      const parsed = readerSchema(EngineModelCandidateSchema).safeParse(current);
       return parsed.success &&
         (setting === undefined ||
           setting.updatedAt.getTime() <= Date.parse(parsed.data.firstSeenAt)) &&
@@ -177,10 +179,9 @@ export async function requestModelWatch(
   });
 }
 
-/** The stored watch state; a malformed row reads as empty. */
+/** Keep valid watch fields even when a sibling field is malformed. */
 export function watchStateOf(current: unknown): EngineModelWatch {
-  const parsed = EngineModelWatchSchema.safeParse(current);
-  return parsed.success ? parsed.data : {};
+  return readSettingFields(EngineModelWatchSchema, current);
 }
 
 /**

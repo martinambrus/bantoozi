@@ -34,7 +34,7 @@ import {
 import { OLLAMA_PRICE_TABLE_VERSION, type EngineLogger } from '@bantoozi/engine';
 import { ENRICH_V1, MATCH_V1, type Answer, type StateVariant } from '@bantoozi/questions';
 import { mergeRankerConfig, type CardAnswer, type RankerConfig } from '@bantoozi/ranker';
-import { parseSetting, type CardTextMode, type JsonValue } from '@bantoozi/shared';
+import { parseStoredSetting, type CardTextMode, type JsonValue } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 import { TRANSLATION_POLICY_VERSION } from '@bantoozi/translate';
 import { z } from 'zod';
@@ -323,7 +323,7 @@ const uniqSorted = (ids: Iterable<string>) => [...new Set(ids)].sort(compareIds)
 /** The stored `ranker.thresholds` partial (the deployed lane policy; `{}` when unset). */
 export async function deployedRankerThresholds(db: Executor): Promise<Record<string, unknown>> {
   const stored = await readStoredSetting(db, 'ranker.thresholds');
-  return parseSetting('ranker.thresholds', stored ?? {}) as Record<string, unknown>;
+  return parseStoredSetting('ranker.thresholds', stored ?? {}) as Record<string, unknown>;
 }
 
 /**

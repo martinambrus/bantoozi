@@ -1,4 +1,9 @@
-import { AppError, mergeRankerConfig, type RankerConfig } from '@bantoozi/shared';
+import {
+  parseStoredSetting,
+  AppError,
+  mergeRankerConfig,
+  type RankerConfig,
+} from '@bantoozi/shared';
 
 import { scoreVersion } from './version.js';
 
@@ -52,7 +57,12 @@ export function resolveRankerSettings(stored: StoredRankerSettings): RankerSetti
   try {
     // `mergeRankerConfig` reads null as "no override"; a stored JSON null is malformed instead.
     if (stored.thresholds === null) throw new TypeError('ranker.thresholds must be an object');
-    config = mergeRankerConfig(stored.thresholds === undefined ? {} : stored.thresholds);
+    config = mergeRankerConfig(
+      parseStoredSetting(
+        'ranker.thresholds',
+        stored.thresholds === undefined ? {} : stored.thresholds,
+      ),
+    );
   } catch (error) {
     throw new RankerSettingsError('ranker.thresholds', error);
   }

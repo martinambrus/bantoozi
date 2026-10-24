@@ -5,7 +5,7 @@ import {
   updateSettingLocked,
   workerOutbox,
 } from '@bantoozi/db';
-import { parseSetting } from '@bantoozi/shared';
+import { parseStoredSetting, parseSetting } from '@bantoozi/shared';
 
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
@@ -41,7 +41,7 @@ export function createExpireRulesHandler(deps: WorkerDeps): QueueHandler<'house.
     }
     await retryTransaction(deps.db, (tx) =>
       updateSettingLocked(tx, 'house.progress', {}, (current) => {
-        const progress = parseSetting('house.progress', current ?? {});
+        const progress = parseStoredSetting('house.progress', current ?? {});
         return parseSetting('house.progress', {
           ...progress,
           [JOB]: { updatedAt: now.toISOString(), completedAt: now.toISOString(), version: 1 },

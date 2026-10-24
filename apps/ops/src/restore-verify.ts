@@ -1,3 +1,4 @@
+import { parseStoredSetting } from '@bantoozi/shared';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -153,7 +154,20 @@ export async function checkActiveSets(pool: pg.Pool): Promise<string[]> {
   const setting = await pool.query<{ value: unknown }>(
     "SELECT value FROM settings WHERE key = 'question_sets.active'",
   );
-  const active = (setting.rows[0]?.value ?? {}) as Record<string, number | string>;
+  const raw = setting.rows[0]?.value ?? {};
+  // Older backups may carry numeric ids; the verifier historically accepted both forms.
+  const normalized =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? Object.fromEntries(
+          Object.entries(raw).map(([key, id]) => [key, typeof id === 'number' ? String(id) : id]),
+        )
+      : raw;
+  let active;
+  try {
+    active = parseStoredSetting('question_sets.active', normalized);
+  } catch {
+    throw new VerifyError('active_sets', 'the active question sets are malformed');
+  }
   const kinds = Object.entries(active);
   for (const [kind, id] of kinds) {
     const found = await pool.query('SELECT 1 FROM question_sets WHERE id = $1 AND kind = $2', [

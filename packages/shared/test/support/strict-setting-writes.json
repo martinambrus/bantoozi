@@ -1,0 +1,158 @@
+[
+  {
+    "call": "apps/api/src/routes/admin/engine.ts: EngineCircuitSchema.parse({ ...parsed.data, resetRequested: { ...parsed.data.resetRequested, [engine]: at }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/api/src/services/setup.ts: parseSetting(SETUP_KEY, { createdAt: state.createdAt, consumedAt: clock.now().toISOString(), userId, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/api/src/services/setup.ts: parseSetting(SETUP_KEY, { digest: setupTokenDigest(config.sessionPepper, fresh), createdAt: clock.now().toISOString(), })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/eval/src/commands/apply-g1.ts: LanguageModesSchema.parse(JSON.parse(env['LANGUAGE_MODES']))",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/classify/config.ts: parseSetting(key, settingDefault(key, env))",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/eval-mode.ts: parseSetting('worker.heartbeat', { [options.processId]: { at: at.toISOString(), startedAt, queues: [...options.queues], evalIngestOnly: options.evalIngestOnly, envCredentials: [...options.envCredentials], ...(pool === undefined ? {} : { pool }), ...(runtime === undefined ? {} : { runtime }), }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-alerts.ts: parseSetting( 'alerts.state', applyRun( parseStoredSetting('alerts.state', current ?? {}), plan, admins.length === 0 ? [] : conditions, outcome, memoChanged ? memo.backupOkAt : undefined, now, poolChanged ? memo.poolStreak : undefined, changedSeen, ), )",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-expire-rules.ts: parseSetting('house.progress', { ...progress, [JOB]: { updatedAt: now.toISOString(), completedAt: now.toISOString(), version: 1 }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-metrics.ts: settingSchema(key).parse(snapshot)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-nightly-learn.ts: parseSetting('house.progress', { ...progress, [JOB]: { updatedAt: now.toISOString(), completedAt: now.toISOString(), version: 1 }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-purge-auth.ts: parseSetting('house.progress', { ...progress, [job]: { ...(cursor === undefined ? {} : { cursor }), updatedAt: now.toISOString(), ...(completedAt === undefined ? {} : { completedAt }), version: 1, }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-purge-auth.ts: parseSetting('house.progress', { ...progress, [job]: { ...(pending.length === 0 ? {} : { cursor: { pending } }), updatedAt: now.toISOString(), ...(completedAt === undefined ? {} : { completedAt }), version: 1, }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-purge-auth.ts: parseSetting('house.progress', { ...progress, [job]: { updatedAt: now.toISOString(), ...(previous.completedAt === undefined ? {} : { completedAt: previous.completedAt }), version: 1, }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-rescore-degraded.ts: parseSetting('house.progress', { ...progress, [JOB]: { cursor, updatedAt: now.toISOString(), version: 1, ...(passComplete ? { completedAt: now.toISOString() } : previous?.completedAt === undefined ? {} : { completedAt: previous.completedAt }), }, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/model-pin.ts: parseSetting('engine.model_pin', { model: pin.model, ...(pin.alias ? { alias: pin.alias } : {}), ...(pin.llm ? { llm: pin.llm } : {}), since, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/model-probe.ts: EngineModelImpactSchema.parse({ at, activeModels })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/model-probe.ts: EngineModelProbeSchema.parse(probe)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/model-resolution.ts: EngineModelResolutionSchema.parse({ alias: input.alias, model: input.model, resolvedAt: at, checkedAt: at, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/model-resolution.ts: EngineModelResolutionSchema.parse({ alias: input.alias, model: input.model, resolvedAt: at, checkedAt: at, })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/seed.ts: parseSetting('engine.model_pin', { model, ...(llm ? { llm } : {}), since: new Date().toISOString(), })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "apps/worker/src/seed.ts: parseSetting(key, settingDefault(key, env))",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: EngineCircuitSchema.parse( settingDefault('engine.circuit', { dailyBudgetUsd: 0, languageModes: {}, signupMode: 'invite', }), )",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: EngineCircuitSchema.parse({ ...current, [engine]: next })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: parseSetting('engine.budget_alerts', next)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: settingSchema(key).parse(value)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('card_text_mode', input.cardTextMode)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('engine.daily_budget_usd', input.dailyBudgetUsd)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('language_modes', { ...oldModes, ...input.languageModes })",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('ranker.thresholds', input.rankerThresholds)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('translate.tier2_daily_cap', input.tier2DailyCap)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/library/question-sets.ts: parseSetting('question_sets.active', next)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse(circuit)",
+    "reason": "Default circuit or explicitly in-memory store write, never a stored JSON read."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse(initial ?? defaultCircuit())",
+    "reason": "Default circuit or explicitly in-memory store write, never a stored JSON read."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse(value)",
+    "reason": "Default circuit or explicitly in-memory store write, never a stored JSON read."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse({ ...value, [engine]: next })",
+    "reason": "Default circuit or explicitly in-memory store write, never a stored JSON read."
+  },
+  {
+    "call": "packages/shared/src/ranker-config.ts: RankerThresholdsSchema.parse(overrides ?? {})",
+    "reason": "Strict merge validator for proposed overrides; stored callers strip unknowns before invoking it."
+  },
+  {
+    "call": "packages/shared/src/runtime-settings.ts: parseSetting(key, value)",
+    "reason": "Strict runtime write branch; stored branch uses parseStoredSetting."
+  },
+  {
+    "call": "packages/shared/src/settings.ts: SETTINGS[key].schema.parse(value)",
+    "reason": "Strict validation of a new write or registry default; stored values use derived readers."
+  },
+  {
+    "call": "packages/db/src/settings.ts: settingSchema(key).parse(next)",
+    "reason": "Strict final metrics write validation: restored extensions still count toward the 64 KiB JSON limit."
+  }
+]

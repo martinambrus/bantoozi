@@ -1,3 +1,4 @@
+import { SETTINGS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
@@ -34,7 +35,9 @@ export async function replaceSetupState(tx: Executor, value: unknown): Promise<v
   const json = JSON.stringify(value);
   await tx.execute(sql`
     INSERT INTO settings (key, value) VALUES ('auth.setup', ${json}::jsonb)
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`);
+    ON CONFLICT (key) DO UPDATE SET
+      value = ((CASE WHEN jsonb_typeof(settings.value) = 'object' THEN settings.value ELSE '{}'::jsonb END) - ${sql.param(Object.keys(SETTINGS['auth.setup'].schema.shape))}::text[]) || EXCLUDED.value,
+      updated_at = now()`);
 }
 
 /** `settings['auth.setup']` locked `FOR UPDATE`; `undefined` when the row is missing. */
@@ -68,7 +71,7 @@ export async function promoteActiveUserToAdmin(
 export async function closeOpenSetup(tx: Executor, adminUserId: string): Promise<void> {
   await tx.execute(sql`
     UPDATE settings
-       SET value = jsonb_build_object(
+       SET value = (value - 'digest') || jsonb_build_object(
              'createdAt', value -> 'createdAt',
              'consumedAt', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
              'userId', ${adminUserId}::text),

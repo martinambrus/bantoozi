@@ -1,4 +1,9 @@
-import { CardTextModeSchema, enqueueTranslateCards, type JobSender } from '@bantoozi/shared';
+import {
+  readerSchema,
+  CardTextModeSchema,
+  enqueueTranslateCards,
+  type JobSender,
+} from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -114,7 +119,7 @@ export async function recordCardTranslationDemand(
   sender: JobSender,
   userId: string,
 ): Promise<boolean> {
-  const mode = CardTextModeSchema.safeParse(
+  const mode = readerSchema(CardTextModeSchema).safeParse(
     (await readStoredSetting(tx, 'card_text_mode')) ?? 'as_written',
   );
   if (!mode.success || mode.data !== 'english') return false;

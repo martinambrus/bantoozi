@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { readerSchema } from './setting-readers.js';
+
 import { IdSchema, UuidSchema } from './ids.js';
 import { HOUSE_PROGRESS_JOBS, isQueueName } from './jobs.js';
 import { JsonObjectSchema, JsonValueSchema } from './json.js';
@@ -124,8 +126,8 @@ export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
  * `observeModelCandidate`, `requestModelWatch` and `writePendingNotice` (visible-learning §4.1):
  * when the retired-model trigger last queued a check (its 10-minute rate limit), how the newest
  * check ended, and the adoption whose mail is still to be delivered (`major`: the new release is
- * of another major, so personal models restart). Its strict shape stays compatible with older
- * workers.
+ * of another major, so personal models restart). Readers tolerate future fields; writers validate
+ * their known state strictly and preserve stored extensions.
  */
 export const EngineModelWatchSchema = z
   .object({
@@ -195,15 +197,20 @@ const houseProgressEntry = z
   })
   .strict();
 
+// Express the job whitelist structurally so the common reader can strip future job keys.
+// Reject explicitly undefined entries to keep the original record writer's contract.
 export const HouseProgressSchema = z
-  .record(z.string(), houseProgressEntry)
+  .object(
+    Object.fromEntries(HOUSE_PROGRESS_JOBS.map((job) => [job, houseProgressEntry.optional()])),
+  )
+  .strict()
   .superRefine((value, ctx) => {
-    for (const job of Object.keys(value)) {
-      if (!(HOUSE_PROGRESS_JOBS as readonly string[]).includes(job)) {
-        ctx.addIssue({ code: 'custom', path: [job], message: 'unknown housekeeping job' });
+    for (const [job, entry] of Object.entries(value)) {
+      if (entry === undefined) {
+        ctx.addIssue({ code: 'custom', path: [job], message: 'a housekeeping entry is required' });
       }
     }
-  });
+  }) as z.ZodType<Record<string, z.output<typeof houseProgressEntry>>>;
 
 export const WorkerHeartbeatSchema = z.record(
   z.string().min(1).max(200),
@@ -670,6 +677,16 @@ export function parseSetting<K extends SettingKey>(key: K, value: unknown): Sett
   return SETTINGS[key].schema.parse(value) as SettingValue<K>;
 }
 
+/** Parse a stored row, stripping unknown object fields while validating known values. */
+export function parseStoredSetting<K extends SettingKey>(key: K, value: unknown): SettingValue<K> {
+  return readerSchema(SETTINGS[key].schema).parse(value) as SettingValue<K>;
+}
+
+/** Reader schema for registered and dynamic settings. */
+export function settingReaderSchema(key: string): z.ZodType {
+  return readerSchema(settingSchema(key));
+}
+
 /** The default used when the row is missing; `undefined` means the key has no default. */
 export function settingDefault<K extends SettingKey>(
   key: K,
@@ -688,7 +705,7 @@ export function readSetting<K extends SettingKey>(
   env: SettingEnvDefaults,
 ): SettingValue<K> | undefined {
   if (stored === undefined) return settingDefault(key, env);
-  return parseSetting(key, stored);
+  return parseStoredSetting(key, stored);
 }
 
 /** Keys that `PATCH /admin/settings` may write (spec 02 §2 "admin"). */

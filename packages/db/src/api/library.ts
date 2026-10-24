@@ -1,4 +1,4 @@
-import { CardTextModeSchema, type CallStatus } from '@bantoozi/shared';
+import { readerSchema, CardTextModeSchema, type CallStatus } from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { parseCardBody } from '../cards/body.js';
@@ -27,7 +27,9 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 /** `settings.card_text_mode` (spec 07 §5); an unset or unreadable value is `as_written`. */
 export async function readCardTextMode(db: Executor): Promise<'as_written' | 'english'> {
-  const parsed = CardTextModeSchema.safeParse(await readStoredSetting(db, 'card_text_mode'));
+  const parsed = readerSchema(CardTextModeSchema).safeParse(
+    await readStoredSetting(db, 'card_text_mode'),
+  );
   return parsed.success ? parsed.data : 'as_written';
 }
 

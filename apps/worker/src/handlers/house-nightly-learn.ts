@@ -4,7 +4,7 @@ import {
   updateSettingLocked,
   workerOutbox,
 } from '@bantoozi/db';
-import { buildJobIntent, parseSetting, type JobIntent } from '@bantoozi/shared';
+import { parseStoredSetting, buildJobIntent, parseSetting, type JobIntent } from '@bantoozi/shared';
 
 import { enqueueStaleEstimates } from '../estimate/sweep.js';
 import { ensureFingerprintRegistered, guardedRegistration } from '../learn/fingerprints.js';
@@ -105,7 +105,7 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
     const estimate = await enqueueStaleEstimates(deps, { now, config });
     await retryTransaction(deps.db, (tx) =>
       updateSettingLocked(tx, 'house.progress', {}, (current) => {
-        const progress = parseSetting('house.progress', current ?? {});
+        const progress = parseStoredSetting('house.progress', current ?? {});
         return parseSetting('house.progress', {
           ...progress,
           [JOB]: { updatedAt: now.toISOString(), completedAt: now.toISOString(), version: 1 },

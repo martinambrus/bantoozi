@@ -1,4 +1,8 @@
 import {
+  preserveUnknownFields,
+  settingReaderSchema,
+  readerSchema,
+  parseStoredSetting,
   AppError,
   BUDGET_EXEMPT_KINDS,
   CALL_KIND_PROFILES,
@@ -172,7 +176,7 @@ const utcMidnight = (day: string) => sql`(${day}::date::timestamp AT TIME ZONE '
 
 async function dailyBudgetUsd(db: Executor, fallbackUsd: number): Promise<number> {
   const stored = await readStoredSetting(db, 'engine.daily_budget_usd');
-  return stored === undefined ? fallbackUsd : parseSetting('engine.daily_budget_usd', stored);
+  return stored === undefined ? fallbackUsd : parseStoredSetting('engine.daily_budget_usd', stored);
 }
 
 /** Committed production spend of a UTC day: settled actual plus reserved/uncertain reserves. */
@@ -202,7 +206,7 @@ export async function markBudgetCrossings(tx: Transaction, day: string, fallback
       FROM settings WHERE key = 'engine.budget_alerts' FOR UPDATE`);
   const row = locked.rows[0];
   if (row === undefined) return;
-  const parsed = settingSchema('engine.budget_alerts').safeParse(row.value);
+  const parsed = settingReaderSchema('engine.budget_alerts').safeParse(row.value);
   const current = parsed.success
     ? (parsed.data as SettingValue<'engine.budget_alerts'>)
     : undefined;
@@ -218,7 +222,7 @@ export async function markBudgetCrossings(tx: Transaction, day: string, fallback
   }
   if (!changed) return;
   await tx.execute(sql`
-    UPDATE settings SET value = ${JSON.stringify(parseSetting('engine.budget_alerts', next))}::jsonb,
+    UPDATE settings SET value = ${JSON.stringify(preserveUnknownFields(settingSchema('engine.budget_alerts'), row.value, parseSetting('engine.budget_alerts', next)))}::jsonb,
                         updated_at = now(), updated_by = NULL
      WHERE key = 'engine.budget_alerts'`);
 }
@@ -555,7 +559,7 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
 
     async readCircuit() {
       const stored = await readStoredSetting(db, 'engine.circuit');
-      return EngineCircuitSchema.parse(stored ?? circuitDefault());
+      return readerSchema(EngineCircuitSchema).parse(stored ?? circuitDefault());
     },
 
     async updateCircuit(engine, update, updateOptions) {
@@ -577,7 +581,7 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
           if (!current) {
             const stored = await readStoredSetting(tx, 'engine.circuit');
             return {
-              circuit: EngineCircuitSchema.parse(stored ?? circuitDefault()),
+              circuit: readerSchema(EngineCircuitSchema).parse(stored ?? circuitDefault()),
               changed: false,
             };
           }
@@ -588,13 +592,15 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
         const locked = await tx.execute<{ value: unknown }>(
           sql`SELECT value FROM settings WHERE key = 'engine.circuit' FOR UPDATE`,
         );
-        const current = EngineCircuitSchema.parse(locked.rows[0]?.value ?? circuitDefault());
+        const current = readerSchema(EngineCircuitSchema).parse(
+          locked.rows[0]?.value ?? circuitDefault(),
+        );
         const next = update(structuredClone(current));
         if (next === null) return { circuit: current, changed: false };
         const circuit = EngineCircuitSchema.parse({ ...current, [engine]: next });
         await tx.execute(sql`
           UPDATE settings
-             SET value = jsonb_set(value, ARRAY[${engine}]::text[], ${JSON.stringify(circuit[engine])}::jsonb),
+             SET value = jsonb_set(value, ARRAY[${engine}]::text[], ${JSON.stringify(preserveUnknownFields(EngineCircuitSchema, locked.rows[0]?.value, circuit)[engine])}::jsonb),
                  updated_at = now(), updated_by = NULL
            WHERE key = 'engine.circuit'`);
         return { circuit, changed: true };

@@ -1,4 +1,9 @@
+import { insertSettingIfMissing, readStoredSetting } from '../settings.js';
 import {
+  EngineCircuitSchema,
+  settingDefault,
+  settingSchema,
+  preserveUnknownFields,
   AppError,
   BUDGET_EXEMPT_KINDS,
   CandidateValidationSchema,
@@ -76,12 +81,15 @@ export async function lockSettingRows(
   }));
 }
 
-/** Upsert a validated setting value, attributed to the administrator. */
+/** Upsert a validated value, preserving stored extensions. The caller holds lockSettingRows. */
 export async function writeSetting(
   tx: Executor,
   input: { key: string; value: unknown; updatedBy: string | null },
 ): Promise<void> {
-  const value = JSON.stringify(input.value);
+  const current = await readStoredSetting(tx, input.key);
+  const value = JSON.stringify(
+    preserveUnknownFields(settingSchema(input.key), current, input.value),
+  );
   await tx.execute(sql`
     INSERT INTO settings (key, value, updated_at, updated_by)
     VALUES (${input.key}, ${value}::jsonb, now(), ${input.updatedBy}::uuid)
@@ -338,14 +346,43 @@ export async function adminValidateCredential(
       ${input.provider}, ${bigintParam(input.candidateVersion)}, ${bigintParam(input.expectedRevision)})`);
 }
 
-/** Activate the exact candidate validated within 24 h (`admin_activate_provider_credential`). */
+/**
+ * Activate through the existing narrow SQL function, restoring fields its old breaker reset does
+ * not know. Requires REPEATABLE READ and whole-transaction retries: the first read is unlocked,
+ * keeping the credential-before-settings lock order; a concurrent settings write forces a retry.
+ */
 export async function adminActivateCredential(
   tx: TenantTx,
   input: { provider: Provider; candidateVersion: string; expectedRevision: string },
 ): Promise<void> {
+  const isolation = await tx.execute<{ isolation: string }>(
+    sql`SELECT current_setting('transaction_isolation') AS isolation`,
+  );
+  if (isolation.rows[0]?.isolation !== 'repeatable read') {
+    throw new Error('adminActivateCredential requires a repeatable read transaction');
+  }
+  const before = await readStoredSetting(tx, 'engine.circuit');
   await tx.execute(sql`
     SELECT revision FROM admin_activate_provider_credential(
       ${input.provider}, ${bigintParam(input.expectedRevision)}, ${bigintParam(input.candidateVersion)})`);
+  // The function holds the credential lock now. Also fence an absent row: an insert after our
+  // snapshot must retry, rather than leave a newly inserted auth breaker on the old credential.
+  await insertSettingIfMissing(
+    tx,
+    'engine.circuit',
+    settingDefault('engine.circuit', {
+      dailyBudgetUsd: 0,
+      languageModes: {},
+      signupMode: 'invite',
+    }),
+  );
+  const locked = await tx.execute<{ value: unknown }>(
+    sql`SELECT value FROM settings WHERE key = 'engine.circuit' FOR UPDATE`,
+  );
+  const next = preserveUnknownFields(EngineCircuitSchema, before, locked.rows[0]?.value);
+  await tx.execute(sql`
+    UPDATE settings SET value = ${JSON.stringify(next)}::jsonb, updated_at = now()
+     WHERE key = 'engine.circuit' AND value IS DISTINCT FROM ${JSON.stringify(next)}::jsonb`);
 }
 
 /**

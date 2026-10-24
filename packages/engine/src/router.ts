@@ -1,4 +1,5 @@
 import {
+  parseStoredSetting,
   ASK_KINDS,
   BUDGET_EXEMPT_KINDS,
   CALL_KIND_PROFILES,
@@ -10,7 +11,6 @@ import {
   isUuid,
   isModelAlias,
   newUuid,
-  parseSetting,
   settingDefault,
   utcDay,
   type CallKind,
@@ -429,7 +429,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     const stored = await store.getSetting<unknown>(key);
     if (stored === undefined) return fallback;
     try {
-      return parseSetting(key, stored);
+      return parseStoredSetting(key, stored);
     } catch {
       logger.warn({ key }, 'stored setting is malformed; using its default');
       return fallback;

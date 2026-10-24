@@ -1,4 +1,5 @@
 import {
+  readerSchema,
   RATING_FINGERPRINTS_KEY,
   RATING_FINGERPRINTS_MAX,
   RatingFingerprintEntrySchema,
@@ -34,7 +35,7 @@ const validEntries = (value: unknown): Map<string, RatingFingerprintEntry> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return entries;
   for (const [sha, raw] of Object.entries(value)) {
     if (!SHA.test(sha)) continue;
-    const parsed = RatingFingerprintEntrySchema.safeParse(raw);
+    const parsed = readerSchema(RatingFingerprintEntrySchema).safeParse(raw);
     if (parsed.success) entries.set(sha, parsed.data);
   }
   return entries;

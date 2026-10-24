@@ -38,7 +38,7 @@ import {
   setTrainingKernel,
   trainEstimateModel,
 } from '@bantoozi/ranker';
-import { parseSetting } from '@bantoozi/shared';
+import { parseStoredSetting } from '@bantoozi/shared';
 import { trainUserModel, type TrainingSample } from '@bantoozi/ranker';
 import { createLogger, loadConfig } from '@bantoozi/shared/server';
 
@@ -110,7 +110,7 @@ async function benchApi(noJit: boolean) {
     return {
       asOf: (await readerReleaseClock(tx, new Date())).asOf,
       scoreVersion: scoreVersion(
-        stored === undefined ? 0 : parseSetting('ranker.settings_version', stored),
+        stored === undefined ? 0 : parseStoredSetting('ranker.settings_version', stored),
       ),
     };
   };

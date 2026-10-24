@@ -13,6 +13,7 @@ import {
   type TenantTx,
 } from '@bantoozi/db';
 import {
+  readerSchema,
   AdminEngineModelSchema,
   AdminOverviewSchema,
   EngineModelWatchSchema,
@@ -108,7 +109,7 @@ async function loadCredential(tx: TenantTx, provider: Provider, now: Date) {
 /** The newest stored `metrics.daily` snapshot that parses, with the regret rate; `null` when none does. */
 async function latestMetrics(tx: TenantTx): Promise<AdminMetrics | null> {
   for (const [day, value] of await latestMetricsSnapshots(tx, 10)) {
-    const parsed = MetricsSnapshotSchema.safeParse(value);
+    const parsed = readerSchema(MetricsSnapshotSchema).safeParse(value);
     if (!parsed.success) continue;
     const { lanes, regret } = parsed.data;
     return {
@@ -148,7 +149,9 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
         ]);
         const stored = new Map(rows.map((row) => [row.key, row.value]));
         const metrics = await latestMetrics(tx);
-        const circuitParsed = EngineCircuitSchema.safeParse(stored.get('engine.circuit'));
+        const circuitParsed = readerSchema(EngineCircuitSchema).safeParse(
+          stored.get('engine.circuit'),
+        );
         const circuit: EngineCircuit = circuitParsed.success ? circuitParsed.data : circuitDefault;
         return {
           users: { total: counts.usersTotal, active7d: counts.usersActive7d },
@@ -222,7 +225,7 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
       const outcome = await request.mutate(async (tx, { now }) => {
         const at = now.toISOString();
         await updateSettingLocked(tx, 'engine.circuit', circuitDefault, (current) => {
-          const parsed = EngineCircuitSchema.safeParse(current);
+          const parsed = readerSchema(EngineCircuitSchema).safeParse(current);
           if (!parsed.success) {
             throw new AppError('CONFLICT', 'The stored breaker state is invalid', {
               details: { reason: 'circuit_invalid' },
@@ -285,7 +288,7 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
       const state = readModelState(rows);
       const byKey = new Map(rows.map((row) => [row.key, row.value]));
       const lastCheck =
-        EngineModelWatchSchema.pick({ lastCheck: true }).safeParse({
+        readerSchema(EngineModelWatchSchema.pick({ lastCheck: true })).safeParse({
           lastCheck: (byKey.get('engine.model_watch') as { lastCheck?: unknown } | null)?.lastCheck,
         }).data?.lastCheck ?? null;
       const source = snapshot.sources['engine.typesafe_model'];
@@ -306,7 +309,9 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
               },
         watch: { lastCheck },
         probes: state.probes,
-        impact: EngineModelImpactSchema.safeParse(byKey.get('engine.model_impact')).data ?? null,
+        impact:
+          readerSchema(EngineModelImpactSchema).safeParse(byKey.get('engine.model_impact')).data ??
+          null,
       };
     },
   );
@@ -479,7 +484,11 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
     '/engine/credentials/:provider/activate',
     {
-      config: { auth: 'admin', rateLimits: CREDENTIAL_LIMITS },
+      config: {
+        auth: 'admin',
+        rateLimits: CREDENTIAL_LIMITS,
+        mutationIsolation: 'repeatable read',
+      },
       schema: {
         tags: ['admin'],
         summary: 'Activate the validated candidate',

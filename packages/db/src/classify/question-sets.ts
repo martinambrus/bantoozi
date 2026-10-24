@@ -1,4 +1,4 @@
-import { parseSetting } from '@bantoozi/shared';
+import { parseStoredSetting } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -24,7 +24,7 @@ export interface StoredQuestionSet {
 export async function loadActiveQuestionSets(
   db: Executor,
 ): Promise<Partial<Record<QuestionSetKind, StoredQuestionSet>>> {
-  const active = parseSetting(
+  const active = parseStoredSetting(
     'question_sets.active',
     (await readStoredSetting(db, 'question_sets.active')) ?? {},
   );

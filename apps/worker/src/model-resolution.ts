@@ -6,6 +6,7 @@ import {
   type Transaction,
 } from '@bantoozi/db';
 import {
+  readerSchema,
   EngineModelPinSchema,
   EngineModelResolutionSchema,
   canonicalJson,
@@ -55,7 +56,7 @@ export async function recordModelResolution(
       'engine.model_resolution',
       null,
       (current) => {
-        const parsed = EngineModelResolutionSchema.safeParse(current);
+        const parsed = readerSchema(EngineModelResolutionSchema).safeParse(current);
         const model = parsed.success ? parsed.data.model : null;
         if (model !== input.expectedModel) {
           result = { changed: false };
@@ -84,10 +85,12 @@ export { resolutionInForce } from '@bantoozi/shared';
 export async function readResolutionState(
   db: Database,
 ): Promise<{ row: EngineModelResolution | null; pin: EngineModelPin | null }> {
-  const row = EngineModelResolutionSchema.safeParse(
+  const row = readerSchema(EngineModelResolutionSchema).safeParse(
     await readStoredSetting(db, 'engine.model_resolution'),
   );
-  const pin = EngineModelPinSchema.safeParse(await readStoredSetting(db, 'engine.model_pin'));
+  const pin = readerSchema(EngineModelPinSchema).safeParse(
+    await readStoredSetting(db, 'engine.model_pin'),
+  );
   return { row: row.success ? row.data : null, pin: pin.success ? pin.data : null };
 }
 
@@ -116,7 +119,7 @@ export async function recordStartResolution(
       'engine.model_resolution',
       null,
       (current) => {
-        const parsed = EngineModelResolutionSchema.safeParse(current);
+        const parsed = readerSchema(EngineModelResolutionSchema).safeParse(current);
         if (
           parsed.success &&
           parsed.data.alias === fresh.alias &&

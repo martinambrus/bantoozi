@@ -1,4 +1,4 @@
-import type { SessionContext, TenantTx } from '@bantoozi/db';
+import type { SessionContext, TenantTx, TenantTxOptions } from '@bantoozi/db';
 import type { JobSender } from '@bantoozi/shared';
 
 /**
@@ -54,6 +54,8 @@ export interface MutationOutcome<T = unknown> {
 declare module 'fastify' {
   interface FastifyContextConfig {
     auth?: AuthMode;
+    /** Stable snapshot for a mutation restoring extensions around a legacy SQL writer. */
+    mutationIsolation?: 'repeatable read';
     /** Route-specific limits in addition to the global per-IP and per-user mutation limits. */
     rateLimits?: readonly RateLimitRule[];
     /** Skip the per-user mutation limit and the idempotency requirement (auth login/logout). */
@@ -69,9 +71,12 @@ declare module 'fastify' {
     metricsBearer: boolean;
     /**
      * Run `fn` in a transaction bound to the caller's tenant (spec 08 §1 "Tenancy"). Nothing is
-     * opened until the first call; each call is its own READ COMMITTED transaction.
+     * opened until the first call; each call is its own transaction, READ COMMITTED by default.
      */
-    withTx<T>(fn: (tx: TenantTx) => Promise<T>): Promise<T>;
+    withTx<T>(
+      fn: (tx: TenantTx) => Promise<T>,
+      options?: Pick<TenantTxOptions, 'isolation'>,
+    ): Promise<T>;
     /**
      * Run an idempotent mutation (spec 08 §1.1): reserve the `Idempotency-Key`, replay a saved
      * receipt, or run `fn` and save its outcome in the same transaction.

@@ -8,6 +8,8 @@ import {
   type Transaction,
 } from '@bantoozi/db';
 import {
+  readerSchema,
+  parseStoredSetting,
   HOUSE_PROGRESS_CURSORS,
   RANK_WINDOW_DAYS,
   canonicalJson,
@@ -40,7 +42,7 @@ export async function recordHouseProgress(
 ): Promise<void> {
   await retryTransaction(deps.db, (tx) =>
     updateSettingLocked(tx, 'house.progress', {}, (current) => {
-      const progress = parseSetting('house.progress', current ?? {});
+      const progress = parseStoredSetting('house.progress', current ?? {});
       const completedAt = complete ? now.toISOString() : progress[job]?.completedAt;
       return parseSetting('house.progress', {
         ...progress,
@@ -72,7 +74,7 @@ export async function readSweepCursors(
     await readStoredSetting(deps.db, 'house.progress'),
     deps.settingsEnv,
   );
-  const parsed = HOUSE_PROGRESS_CURSORS[job].safeParse(progress?.[job]?.cursor);
+  const parsed = readerSchema(HOUSE_PROGRESS_CURSORS[job]).safeParse(progress?.[job]?.cursor);
   return parsed.success ? { ...parsed.data.sweeps } : {};
 }
 
@@ -126,7 +128,7 @@ const MAX_PENDING_RUNS = 20;
 
 /** The runs of `job` recorded as pending; a malformed cursor holds none. */
 function pendingOf(job: RebuildJob, cursor: unknown): RebuildRun[] {
-  const parsed = HOUSE_PROGRESS_CURSORS[job].safeParse(cursor);
+  const parsed = readerSchema(HOUSE_PROGRESS_CURSORS[job]).safeParse(cursor);
   return parsed.success ? parsed.data.pending : [];
 }
 
@@ -144,7 +146,7 @@ export async function recordRebuildProgress(
 ): Promise<void> {
   await retryTransaction(deps.db, (tx) =>
     updateSettingLocked(tx, 'house.progress', {}, (current) => {
-      const progress = parseSetting('house.progress', current ?? {});
+      const progress = parseStoredSetting('house.progress', current ?? {});
       const previous = progress[job];
       const pending = pendingOf(job, previous?.cursor);
       if (outcome.pending !== undefined) {
@@ -176,7 +178,7 @@ export async function takePendingRuns(
 ): Promise<RebuildRun[]> {
   let taken: RebuildRun[] = [];
   await updateSettingLocked(tx, 'house.progress', {}, (current) => {
-    const progress = parseSetting('house.progress', current ?? {});
+    const progress = parseStoredSetting('house.progress', current ?? {});
     const previous = progress[job];
     taken = pendingOf(job, previous?.cursor);
     if (previous === undefined || taken.length === 0) return progress;

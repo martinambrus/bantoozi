@@ -29,6 +29,7 @@ import {
   type TrainingSample,
 } from '@bantoozi/ranker';
 import {
+  readerSchema,
   EngineCircuitSchema,
   EngineModelPinSchema,
   HouseProgressSchema,
@@ -230,9 +231,9 @@ export async function loadLearningStatus(
     },
     feeds: [...feeds, ...estimateOnly],
     classification: classificationStatus({
-      circuit: EngineCircuitSchema.safeParse(stored.get('engine.circuit')).data,
-      pin: EngineModelPinSchema.safeParse(stored.get('engine.model_pin')).data,
-      progress: HouseProgressSchema.safeParse(stored.get('house.progress')).data,
+      circuit: readerSchema(EngineCircuitSchema).safeParse(stored.get('engine.circuit')).data,
+      pin: readerSchema(EngineModelPinSchema).safeParse(stored.get('engine.model_pin')).data,
+      progress: readerSchema(HouseProgressSchema).safeParse(stored.get('house.progress')).data,
     }),
     estimates:
       current === null

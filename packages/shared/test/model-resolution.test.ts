@@ -151,6 +151,18 @@ describe('JEV-2 M4 effectiveRuntimeSettings: typesafeResolvedModel', () => {
     expect(b.values.typesafeResolvedModel).toBe('jev-1.14.0');
   });
 
+  it('alias resolves through future fields at both object levels', () => {
+    const r = eff({
+      ...alias,
+      'engine.model_resolution': row('jev-1.13.0', {
+        extra: true,
+        previous: { model: 'jev-1.12.0', until: '2026-10-01T00:00:00Z', extra: true },
+      }),
+    });
+    expect(r.values.typesafeResolvedModel).toBe('jev-1.13.0');
+    expect(r.problems).toEqual([]);
+  });
+
   it('alias without a row is unresolved and reports no problem for the missing row', () => {
     const r = eff(alias);
     expect(r.values.typesafeModel).toBe('jev-latest');
@@ -166,7 +178,6 @@ describe('JEV-2 M4 effectiveRuntimeSettings: typesafeResolvedModel', () => {
       row('jev-latest'),
       row('gpt-4-1.0.0'),
       row('jev-1.13.0', { alias: 'x' }),
-      row('jev-1.13.0', { extra: true }),
       'jev-1.13.0',
     ]) {
       const r = eff({ ...alias, 'engine.model_resolution': bad });

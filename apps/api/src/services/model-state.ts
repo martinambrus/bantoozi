@@ -1,4 +1,5 @@
 import {
+  readerSchema,
   AppError,
   ENGINE_MODEL_PROBES_MAX,
   EngineModelPinSchema,
@@ -34,7 +35,7 @@ export function readModelState(rows: readonly { key: string; value: unknown }[])
   const stored = byKey.get(MODEL_PROBE_KEY);
   if (isRecord(stored)) {
     for (const [key, entry] of Object.entries(stored)) {
-      const parsed = EngineModelProbeSchema.safeParse(entry);
+      const parsed = readerSchema(EngineModelProbeSchema).safeParse(entry);
       if (parsed.success && parsed.data.requested === key) valid.push(parsed.data);
     }
   }
@@ -43,8 +44,10 @@ export function readModelState(rows: readonly { key: string; value: unknown }[])
   for (const probe of valid.slice(0, ENGINE_MODEL_PROBES_MAX)) probes[probe.requested] = probe;
   return {
     probes,
-    resolution: EngineModelResolutionSchema.safeParse(byKey.get(MODEL_RESOLUTION_KEY)).data ?? null,
-    pin: EngineModelPinSchema.safeParse(byKey.get(MODEL_PIN_KEY)).data ?? null,
+    resolution:
+      readerSchema(EngineModelResolutionSchema).safeParse(byKey.get(MODEL_RESOLUTION_KEY)).data ??
+      null,
+    pin: readerSchema(EngineModelPinSchema).safeParse(byKey.get(MODEL_PIN_KEY)).data ?? null,
   };
 }
 

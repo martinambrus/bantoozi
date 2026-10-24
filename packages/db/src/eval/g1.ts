@@ -1,4 +1,7 @@
 import {
+  settingSchema,
+  preserveUnknownFields,
+  parseStoredSetting,
   canonicalJson,
   enqueueEstimateMany,
   enqueueLearnMany,
@@ -168,7 +171,7 @@ export async function applyG1Settings(
      WHERE key = ANY(${sql.param([...G1_SETTING_KEYS])}::text[]) ORDER BY key FOR UPDATE`);
   const stored = new Map(locked.rows.map((row) => [row.key, row.value]));
   const current = <K extends G1SettingKey>(key: K) =>
-    stored.has(key) ? parseSetting(key, stored.get(key)) : settingDefault(key, options.env);
+    stored.has(key) ? parseStoredSetting(key, stored.get(key)) : settingDefault(key, options.env);
 
   const oldModes = current('language_modes') ?? {};
   const next = {
@@ -184,7 +187,7 @@ export async function applyG1Settings(
     unknown,
   ][]) {
     if (same(current(key), value)) continue;
-    await upsertSetting(tx, key, value);
+    await upsertSetting(tx, key, preserveUnknownFields(settingSchema(key), stored.get(key), value));
     changed.push(key);
   }
   let settingsVersion = current('ranker.settings_version') ?? 0;
