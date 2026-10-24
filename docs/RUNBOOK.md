@@ -272,6 +272,10 @@ replay the golden set by hand if you want one. A major change resets personal-mo
 means no run recorded progress for 12 h. Rolling back past JEV-3: older workers do not consume `house.model-watch`;
 `DELETE FROM pgboss.schedule WHERE name = 'house.model-watch'` (or let queued jobs expire); `engine.model_watch` is
 ignored by older code.
+A new release is adopted only after a second agreeing probe at least 10 minutes after the first (D-323); until then it
+waits in `engine.model_candidate` and nothing restarts. An early "Check now" only records another attempt. A lower
+release of the same major is ignored with a worker warning unless the current model is retired (`model_unavailable`).
+Older workers ignore `engine.model_candidate` and adopt at once again after a rollback.
 
 **Rolling back past PRG (D-309…D-315).** Migration 0035 is expand-only (a new table); an older release ignores it and
 account deletion still cascades. An older worker leaves the estimate model without `ratedThrough`/`fromRatings`; a later

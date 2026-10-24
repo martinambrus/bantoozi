@@ -65,7 +65,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await resetWorld(h);
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-    [WATCH_KEY, 'engine.circuit', 'engine.typesafe_model'],
+    [WATCH_KEY, 'engine.model_candidate', 'engine.circuit', 'engine.typesafe_model'],
   ]);
   await h.owner.query('DELETE FROM engine_calls');
   await h.owner.query('DELETE FROM engine_reservations');

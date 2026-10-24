@@ -27,11 +27,20 @@ interface Outcome {
   previous?: { model: string; until: string } | string;
 }
 
-async function record(input: { alias: string; model: string; now: Date }): Promise<Outcome> {
+async function record(input: {
+  alias: string;
+  model: string;
+  now: Date;
+  expectedModel?: string | null;
+}): Promise<Outcome> {
   const mod = (await import('../src/model-resolution.js')) as {
     recordModelResolution: (db: unknown, input: unknown) => Promise<Outcome>;
   };
-  return mod.recordModelResolution(dbOf(workerPool), input);
+  const parsed = EngineModelResolutionSchema.safeParse(await row());
+  return mod.recordModelResolution(dbOf(workerPool), {
+    expectedModel: parsed.success ? parsed.data.model : null,
+    ...input,
+  });
 }
 
 async function row(): Promise<unknown> {
@@ -140,6 +149,41 @@ describe('recordModelResolution', () => {
     expect(stored).toMatchObject({ alias: ALIAS, model: M });
     expect(stored).not.toHaveProperty('previous');
     expect(stored.checkedAt >= stored.resolvedAt).toBe(true);
+  });
+
+  it('leaves an interleaved adoption untouched when a stale run acquires the row lock', async () => {
+    await record({ alias: ALIAS, model: M, now: T0 });
+    const decision = EngineModelResolutionSchema.parse(await row());
+    const interleaved = await workerPool.connect();
+    let stale: Promise<Outcome> | undefined;
+    try {
+      await interleaved.query('BEGIN');
+      await interleaved.query(`SELECT value FROM settings
+        WHERE key = 'engine.model_resolution' FOR UPDATE`);
+      stale = record({ alias: ALIAS, model: M, now: T2, expectedModel: decision.model });
+      await interleaved.query(
+        `UPDATE settings SET value = $1::jsonb
+        WHERE key = 'engine.model_resolution'`,
+        [
+          JSON.stringify({
+            alias: ALIAS,
+            model: M2,
+            resolvedAt: T1.toISOString(),
+            checkedAt: T1.toISOString(),
+            previous: { model: M, until: T1.toISOString() },
+          }),
+        ],
+      );
+      const adopted = await interleaved.query(`SELECT value FROM settings
+        WHERE key = 'engine.model_resolution'`);
+      await interleaved.query('COMMIT');
+      expect(await stale).toEqual({ changed: false });
+      expect(await row()).toEqual(adopted.rows[0].value);
+    } finally {
+      await interleaved.query('ROLLBACK');
+      interleaved.release();
+      await stale;
+    }
   });
 
   it('R6 a non-alias alias or a non-concrete model is rejected and writes nothing', async () => {

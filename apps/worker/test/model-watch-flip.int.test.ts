@@ -94,6 +94,7 @@ async function aliasWorld(): Promise<void> {
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     [
       'engine.model_watch',
+      'engine.model_candidate',
       'engine.model_probe',
       'engine.model_impact',
       'house.progress',
@@ -176,7 +177,12 @@ async function adoptByHand(latest: string, at: Date): Promise<void> {
     { settingsEnv: h.settingsEnv, primaryModel: OLD_MODEL },
     at,
   );
-  await recordModelResolution(h.db, { alias: ALIAS, model: latest, now: at });
+  await recordModelResolution(h.db, {
+    alias: ALIAS,
+    model: latest,
+    now: at,
+    expectedModel: (await resolutionRow(h.owner))?.model ?? null,
+  });
 }
 
 const DRIVERS = [
@@ -214,6 +220,13 @@ describe.each(DRIVERS)(
       // The release moves: the watch adopts it.
       if (real) {
         flipTo(V114);
+        await watch(mailer, new Date(LATER.getTime() - 10 * 60_000));
+        expect(await resolutionRow(h.owner)).toMatchObject({ model: OLD_MODEL });
+        expect(mailer.attempts).toBe(0);
+        expect(await rebuildIntents(h.owner)).toEqual([]);
+        for (const w of [a1, b1]) {
+          expect(await w.runtime.check()).toMatchObject({ pendingRestart: false, exiting: false });
+        }
         await watch(mailer, LATER);
       } else {
         await adoptByHand(V114, LATER);
@@ -320,6 +333,7 @@ describe('F1: delivery trouble', () => {
     mailer.failing = true;
     const a1 = await boot();
     flipTo(V114);
+    await watch(mailer, new Date(NOW.getTime() - 10 * 60_000));
     await watch(mailer);
     expect(mailer.sent).toHaveLength(0);
     expect(await a1.runtime.check()).toMatchObject({ pendingRestart: true, exiting: true });
@@ -336,6 +350,7 @@ describe.each(DRIVERS)(
     const adopt = async (latest: string) => {
       if (real) {
         flipTo(latest);
+        await watch(new WatchMailer(), new Date(NOW.getTime() - 10 * 60_000));
         await watch(new WatchMailer());
       } else {
         await adoptByHand(latest, NOW);

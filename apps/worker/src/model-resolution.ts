@@ -25,6 +25,8 @@ export type ModelState =
   | { kind: 'unresolved'; alias: string; reason: string };
 
 export interface ModelResolutionInput {
+  /** The model read when the caller made its decision; null means no valid stored resolution. */
+  expectedModel: string | null;
   alias: string;
   model: string;
   now: Date;
@@ -33,6 +35,7 @@ export interface ModelResolutionInput {
 /**
  * Records what an alias resolved to in `engine.model_resolution` under the row lock. The same model
  * only moves `checkedAt`; another model moves the old one to `previous` and reports the change.
+ * A changed model since the caller's decision leaves the row untouched and reports unchanged.
  * `onChange` runs in the same transaction, after the row is updated, when a concrete model was replaced.
  */
 export async function recordModelResolution(
@@ -55,6 +58,11 @@ export async function recordModelResolution(
       null,
       (current) => {
         const parsed = EngineModelResolutionSchema.safeParse(current);
+        const model = parsed.success ? parsed.data.model : null;
+        if (model !== input.expectedModel) {
+          result = { changed: false };
+          return current as EngineModelResolution | null;
+        }
         if (!parsed.success || parsed.data.alias !== fresh.alias) return fresh;
         const stored = parsed.data;
         if (stored.model === fresh.model) {
