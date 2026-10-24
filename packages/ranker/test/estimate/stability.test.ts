@@ -119,8 +119,36 @@ const variants: [string, object][] = [
 ];
 
 describe('estimate stability under one rating more or less', () => {
+  const unpruned = model(base);
   for (const [variant, options] of variants) {
-    const reference = model(base, options);
+    const reference = variant === 'default options' ? unpruned : model(base, options);
+    if (variant === 'pruned weights') {
+      it('keeps broadly supported words at the pruning cut (D-301)', () => {
+        const support = new Map<string, number>();
+        for (const sample of base) {
+          for (const feature of new Set(estimateFeatures(sample))) {
+            support.set(feature, (support.get(feature) ?? 0) + 1);
+          }
+        }
+        const weights = Object.entries(unpruned.weights);
+        const keep = Math.floor(distinct / 3);
+        const impact = ([name, weight]: [string, number]) =>
+          Math.abs(weight) * Math.sqrt(support.get(name)!);
+        const expected = [...weights]
+          .sort((a, b) => impact(b) - impact(a) || (a[0] < b[0] ? -1 : 1))
+          .slice(0, keep)
+          .map(([name]) => name)
+          .sort();
+        const byMagnitude = [...weights]
+          .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || (a[0] < b[0] ? -1 : 1))
+          .slice(0, keep)
+          .map(([name]) => name)
+          .sort();
+        // Guard the corpus: it must distinguish support-aware pruning from |w| alone.
+        expect(expected).not.toEqual(byMagnitude);
+        expect(Object.keys(reference.weights)).toEqual(expected);
+      });
+    }
     for (const [name, samples] of cases) {
       it(`${name} moves few probes (${variant})`, () => {
         const share = moved(reference, model(samples, options));
