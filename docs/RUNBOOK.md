@@ -189,6 +189,12 @@ did not run or did not help. **Rule (spec 11 §3 step 6):** roll back **applicat
 expand/contract and backward compatible with the previous release; never reverse a migration and never restore
 the database over writes made after the deploy.
 
+Migration 0038 (D-333) adds and validates kind CHECKs on `engine_reservations` and `usage_daily`. Before deploying it,
+run `SELECT kind, count(*) FROM engine_reservations WHERE kind <> ALL(ARRAY['enrich','match','cluster','suggest',
+'translate','credential_probe','eval','card_draft','model_probe']) GROUP BY 1` and the same on `usage_daily`; both must
+be empty (the application never wrote other kinds). If not, stop and ask: the migration would fail on validation.
+An older release writes only those kinds, so a rollback keeps working with the checks in place.
+
 **Primary path: deploy the previous release tag.** `deploy.sh` has no `rollback` subcommand; a rollback is a deploy
 of the previous release over the already expanded schema (migrate and seed are no-ops there; the previous code
 must tolerate the expanded schema, which is the expand/contract rule):

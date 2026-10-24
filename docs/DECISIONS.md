@@ -3411,3 +3411,14 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   the `engine.typesafe_model` row was saved after its first sighting (worker-side; the API never writes the watch or
   candidate keys). (4) `lastCheck` reports success only after the outgoing fingerprint is registered; a failure is
   recorded as `fingerprint_registration`, so Admin's "Check now" ends with the error.
+- D-333: 2026-10-24 (FNF-VL-21, task #46; extends D-302, D-328) — Kind CHECKs on the money ledgers and committed spend
+  in Admin. Migration 0038 adds CHECKs on `engine_reservations.kind` and `usage_daily.kind` and validates them: the kind
+  list has only grown since 0001 and every writer goes through the router's `assertKind`, so no other value can exist;
+  a stray row makes the migration fail loudly (RUNBOOK pre-deploy query) rather than break settlement or account
+  erasure later. The two tables are small (settled reservations are purged after 180 days; usage is one row per day,
+  user, engine and kind), and the migration transaction holds the ADD lock through validation. All three kind CHECKs
+  are built from `CALL_KINDS`, and a test compares the stored definitions with it. The Admin overview's
+  `spendTodayUsd` is now committed budgeted spend, the figure the spend guard enforces (settled actual plus outstanding
+  reserved/uncertain amounts), read through the new `admin_committed_spend(day, exclude_kinds)` (SECURITY DEFINER,
+  `admin_context_allowed()`, aggregate only, NULL day raises, PUBLIC has no EXECUTE); `exemptSpendTodayUsd` stays
+  settled evaluation spend, and `/admin/usage` stays settled-only.

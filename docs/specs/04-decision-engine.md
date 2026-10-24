@@ -533,12 +533,13 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
   translations and API/worker processes all share this guard.
 - **Atomic reservation:** immediately before each paid wire attempt, reserve its estimated upper
   cost in `engine_reservations` under a UTC-day advisory lock/transaction (spec 02). Admission uses
-  settled `engine_calls.cost_usd` plus outstanding reserved/uncertain amounts. Reserve call-cap slots
+  each settled reservation's `actual_usd` plus the `reserved_usd` of outstanding reserved/uncertain ones, for the
+  UTC day, excluding the budget-exempt kinds (`admin_committed_spend`, also behind the Admin "spend today" tile, D-333). Reserve call-cap slots
   in that same operation. A 60s cache is useful for display only, never admission.
 - **Settlement:** insert the attempt row, update `usage_daily` and settle its reservation in one DB
   transaction. `reservation_id` is unique so crash retries cannot double-charge internal totals.
   Known usage replaces the reserve; unknown billing keeps it `uncertain` (unknown billed cost is
-  not invented in the call row; spend UI includes the reserve separately). Count each reservation
+  not invented in the call row; the Admin tile counts the reserve in committed spend). Count each reservation
   once, not both its outstanding estimate and settled call cost. Lease expiry alone must
   not refund a request that may already have reached the provider. Reconcile uncertain spend from
   provider usage or retain it for that budget day; the next UTC day has a separate allowance.
