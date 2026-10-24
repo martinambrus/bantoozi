@@ -1,5 +1,5 @@
 {
-  "$comment": "Hand-written schema parity snapshot of spec 02 §1.2–§7 for M0 (tables transcribed from the spec text; policies from §5/§5.1; grants from §1.2; functions from §6 and the §5.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
+  "$comment": "Hand-written schema parity snapshot of spec 02 \u00a71.2\u2013\u00a77 for M0 (tables transcribed from the spec text; policies from \u00a75/\u00a75.1; grants from \u00a71.2; functions from \u00a76 and the \u00a75.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
   "extensions": ["citext", "pg_trgm", "pgcrypto", "plpgsql"],
   "tables": {
     "settings": {
@@ -1613,7 +1613,10 @@
           "definition": "(expires_at) WHERE status = 'reserved'"
         }
       },
-      "rls": false
+      "rls": false,
+      "notValidChecks": [
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+      ]
     },
     "engine_calls": {
       "columns": {
@@ -2543,7 +2546,10 @@
       "checks": ["calls >= 0", "input_tokens >= 0", "output_tokens >= 0", "cost_usd >= 0"],
       "foreignKeys": [],
       "indexes": {},
-      "rls": false
+      "rls": false,
+      "notValidChecks": [
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+      ]
     },
     "job_outbox": {
       "columns": {

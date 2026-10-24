@@ -582,7 +582,7 @@ describe('engine operations (spec 08 §9)', () => {
     const spender = await createUser(h.owner);
     await h.owner.query(
       `INSERT INTO usage_daily (day, user_id, engine, kind, calls, cost_usd)
-       VALUES ((now() AT TIME ZONE 'UTC')::date - 1, $1, 'typesafe', 'backfill', 5, 1.5)`,
+       VALUES ((now() AT TIME ZONE 'UTC')::date - 1, $1, 'typesafe', 'match', 5, 1.5)`,
       [spender.id],
     );
     const res = await apiClient(h.server, admin).get('/admin/usage', { query: { days: '7' } });
@@ -597,7 +597,7 @@ describe('engine operations (spec 08 §9)', () => {
       totalUsd: 1.5,
     });
     expect(body.daily).toContainEqual(
-      expect.objectContaining({ engine: 'typesafe', kind: 'backfill', calls: 5, costUsd: 1.5 }),
+      expect.objectContaining({ engine: 'typesafe', kind: 'match', calls: 5, costUsd: 1.5 }),
     );
     for (const days of ['0', '91', 'x']) {
       const bad = await apiClient(h.server, admin).get('/admin/usage', { query: { days } });

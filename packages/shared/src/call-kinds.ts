@@ -7,8 +7,8 @@ import type { CallKind, InferenceAuthorization } from './ports.js';
  * and crossings, alert queries, admin overview and live engine metrics all derive from it. It is
  * typed over every {@link CallKind}, so a new kind must be routed and classified here. Budget-exempt
  * kinds need their own authorization; non-live probes still consume the production budget.
- * `engine_calls_kind_check` stays a migration-owned list tested against {@link CALL_KINDS};
- * `engine_reservations.kind` has no database CHECK yet (adding one needs a migration).
+ * The kind CHECKs on `engine_calls`, `engine_reservations` and `usage_daily` are migration-owned;
+ * a test reads all three definitions from PostgreSQL and compares them with {@link CALL_KINDS}.
  */
 export interface CallKindProfile {
   /** API entry points. Eval is accepted by both, under an eval router's invocation cap. */

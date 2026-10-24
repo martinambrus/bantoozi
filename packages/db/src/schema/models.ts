@@ -52,6 +52,10 @@ export const engineReservations = pgTable(
     expiresAt: tstz('expires_at').notNull(),
   },
   (t) => [
+    check(
+      'engine_reservations_kind_check',
+      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')`,
+    ),
     check('engine_reservations_reserved_usd_check', sql`reserved_usd >= 0`),
     check('engine_reservations_reserved_calls_check', sql`reserved_calls > 0`),
     check('engine_reservations_status_check', sql`status IN ('reserved','settled','uncertain')`),
@@ -372,6 +376,10 @@ export const usageDaily = pgTable(
   },
   (t) => [
     primaryKey({ name: 'usage_daily_pkey', columns: [t.day, t.userId, t.engine, t.kind] }),
+    check(
+      'usage_daily_kind_check',
+      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')`,
+    ),
     check('usage_daily_calls_check', sql`calls >= 0`),
     check('usage_daily_input_tokens_check', sql`input_tokens >= 0`),
     check('usage_daily_output_tokens_check', sql`output_tokens >= 0`),
