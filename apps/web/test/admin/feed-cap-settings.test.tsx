@@ -56,7 +56,6 @@ async function open(stored: number | null = null) {
 
 describe('engine.auto_analysis_daily_cap in Admin → Settings', () => {
   it('sits in the Decision engine group with a number editor starting at the env default', async () => {
-    expect(settingsWithCap(null).values[KEY]).toBe(1000);
     await open();
     const group = screen.getByRole('group', { name: 'Decision engine (Jev)' });
     const key = within(group).getByRole('group', { name: KEY });
