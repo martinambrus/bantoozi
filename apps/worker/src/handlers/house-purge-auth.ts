@@ -9,6 +9,8 @@ import {
 } from '@bantoozi/db';
 import {
   HOUSE_PROGRESS_CURSORS,
+  RANK_WINDOW_DAYS,
+  canonicalJson,
   parseSetting,
   readSetting,
   type HouseProgressCursor,
@@ -17,6 +19,7 @@ import {
 
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { StaleWorkerError } from '../stale-worker.js';
 
 const JOB = 'house.purge-auth' as const;
 /** Rows deleted per transaction. */
@@ -83,6 +86,31 @@ export const sweepCursorOf = (
 export type RebuildJob = 'house.reenrich' | 'house.rematch';
 export type RebuildRun = HouseProgressCursor<RebuildJob>['pending'][number];
 
+/** Preserve the frozen scope even when a stale fence fails partway through a rebuild pass. */
+export function recoverStaleRebuild<Q extends RebuildJob>(
+  deps: WorkerDeps,
+  job: Q,
+  handle: QueueHandler<Q>,
+): QueueHandler<Q> {
+  return async (payload, context) => {
+    const started = nowOf(deps);
+    const frozen = {
+      ...payload,
+      since:
+        payload.since ??
+        new Date(started.getTime() - RANK_WINDOW_DAYS * 24 * 60 * 60_000).toISOString(),
+    };
+    try {
+      await handle(frozen, context);
+    } catch (error) {
+      if (error instanceof StaleWorkerError) {
+        await recordRebuildProgress(deps, job, started, { complete: false, pending: frozen });
+      }
+      throw error;
+    }
+  };
+}
+
 /** At most this many pending runs per job are kept (HOUSE_PROGRESS_CURSORS caps the list). */
 const MAX_PENDING_RUNS = 20;
 
@@ -110,8 +138,8 @@ export async function recordRebuildProgress(
       const previous = progress[job];
       const pending = pendingOf(job, previous?.cursor);
       if (outcome.pending !== undefined) {
-        const key = JSON.stringify(outcome.pending);
-        if (!pending.some((run) => JSON.stringify(run) === key)) pending.push(outcome.pending);
+        const key = canonicalJson(outcome.pending);
+        if (!pending.some((run) => canonicalJson(run) === key)) pending.push(outcome.pending);
         // The stored list is bounded. Past the cap the runs are coalesced into one unscoped run
         // (`{}`), which covers every scoped run; none is dropped.
         if (pending.length > MAX_PENDING_RUNS) pending.splice(0, pending.length, {});
