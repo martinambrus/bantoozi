@@ -26,6 +26,7 @@ import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '.
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { HOUSE_RUN_BUDGET_MS, recordHouseProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
 
 const JOB = 'house.translate-cards' as const;
 /** Cards read per page of a run. */
@@ -54,7 +55,7 @@ export function createTranslateCardsHandler(
   classification: ClassificationDeps,
   translation: TranslationDeps,
 ): QueueHandler<'house.translate-cards'> {
-  return async (payload) => {
+  const handle: QueueHandler<'house.translate-cards'> = async (payload) => {
     // The LibreTranslate client is restart-class (D-228): a stale process neither calls it nor stores pairs.
     await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps);
@@ -133,6 +134,7 @@ export function createTranslateCardsHandler(
       );
     }
   };
+  return recoverStaleJob(deps, handle);
 }
 
 /**

@@ -76,6 +76,7 @@ import { failureDisposition, type FailureDisposition } from '../classify/outcome
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
 import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 
 /** Prefilter applies only above this many pending cards (spec 05 §5.5 step 3). */
@@ -136,7 +137,7 @@ export function createArticleMatchHandler(
   deps: WorkerDeps,
   classification: ClassificationDeps,
 ): QueueHandler<'article.match'> {
-  return async ({ articleId, l2Attempts }) => {
+  const handle: QueueHandler<'article.match'> = async ({ articleId, l2Attempts }) => {
     await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps).getTime();
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
@@ -210,6 +211,7 @@ export function createArticleMatchHandler(
     await finish(job);
     if (job.workerStale !== null) throw job.workerStale;
   };
+  return recoverStaleJob(deps, handle);
 }
 
 /**

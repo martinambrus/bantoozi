@@ -34,6 +34,7 @@ import { failureDisposition } from '../classify/outcomes.js';
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
 import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 
 /** Articles in these states already continued from a successful Call A of their revision. */
@@ -60,7 +61,7 @@ export function createArticleEnrichHandler(
   deps: WorkerDeps,
   classification: ClassificationDeps,
 ): QueueHandler<'article.enrich'> {
-  return async (payload) => {
+  const handle: QueueHandler<'article.enrich'> = async (payload) => {
     await assertWorkerCurrent(deps.db, classification);
     const { articleId } = payload;
     const priority = payload.priority ?? 'bulk';
@@ -205,6 +206,7 @@ export function createArticleEnrichHandler(
     });
     if (stale !== null) throw stale;
   };
+  return recoverStaleJob(deps, handle);
 }
 
 /**
