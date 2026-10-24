@@ -1,4 +1,5 @@
 import type { Me } from '@bantoozi/shared';
+import { hashKey } from '@tanstack/react-query';
 import { Outlet, createFileRoute, redirect } from '@tanstack/react-router';
 import { useCallback, useSyncExternalStore } from 'react';
 
@@ -34,7 +35,17 @@ export const Route = createFileRoute('/_authed')({
 function AuthedLayout() {
   const { queryClient } = Route.useRouteContext();
   const subscribe = useCallback(
-    (notify: () => void) => queryClient.getQueryCache().subscribe(notify),
+    (notify: () => void) =>
+      queryClient.getQueryCache().subscribe((event) => {
+        // Query observers also notify while children render. Only account data changes affect
+        // this snapshot; forwarding observer events can update this layout during their render.
+        if (
+          (event.type === 'updated' || event.type === 'removed') &&
+          event.query.queryHash === hashKey(meKey())
+        ) {
+          notify();
+        }
+      }),
     [queryClient],
   );
   const me = useSyncExternalStore(subscribe, () => queryClient.getQueryData<Me | null>(meKey()));

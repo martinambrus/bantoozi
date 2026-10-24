@@ -9,11 +9,14 @@ import { createHarness } from '../auth/harness.js';
 import { gate } from '../interests/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
+import { failOnReactWarnings } from '../support/react-warnings.js';
 
 // Every test boots the whole app; on a busy machine a query can take longer than the default 1 s.
 configure({ asyncUtilTimeout: 5_000 });
 
 const { open: boot } = createHarness();
+
+failOnReactWarnings();
 
 const NOW = '2026-10-08T09:00:00.000Z';
 const MINUTE = 60_000;
@@ -408,6 +411,7 @@ describe('the rules page (spec 09 §6)', () => {
     ])(
       'keeps the list the account shows when the answer to deleting %s comes after signing in again',
       async (_rule, respond) => {
+        const errors = vi.spyOn(console, 'error');
         const held = gate();
         const api = rulesApi(
           [rule({ id: '7' }), rule({ id: '8', displayValue: 'nft', value: 'nft' })],
@@ -450,6 +454,7 @@ describe('the rules page (spec 09 §6)', () => {
           deletable: ['Delete rule: bitcoin', 'Delete rule: nft'],
           requests: loaded,
         });
+        expect(errors).not.toHaveBeenCalled();
       },
     );
 
