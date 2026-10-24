@@ -1,5 +1,5 @@
 import type { ArticleListItem, CardDto } from '@bantoozi/shared';
-import { screen, within, waitFor } from '@testing-library/react';
+import { act, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ArticleRow } from '../../src/features/article/article-row.js';
@@ -168,16 +168,18 @@ describe('the dislike pattern in the undo toast', () => {
   });
 
   it('DPF-6 hidden time does not count and closing before one second records no seen event', async () => {
-    // Written against the real clock: it waits real time for the 1 s impression window.
-    vi.useRealTimers();
     setVisibility('hidden');
     const app = await dislike(OFFER);
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(app.calls('POST', '/articles/101/pattern-offer')).toHaveLength(0);
     setVisibility('visible');
     await app.user.click(within(toast).getByRole('button', { name: NOT_NOW }));
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(app.calls('POST', '/articles/101/pattern-offer').map(bodyOf)).toEqual([
       { offerId: OFFER.offerId, event: 'dismissed' },
     ]);
@@ -226,8 +228,6 @@ describe('the dislike pattern in the undo toast', () => {
   });
 
   it('D2 two quick same-scope offers replace in place and keep each rating undo', async () => {
-    // Written against the real clock: it waits real time for the 1 s impression window.
-    vi.useRealTimers();
     holdExits();
     const items = [makeItem(), makeItem({ id: '102' })];
     const app = renderReader(
@@ -263,10 +263,17 @@ describe('the dislike pattern in the undo toast', () => {
       expect(toast.dataset['toastId']).toBe('pattern-offer:card:31');
       if (firstOffer !== null) expect(toast).toBe(firstOffer);
       firstOffer = toast;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
     }
     expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
     expect(app.toasts.getSnapshot().filter((t) => t.id.startsWith('reader-undo:'))).toHaveLength(2);
     await app.user.click(screen.getByRole('button', { name: NOT_NOW }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(app.calls('POST', '/articles/101/pattern-offer')).toHaveLength(0);
     expect(app.calls('POST', '/articles/102/pattern-offer').map(bodyOf)).toContainEqual({
       offerId: 'a0a00000-0000-4000-8000-000000000102',
       event: 'dismissed',
