@@ -120,11 +120,12 @@ export type EngineModelProbes = z.infer<typeof EngineModelProbesSchema>;
 export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
 
 /**
- * `settings['engine.model_watch']`, written only by the worker's `house.model-watch`,
- * `requestModelWatch` and `writePendingNotice` (visible-learning §4.1): when the retired-model
- * trigger last queued a check (its 10-minute rate
- * limit), the release awaiting confirmation, how the newest check ended, and the adoption whose mail is still to be delivered
- * (`major`: the new release is of another major, so personal models restart).
+ * `settings['engine.model_watch']`, written by the worker's `house.model-watch`,
+ * `observeModelCandidate`, `requestModelWatch` and `writePendingNotice` (visible-learning §4.1):
+ * when the retired-model trigger last queued a check (its 10-minute rate limit), how the newest
+ * check ended, and the adoption whose mail is still to be delivered (`major`: the new release is
+ * of another major, so personal models restart). Its strict shape stays compatible with older
+ * workers.
  */
 export const EngineModelWatchSchema = z
   .object({
@@ -147,7 +148,12 @@ export const EngineModelWatchSchema = z
   .strict();
 export type EngineModelWatch = z.infer<typeof EngineModelWatchSchema>;
 
-/** The pending alias release; null means no candidate. Kept separate for older strict workers. */
+/**
+ * `settings['engine.model_candidate']`, written by the worker's `observeModelCandidate` and
+ * `retryModelCandidate`, and cleared by `house.model-watch`: the release awaiting confirmation,
+ * its first sighting and attempt count. Null means no candidate. A separate key preserves the
+ * strict watch row for older workers, which ignore this key.
+ */
 export const EngineModelCandidateSchema = z
   .object({ model: concreteJevModel, firstSeenAt: iso, count: z.number().int().min(1) })
   .strict();

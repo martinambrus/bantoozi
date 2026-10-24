@@ -62,7 +62,7 @@ export function isOlderSameMajorRelease(answered: string, current: string): bool
   return false;
 }
 
-/** Save an observation and its first confirmation intent atomically; only an aged agreement adopts. */
+/** Save an observation and its confirmation intent atomically; only an aged agreement adopts. */
 export async function observeModelCandidate(
   db: Database,
   model: string,
