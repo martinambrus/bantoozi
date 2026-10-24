@@ -260,10 +260,13 @@ period), so the pin moves at most once, to what Jev answers now, with no mail (D
 `engine.model_impact`.
 **A queue is missing (D-300).** A worker started on a database where `pnpm db:migrate` was not run after a queue was
 added logs one error naming the queue, reports `queues.missing` in its heartbeat problems (raw in
-`GET /admin/settings` and Admin → Settings "Applied by workers"; the `service.queues_missing` alert names them; `/readyz`
-answers 503) and keeps working; the relay keeps the intents with
-`last_error = 'queue_missing'`. Run the migrate job; the worker notices within 30 s. A missing cron queue still stops
-the worker at start ("Queue X not found").
+`GET /admin/settings` and Admin → Settings "Applied by workers"; the `service.queues_missing` alert names them and
+stays open across a worker restart, recovering 10 min after the last report; the public `/readyz` answers 503 with only
+`missingQueueCount`) and keeps working; the relay keeps the intents with `last_error = 'queue_missing'`. A missing cron
+queue no longer stops the worker: its schedule is retried every 30 s (D-327). Run the migrate job; the worker notices
+within 30 s. If the missing queue is `house.alerts` or `__pgboss__send-it`, no alert mail can go out: the signals are the
+worker error log, Admin, `/readyz` and the authenticated worker metric `bantoozi_worker_queue_missing{queue}`, so the
+external `/readyz` monitor of the launch checklist is what catches it.
 
 **Jev upgrades while following `jev-latest` (D-286).** After the mail "Jev X → Y" the workers restart on their own in
 production; in development restart the worker (Admin → Workers shows `pendingRestart`). No evaluation replay ran:
@@ -553,7 +556,8 @@ headroom (section 6).
    passed, then confirm. The API answers `409 confirmation_required` to a change made without that
    acknowledgement. Under **Applied by workers** the screen lists the live workers and how many still wait for
    a restart. **The workers restart themselves**: each one drains its current jobs and exits within about 10 s of
-   noticing the change, or up to 100 s while it finishes a running job (D-319) (`WORKER_SELF_RESTART`, default on in
+   noticing the change, or up to 100 s while it finishes a running job (D-319; every shutdown ends within 115 s, below compose's 120 s, and
+   releases this process's classification, suggestion and provider-validation leases at once, D-327) (`WORKER_SELF_RESTART`, default on in
    production), and compose brings it back with the new
    model. Nothing needs to be run. If `WORKER_SELF_RESTART=false`, or a worker still shows "pending restart", run
    `dc up -d --no-deps --force-recreate worker`. (Setting the value in `$BANTOOZI_ENV` instead still works,
