@@ -121,6 +121,15 @@ describe('Jev model probe: alias resolution', () => {
     expect(okModel(await ask(alias()))).toBe('jev-1.14.0-rc1');
   });
 
+  it('E3c an alias answered with build metadata is accepted, a non-conforming answer is not shown', async () => {
+    fake.setOptions({ models: { 'jev-latest': 'jev-1.14.0+build5' } });
+    expect(okModel(await ask(alias()))).toBe('jev-1.14.0+build5');
+    fake.setOptions({ models: { 'jev-latest': 'jev-1.14.0/x' } });
+    expect(failed(await ask(alias())).detail).toBe('model_mismatch:unrecognized');
+    fake.setOptions({ models: { 'jev-latest': `jev-1.14.0-${'a'.repeat(60)}` } });
+    expect(failed(await ask(alias())).detail).toBe('model_mismatch:unrecognized');
+  });
+
   it('E4 an answer equal to the alias or from another vendor is a mismatch', async () => {
     fake.setOptions({ models: { 'jev-latest': 'jev-latest' } });
     let attempt = failed(await ask(alias()));

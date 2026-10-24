@@ -187,13 +187,41 @@ describe('W3: the alias with a stored resolution', () => {
     expect(pin).not.toHaveProperty('alias');
   });
 
-  it('control: another stored resolution (1.14.0) gives another model everywhere', async () => {
+  it('control: a flip in flight (alias-marked pin, old row of 1.14.0) is followed from the row, without a probe', async () => {
+    await setSetting(h.owner, 'engine.model_pin', {
+      model: OLD_MODEL,
+      alias: ALIAS,
+      since: '2026-10-01T00:00:00.000Z',
+    });
     await storeResolution(h.owner, NEW_MODEL);
     await useAlias();
-    const { runtime } = await boot('production', { modelProbe: spy(okProbe()), now: () => T0 });
+    const probe = spy(okProbe());
+    const { runtime } = await boot('production', { modelProbe: probe, now: () => T0 });
+    expect(probe).not.toHaveBeenCalled();
     expect(runtime.processModel).toBe(NEW_MODEL);
     expect(runtime.models.classification.primaryModel).toBe(NEW_MODEL);
     expect(runtime.modelState).toMatchObject({ kind: 'resolved', model: NEW_MODEL });
+  });
+
+  it('control: the dormant twin (unmarked pin, old row of 1.14.0) asks Jev once and pins its answer', async () => {
+    await storeResolution(h.owner, NEW_MODEL);
+    await useAlias();
+    const probe = spy(okProbe(OLD_MODEL));
+    const { runtime } = await boot('production', { modelProbe: probe, now: () => T0 });
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(runtime.processModel).toBe(OLD_MODEL);
+    expect(runtime.modelState).toMatchObject({
+      kind: 'resolved',
+      model: OLD_MODEL,
+      source: 'probed',
+    });
+    expect(await resolutionRow(h.owner)).toEqual({
+      alias: ALIAS,
+      model: OLD_MODEL,
+      resolvedAt: T0.toISOString(),
+      checkedAt: T0.toISOString(),
+    });
+    expect(await pinRow(h.owner)).toMatchObject({ model: OLD_MODEL, alias: ALIAS });
   });
 });
 
@@ -389,6 +417,14 @@ describe('W6: the retry of an unresolved runtime', () => {
       time.advance(5 * MIN);
       expect(await runtime.check()).toEqual({ pendingRestart: true, exiting: false });
       expect(probe).toHaveBeenCalledTimes(2);
+      time.advance(60 * MIN);
+      for (let i = 0; i < 3; i += 1) {
+        expect(await runtime.check()).toEqual({ pendingRestart: true, exiting: false });
+      }
+      expect(probe).toHaveBeenCalledTimes(2);
+      expect(
+        rec.logs.filter((e) => e.level === 'warn' && e.obj['pendingRestart'] === true),
+      ).toHaveLength(1);
       expect(rec.exits).toEqual([]);
       expect(rec.drains).toBe(0);
       expect(rec.logs.some((e) => e.level === 'warn' && e.obj['pendingRestart'] === true)).toBe(
@@ -503,7 +539,9 @@ describe('W7: switching between concrete and alias does not rebuild when the mod
     await storeResolution(h.owner, NEW_MODEL);
     await useAlias();
     const later = new Date(T0.getTime() + 60 * MIN);
-    await boot('production', { modelProbe: spy(okProbe()), now: () => later });
+    const probe = spy(okProbe(NEW_MODEL));
+    await boot('production', { modelProbe: probe, now: () => later });
+    expect(probe).toHaveBeenCalledTimes(1);
     const pin = await pinRow(h.owner);
     expect(pin).toEqual({ model: NEW_MODEL, alias: ALIAS, since: later.toISOString() });
     expect(await rebuildIntents(h.owner)).toEqual([

@@ -19675,11 +19675,11 @@
                         "properties": {
                           "requested": {
                             "type": "string",
-                            "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$"
                           },
                           "answered": {
                             "type": "string",
-                            "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$"
                           },
                           "ok": {
                             "type": "boolean"
@@ -19757,7 +19757,7 @@
                 "properties": {
                   "model": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$"
                   }
                 },
                 "required": [

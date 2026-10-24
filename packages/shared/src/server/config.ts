@@ -5,7 +5,7 @@ import { inspect } from 'node:util';
 import { z } from 'zod';
 
 import { ENV_RANGES } from '../env-ranges.js';
-import { isModelAlias, isPinnedModel } from '../model-id.js';
+import { MODEL_ID_PATTERN, isModelAlias, isPinnedModel } from '../model-id.js';
 import { normalizeOllamaModel } from '../runtime-settings.js';
 import { resolveWorkerQueues, type QueueName } from '../jobs.js';
 import {
@@ -339,7 +339,7 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     signupMode: read('SIGNUP_MODE', SignupModeSchema, 'invite') ?? 'invite',
     rateLimitsEnabled: read('RATE_LIMITS_ENABLED', booleanSchema, 'true') ?? true,
     typesafeApiKey: read('TYPESAFE_API_KEY', apiKeySchema, undefined),
-    typesafeModel: read('TYPESAFE_MODEL', modelIdSchema, 'jev-1.13.0') ?? 'jev-1.13.0',
+    typesafeModel: read('TYPESAFE_MODEL', typesafeModelSchema, 'jev-1.13.0') ?? 'jev-1.13.0',
     typesafeBaseUrl: read('TYPESAFE_BASE_URL', httpUrl, 'https://api.typesafe.ai') ?? '',
     typesafePricePerMtokUsd: read('TYPESAFE_PRICE_PER_MTOK_USD', nonNegative, '0.042') ?? 0.042,
     engineConcurrency:
@@ -354,10 +354,10 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     providerMasterKeys: raw('PROVIDER_MASTER_KEYS'),
     ollamaBaseUrl: read('OLLAMA_BASE_URL', httpUrl, 'https://ollama.com') ?? '',
     ollamaModelFast: normalizeOllamaModel(
-      read('OLLAMA_MODEL_FAST', modelIdSchema, 'glm-5.3-flash') ?? 'glm-5.3-flash',
+      read('OLLAMA_MODEL_FAST', ollamaModelIdSchema, 'glm-5.3-flash') ?? 'glm-5.3-flash',
     ),
     ollamaModelStrong: normalizeOllamaModel(
-      read('OLLAMA_MODEL_STRONG', modelIdSchema, 'glm-5.3') ?? 'glm-5.3',
+      read('OLLAMA_MODEL_STRONG', ollamaModelIdSchema, 'glm-5.3') ?? 'glm-5.3',
     ),
     ollamaMaxConcurrency:
       read(
@@ -578,7 +578,10 @@ const smtpUrl = z.string().refine((s) => {
 // eslint-disable-next-line no-control-regex -- API keys must not contain CR/LF/NUL (spec 04 §1.2)
 const NO_CR_LF_NUL = /^[^\r\n\u0000]+$/;
 const apiKeySchema = z.string().max(4096).regex(NO_CR_LF_NUL, 'must not contain CR, LF or NUL');
-const modelIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/, 'invalid model id');
+const typesafeModelSchema = z.string().regex(MODEL_ID_PATTERN, 'invalid model id');
+const ollamaModelIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/, 'invalid model id');
 const languageModesJson = z
   .string()
   .transform((s, ctx) => {

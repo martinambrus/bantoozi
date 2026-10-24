@@ -111,6 +111,12 @@ const houseSpecs = Object.fromEntries(
   ]),
 ) as Record<HouseCronQueue, QueueSpec<typeof empty>>;
 
+/**
+ * How long a job that failed because its worker was stale (the model pin or a restart-class setting
+ * moved) waits before its retry, by when a drained worker has restarted. Flat, never backed off.
+ */
+export const STALE_WORKER_RETRY_DELAY_SECONDS = 30;
+
 export const QUEUES = {
   'feed.schedule': spec({
     payload: empty,
@@ -164,23 +170,23 @@ export const QUEUES = {
       })
       .strict(),
     concurrency: 4,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   'article.enrich': spec({
     payload: enrichPayload,
     concurrency: 8,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   'article.enrich.laya': spec({
     payload: enrichPayload,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
     layaOnly: true,
   }),
   'article.cluster': spec({
     payload: articleOnly,
     concurrency: 4,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   'article.match': spec({
     payload: z
@@ -192,7 +198,12 @@ export const QUEUES = {
       })
       .strict(),
     concurrency: 8,
-    options: { policy: 'stately', retryLimit: 1, expireInSeconds: MODEL_JOB_EXPIRE_SECONDS },
+    options: {
+      policy: 'stately',
+      retryLimit: 1,
+      retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS,
+      expireInSeconds: MODEL_JOB_EXPIRE_SECONDS,
+    },
   }),
   'card.backfill': spec({
     payload: z
@@ -206,7 +217,7 @@ export const QUEUES = {
       })
       .strict(),
     concurrency: 2,
-    options: { policy: 'standard', retryLimit: 2 },
+    options: { policy: 'standard', retryLimit: 2, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   'user.rank': spec({
     payload: z
@@ -281,12 +292,12 @@ export const QUEUES = {
   'house.reenrich': spec({
     payload: reenrichPayload,
     concurrency: 1,
-    options: { policy: 'singleton', retryLimit: 1 },
+    options: { policy: 'singleton', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   'house.translate-cards': spec({
     payload: z.object({ userId: UuidSchema.optional() }).strict(),
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   'house.retranslate-skipped': spec({
     payload: z
@@ -298,11 +309,28 @@ export const QUEUES = {
   'house.rematch': spec({
     payload: rematchPayload,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
 } as const;
 
 export type QueueName = keyof typeof QUEUES;
+
+/**
+ * Queues whose handlers fail a job on a stale worker (`StaleWorkerError`) and so rely on the queue's
+ * {@link STALE_WORKER_RETRY_DELAY_SECONDS}. `analysis.process` is not listed: it reschedules itself.
+ */
+export const STALE_GUARDED_QUEUES = [
+  'article.translate',
+  'article.enrich',
+  'article.cluster',
+  'article.match',
+  'card.backfill',
+  'house.reenrich',
+  'house.rematch',
+  'house.translate-cards',
+  'article.enrich.laya',
+] as const satisfies readonly QueueName[];
+
 export type JobPayload<Q extends QueueName> = z.output<(typeof QUEUES)[Q]['payload']>;
 export type JobPayloadInput<Q extends QueueName> = z.input<(typeof QUEUES)[Q]['payload']>;
 

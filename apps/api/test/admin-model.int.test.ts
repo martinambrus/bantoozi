@@ -252,7 +252,7 @@ describe('P4-P9: the impact of a confirmed change', () => {
     }
   });
 
-  it('P7 a stale resolution is a step of the path: the alias answering the current model restarts', async () => {
+  it('P7 a stale resolution is not a step of the path: the alias answering the current model changes nothing', async () => {
     await setRow('engine.typesafe_model', 'jev-2.0.0');
     await seedModelState(h, {
       pin: { model: 'jev-2.0.0' },
@@ -260,10 +260,10 @@ describe('P4-P9: the impact of a confirmed change', () => {
       probes: [{ requested: 'jev-latest', answered: 'jev-2.0.0' }],
     });
     const res = await setModel('jev-latest');
-    expect(res.statusCode, res.body).toBe(409);
-    expect((details(res) as { reason: string }).reason).toBe('confirmation_required');
-    expect(await stored('engine.typesafe_model')).toBe('jev-2.0.0');
-    // Control: without the resolution the same change is a no-op for the data.
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await stored('engine.typesafe_model')).toBe('jev-latest');
+    // Control: without the resolution the same change is the same.
+    await setRow('engine.typesafe_model', 'jev-2.0.0');
     await h.owner.query("DELETE FROM settings WHERE key = 'engine.model_resolution'");
     const control = await setModel('jev-latest');
     expect(control.statusCode, control.body).toBe(200);

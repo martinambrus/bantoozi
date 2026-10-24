@@ -3125,3 +3125,70 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
      `translate`. Every kind with an authorization type of its own is now admitted only under it, and that type admits
      no other kind (`kindMatchesAuthorization`). Nothing relied on it: the only caller, `provider.validate`, reserves
      `credential_probe`. Spec 02 §3.1, spec 04 §1, §1.1, §1.2, §6, spec 10 §7, spec 11 §6.1.
+- D-303: 2026-10-23 (FNF-VL-5, items 7 and 10 of FNF[jev-flip-safety]; supersedes the id pattern of D-273) — One model-id
+  grammar. `MODEL_ID_PATTERN` is `^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$`: build metadata (`+`) is allowed everywhere, the
+  first character is a letter or digit, 64 characters at most; `isModelId` is exported. `isPinnedModel` and
+  `isConcreteJevModel` are that pattern AND their release shape (the shape regexes are unchanged and linear), so concrete
+  implies pinned implies a model id by construction. Before, `jev-1.14.0+build5` passed `isConcreteJevModel` but made
+  `recordModelProbe` throw (an alias answer would have failed `house.model-watch` before `lastCheck`), and a
+  `TYPESAFE_MODEL` outside the probe pattern made Admin "Reset" unprobeable (400). `TYPESAFE_MODEL` and the runtime
+  `engine.typesafe_model` validate with the pattern in every environment; in production both additionally require
+  `isPinnedModel` or exactly `jev-latest` (the runtime rule was Jev-only before, the env rule any vendor prefix; the engine
+  already accepted any pinned id). `OLLAMA_MODEL_FAST/STRONG` keep their own schema (`/` allowed, 200 characters). The
+  engine's `shownModel` and the E2E control API use `isModelId` instead of copies of the regex. The stored-row schema of
+  `engine.typesafe_model` is not tightened (design item 19: strict readers).
+- D-304: 2026-10-23 (FNF-VL-5, items 6, 8 and 3; amends D-274 "uses the stored resolution"; supersedes the clause of D-295
+  that left "the hazard itself" unfixed) — A restarting worker asks Jev before it pins a dormant `jev-latest` resolution.
+  A stored `engine.model_resolution` is dormant only when the pin exists, is not alias-marked, names another model and the
+  row was not confirmed in the last 10 minutes (`resolutionInForce`; `MODEL_PROBE_MAX_AGE_MS`, a 60 s future bound); every
+  other row is in force, so restarts of an alias-following instance, a flip in flight (the watch wrote a new row, the pin
+  still names the old release with the alias marker), a worker without a pin and a recent retry behave as before. A dormant
+  or absent row sends the existing 30 s start probe; `recordStartResolution` then writes the answer without `previous` under
+  the row lock (it creates an absent row, replaces the row identical to the dormant one, and adopts any other valid row
+  untouched) and the process adopts the row of record. A failed probe leaves the process unresolved as in D-274: no fallback
+  to the dormant row, no pin written, the 5-minute retry. Because start and retry can no longer replace a resolution in force
+  they cannot write a flip, so no notice or fingerprint registration is needed there (item 3 solved by construction). The
+  retry first looks at the database (an in-force row means "restart me", no probe) and after any success sets
+  `awaitingRestart`: `pendingRestart` is true, production drains and exits once, development warns once and stops probing
+  every 5 minutes (item 8). Time never enters the restart fingerprint. `planModelChange` no longer counts a stale
+  resolution as a step of the path (the worker asks Jev first), so switching to the alias while a dormant row exists is
+  judged by what Jev answered. Not done: clearing the row when an instance runs a concrete model (the dormant row is inert
+  now); `recordPin: false` keeps using a stored row at any age.
+- D-305: 2026-10-23 (FNF-VL-5, T2b; amends D-286) — `house.model-watch` treats a dormant stored resolution (D-304) as absent: it
+  replaces it silently through `recordStartResolution` (`lastCheck` ok, no outgoing-fingerprint registration, no notice, no
+  mail), so a "Check now" or the 6-hourly run between saving `jev-latest` and the worker restart no longer mails "Jev X → Y"
+  for a transition that never ran. A row in force flips exactly as before. After a good answer the handler re-reads the
+  configured model and records progress only when it is no longer the alias, so a probe in flight while the admin switches
+  away cannot resurrect a row or mail.
+- D-306: 2026-10-23 (FNF-VL-5, item 4) — `recordModelPin` is a compare-and-set against the worker's own view: inside its
+  transaction, before the pin row is locked `FOR UPDATE`, `lockRestartCurrent` share-locks the restart-class setting rows
+  (an admin save waits) and compares the restart fingerprint read through the transaction with the process's; a stale view
+  writes nothing, enqueues no `house.reenrich`/`house.rematch`, logs "this worker's settings are out of date: the model pin is
+  left to the restarted worker" and skips the watch enqueue; `check()` then restarts the process. The pin row is not
+  share-locked first (upgrade deadlock) and the resolution row is only read: lock order restart keys < pin < resolution <
+  watch.
+- D-307: 2026-10-23 (FNF-VL-5, item 1; supersedes D-228's "deliberately unguarded: `analysis.process`"; amends D-279) —
+  `analysis.process` has the stale-worker fence, strictly: a stale process publishes nothing. (1) Before the claim it logs a
+  warning, leaves a delayed intent 30 s ahead and returns: a throw would end the pg-boss job with the request pending and no
+  job or intent left, and nothing sweeps analysis requests. (2) Before every model or translator call (Call A, each Call B
+  pack, translation tiers 1 and 2) it releases the request with `defer` (no attempt, `last_error_code stale_worker`, delayed
+  intent in the same transaction). (3) The completion transaction takes `lockWorkerCurrent` first; a value that moved while a
+  call was in flight discards the result, the cache fill and the rank/learn intents and releases the request the same way.
+  The handler resolves in every case. This closes the JEV-3 finding (an old process overwrote new-stamped facets/L2/answers:
+  fill mode computes precedence against the process model), the terminal `context_unavailable` of a request frozen under the
+  new major, the downgrade of new-tagged stage results and the lease capture. Consequence: a request frozen under the old
+  major that is in flight at a MAJOR flip no longer completes on the stale old worker either; the new worker ends it
+  `failed/context_unavailable` (D-279, unchanged). `workerStaleness` is the exported non-throwing core of
+  `assertWorkerCurrent`.
+- D-308: 2026-10-23 (FNF-VL-5, items 2 and 5) — Guarded jobs back off. `STALE_WORKER_RETRY_DELAY_SECONDS` (30) is the flat
+  `retryDelay` of `article.translate`, `article.enrich`, `article.enrich.laya`, `article.cluster`, `article.match`,
+  `card.backfill`, `house.reenrich`, `house.rematch` and `house.translate-cards` (`STALE_GUARDED_QUEUES`; `analysis.process`
+  reschedules itself) and the value of `StaleWorkerError.retryDelaySeconds`; before, pg-boss retried a job that failed as stale
+  within about 2 s, usually on the same stale process, and it ended `failed` (the `failures.rising` alert; a lost one-shot
+  stage job is not recovered by any sweeper). `migrate` converges existing queues (`updateQueue`); jobs created earlier keep
+  delay 0. Known limitation, unchanged: one retry only, so a worker that stays stale for good (`WORKER_SELF_RESTART=false`, a
+  hung drain) still kills the job 30 s later, and a stale worker that consumes the single `house.reenrich`/`house.rematch`
+  trigger twice loses the rebuild (not parked as a pending run). `withModelUnavailableHook` logs a failing hook
+  ('model-unavailable trigger failed'); `alertRecipients` and `deliver` take a job label, and the watch's mails log
+  `job: 'house.model-watch'` instead of `house.alerts`. Item 9 (the strict `readSetting` of `engine.model_pin` in
+  `apps/api/src/services/analysis.ts:81`) stays with design item 19.

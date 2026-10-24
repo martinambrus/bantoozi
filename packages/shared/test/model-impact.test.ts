@@ -279,9 +279,8 @@ describe('planModelChange', () => {
     expect(planModelChange(same, 'jev-latest', NOW)).toMatchObject({ impact: 'kept' });
   });
 
-  it('counts the stale resolution a restarting worker adopts first, when the alias is switched on', () => {
+  it('does not count a stale resolution: the restarting worker asks Jev before it pins a dormant row', () => {
     // Setting jev-2.0.0 (pin 2.0.0); the stored resolution still says 1.13.0; Jev now answers 2.0.0.
-    // A worker started on the alias uses the stored 1.13.0 at any age, then adopts 2.0.0: two restarts.
     const plan = planModelChange(
       state({
         setting: 'jev-2.0.0',
@@ -293,8 +292,8 @@ describe('planModelChange', () => {
       NOW,
     );
     expect(plan).toMatchObject({ state: 'ok', current: 'jev-2.0.0', concrete: 'jev-2.0.0' });
-    expect(plan.state === 'ok' ? plan.impact : undefined).toBe('restart');
-    // Control: with no stale resolution the same switch rebuilds nothing.
+    expect(plan.state === 'ok' ? plan.impact : undefined).toBe('none');
+    // Control: without a stored resolution the same switch is the same.
     const fresh = planModelChange(
       state({
         setting: 'jev-2.0.0',

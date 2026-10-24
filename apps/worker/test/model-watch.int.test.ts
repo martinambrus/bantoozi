@@ -95,6 +95,12 @@ beforeEach(async () => {
   });
   fake.requests.splice(0);
   await begin(h, V113);
+  // An instance that follows the alias: its workers pinned the model with the alias marked.
+  await setSetting(h.owner, 'engine.model_pin', {
+    model: V113,
+    alias: ALIAS,
+    since: new Date().toISOString(),
+  });
   await storeResolution(h.owner, V113, STORED_AT);
   await h.clearOutbox();
 });
@@ -485,6 +491,15 @@ describe('W5: the outgoing rating fingerprint is registered before the resolutio
 });
 
 describe('W6: notice delivery', () => {
+  it('a failing mailer logs the delivery trouble under the house.model-watch job', async () => {
+    await addAdmin(h.owner, ADMIN_A);
+    const mailer = new WatchMailer();
+    mailer.failing = true;
+    const rec = await runWatch(h, { prober: scriptedProber(okProbe(V114)), mailer });
+    const failed = rec.logs.filter((l) => l.msg === 'alert email not delivered');
+    expect(failed.map((l) => l.obj.job)).toEqual(['house.model-watch']);
+  });
+
   it('a failing mailer keeps the notice pending (attempts 1) after adopting the release; the next run delivers one mail and clears it; the third sends none', async () => {
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();

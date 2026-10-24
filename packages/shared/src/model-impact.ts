@@ -122,17 +122,13 @@ export type ModelChangePlan =
 
 /**
  * Plans moving the setting to `target` (a concrete id or `jev-latest`) at `nowMs`: whether a probe
- * confirms it and what the change does. A worker started on the alias uses the stored resolution at
- * any age before it asks Jev again, so a stale resolution counts as a step of the path.
+ * confirms it and what the change does. A worker started on the alias asks Jev before it pins a
+ * dormant stored resolution, so the change settles on what Jev answered.
  */
 export function planModelChange(state: ModelState, target: string, nowMs: number): ModelChangePlan {
   const verdict = judgeModelProbe(state.probes, target, nowMs);
   if (verdict.state !== 'ok') return verdict;
   const current = concreteModelOf(state.setting, state.resolution, state.pin);
-  const stale = isModelAlias(target) ? state.resolution?.model : undefined;
-  const impact =
-    stale !== undefined && stale !== verdict.concrete
-      ? modelPathImpact(current, stale, verdict.concrete)
-      : modelPathImpact(current, verdict.concrete);
+  const impact = modelPathImpact(current, verdict.concrete);
   return { state: 'ok', probe: verdict.probe, current, concrete: verdict.concrete, impact };
 }

@@ -4,17 +4,19 @@ import {
   shareLockStoredSetting,
   type Executor,
 } from '@bantoozi/db';
+import { STALE_WORKER_RETRY_DELAY_SECONDS } from '@bantoozi/shared';
 
 import type { ClassificationDeps } from './handlers/deps.js';
 
 /**
  * A worker whose process values are not the current ones (M8b-T5, PR #28 round 4): a restart-class
  * setting or the model pin moved, so this process, which has not restarted yet, must neither ask its
- * old model nor write its answers. The job fails and the queue retries it after `retryDelaySeconds`,
- * by when a drained worker has restarted.
+ * old model nor write its answers. The job fails and the queue retries it after `retryDelaySeconds`
+ * (the `retryDelay` of every queue in `STALE_GUARDED_QUEUES`), by when a drained worker has
+ * restarted. `analysis.process` does not throw: it reschedules the request itself.
  */
 export class StaleWorkerError extends Error {
-  readonly retryDelaySeconds = 30;
+  readonly retryDelaySeconds = STALE_WORKER_RETRY_DELAY_SECONDS;
 
   constructor(
     readonly processModel: string,
@@ -48,7 +50,11 @@ export const RESTART_SETTING_KEYS = [
   'translate.libretranslate_url',
 ] as const;
 
-async function staleness(
+/**
+ * The non-throwing core of {@link assertWorkerCurrent}: the error describing why this process is not
+ * what the database now asks for, or null while it is current.
+ */
+export async function workerStaleness(
   db: Executor,
   classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
 ): Promise<StaleWorkerError | null> {
@@ -83,7 +89,7 @@ export async function assertWorkerCurrent(
   db: Executor,
   classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
 ): Promise<void> {
-  const error = await staleness(db, classification);
+  const error = await workerStaleness(db, classification);
   if (error !== null) throw error;
 }
 
@@ -104,5 +110,25 @@ export async function lockWorkerCurrent(
   );
   await shareLockStoredSetting(tx, 'engine.model_pin');
   await shareLockStoredSetting(tx, 'engine.model_resolution');
-  return staleness(tx, classification);
+  return workerStaleness(tx, classification);
+}
+
+/**
+ * Whether this process's restart-class view is still the current one, for a pin write. Only the
+ * restart keys are share-locked (an admin save waits for the transaction); the pin row is taken
+ * `FOR UPDATE` afterwards and the resolution row is only read, per the lock order restart keys <
+ * pin < resolution < watch.
+ */
+export async function lockRestartCurrent(
+  tx: Executor,
+  classification: Pick<ClassificationDeps, 'currentness'>,
+): Promise<boolean> {
+  await shareLockSettings(
+    tx,
+    RESTART_SETTING_KEYS.map((key) => ({ key, initial: null })),
+  );
+  const currentness = classification.currentness;
+  return currentness === undefined
+    ? true
+    : (await currentness.restartFingerprint(tx)) === currentness.fingerprint;
 }

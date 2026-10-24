@@ -197,7 +197,7 @@
       "latestHint": "Jev is asked every few hours which release jev-latest stands for. A new release of the same major keeps ratings and personal models.",
       "pinned": "Use one release",
       "pinnedHint": "Type the id of the release, for example jev-1.13.0.",
-      "idRejected": "Use up to 64 letters, digits and . _ : - characters.",
+      "idRejected": "Use up to 64 letters, digits and . _ : + - characters, starting with a letter or digit.",
       "resolves": "Resolves to {{model}} · checked {{time}}",
       "unresolved": "Not resolved yet. Check now, or wait for the next scheduled check.",
       "checkNow": "Check now",
