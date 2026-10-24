@@ -3771,9 +3771,10 @@
         "n": { "type": "integer", "nullable": false, "default": null },
         "auc": { "type": "double precision", "nullable": true, "default": null },
         "baseline_auc": { "type": "double precision", "nullable": true, "default": null },
-        "activated": { "type": "boolean", "nullable": false, "default": "false" },
-        "turned_on": { "type": "boolean", "nullable": false, "default": "false" },
-        "engine_model": { "type": "text", "nullable": true, "default": null }
+        "activated": { "type": "boolean", "nullable": true, "default": "false" },
+        "turned_on": { "type": "boolean", "nullable": true, "default": "false" },
+        "engine_model": { "type": "text", "nullable": true, "default": null },
+        "reason": { "type": "text", "nullable": true, "default": null }
       },
       "primaryKey": ["id"],
       "unique": [],

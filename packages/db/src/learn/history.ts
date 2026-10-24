@@ -25,8 +25,8 @@ export interface LearningHistoryRow {
   n: number;
   auc: number | null;
   baselineAuc: number | null;
-  activated: boolean;
-  turnedOn: boolean;
+  activated: boolean | null;
+  turnedOn: boolean | null;
   engineModel: string | null;
 }
 
@@ -63,8 +63,8 @@ export async function loadLearningHistory(
     n: number;
     auc: number | null;
     baseline_auc: number | null;
-    activated: boolean;
-    turned_on: boolean;
+    activated: boolean | null;
+    turned_on: boolean | null;
     engine_model: string | null;
   }>(sql`
     SELECT at, kind, n, auc, baseline_auc, activated, turned_on, engine_model
