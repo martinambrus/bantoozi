@@ -13,7 +13,8 @@ import pg from 'pg';
  * 2. Drizzle migrations (`drizzle/`), in one transaction: tables, grants, RLS, functions, triggers and
  *    the pg-boss grants.
  * 3. Every queue of `packages/shared` jobs.ts via pg-boss `createQueue(name, options)` (then
- *    `updateQueue`, so changed options converge), so the per-queue partitions are owner-created.
+ *    explicit managed-column updates, so changed and removed options converge), so the per-queue
+ *    partitions are owner-created.
  *    pg-boss's own cron queue ({@link PG_BOSS_CRON_QUEUE}), introduced by migration 0017, is
  *    also repaired on every run.
  *
@@ -161,10 +162,31 @@ async function createQueues(client: pg.Client): Promise<number> {
       executeSql: async (text: string, values: unknown[]) => client.query(text, values),
     },
   });
+  // Queue creation and reconciliation commit together; runMigrations rolls back on any failure.
+  await client.query('BEGIN');
   for (const name of QUEUE_NAMES) {
     const options = { ...QUEUES[name].options };
     await boss.createQueue(name, { name, ...options });
-    await boss.updateQueue(name, { name, ...options });
+    // pg-boss updateQueue COALESCEs omitted values with the old column, so removal never converges.
+    // Use the installed pg-boss schema's DEFAULT (NULL in 10.4.2: inherit its job defaults), rather
+    // than copying effective retry/expiration constants that can change with a pg-boss upgrade.
+    // Only QueueCreateOptions columns are managed; retention/dead-letter settings stay untouched.
+    const values: unknown[] = [name];
+    const assignments = Object.entries({
+      policy: options.policy,
+      retry_limit: options.retryLimit,
+      retry_delay: options.retryDelay,
+      retry_backoff: options.retryBackoff,
+      expire_seconds: options.expireInSeconds,
+    }).map(([column, value]) => {
+      if (value === undefined) return `${column} = DEFAULT`;
+      values.push(value);
+      return `${column} = $${values.length}`;
+    });
+    await client.query(
+      `UPDATE ${PG_BOSS_SCHEMA}.queue SET ${assignments.join(', ')}, updated_on = now() WHERE name = $1`,
+      values,
+    );
   }
   // pg-boss's own cron queue (migration 0017) is not in the registry. `create_queue` does nothing when it
   // exists, so one that went missing comes back with the next run: the worker cannot create it, and its
@@ -173,5 +195,6 @@ async function createQueues(client: pg.Client): Promise<number> {
     PG_BOSS_CRON_QUEUE,
     '{"policy":"standard"}',
   ]);
+  await client.query('COMMIT');
   return QUEUE_NAMES.length;
 }
