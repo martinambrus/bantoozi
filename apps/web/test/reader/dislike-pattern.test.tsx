@@ -3,7 +3,7 @@ import { screen, within, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ArticleRow } from '../../src/features/article/article-row.js';
-import { json } from '../api/fake-fetch.js';
+import { failure, json } from '../api/fake-fetch.js';
 import {
   actionResponse,
   bodyOf,
@@ -301,6 +301,59 @@ describe('the dislike pattern in the undo toast', () => {
           { articleIds: ids, kind: 'never' },
         ]),
       );
+    },
+  );
+
+  it.each([
+    { missing: ['201'], expected: ['101', '202'] },
+    { missing: ['101', '201', '202'], expected: [] },
+  ])(
+    'D4 opens Never with the surviving articles ($missing missing)',
+    async ({ missing, expected }) => {
+      holdExits();
+      const item = makeItem();
+      const app = renderReader(<Row item={item} />, {
+        routes: {
+          ...server(item, null),
+          ...cardDraftRoutes(),
+          'GET /topics': () => json(200, []),
+          'GET /articles/:id': (_request, params) =>
+            missing.includes(params['id']!)
+              ? failure(404, 'NOT_FOUND')
+              : json(200, makeDetail(makeItem({ id: params['id']! }))),
+          'POST /articles/:id/rating': () =>
+            actionResponse(acked(item, { rating: -1, readAt: READ_AT }), {
+              exampleSuggestion: null,
+              pattern: {
+                kind: 'feed',
+                feedId: '9',
+                offer: ['101', '201', '202'],
+                offerId: OFFER.offerId,
+              },
+            }),
+        },
+      });
+      apps.push(app);
+      await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
+      await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+      await app.user.click(
+        await screen.findByRole('button', { name: 'Make a Never card from these' }),
+      );
+      if (expected.length > 0) {
+        await screen.findByRole('dialog', { name: 'New card from these articles' });
+        await waitFor(() =>
+          expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([
+            { articleIds: expected, kind: 'never' },
+          ]),
+        );
+        expect(app.toasts.getSnapshot().filter((t) => t.tone === 'error')).toHaveLength(0);
+      } else {
+        await waitFor(() =>
+          expect(app.toasts.getSnapshot().filter((t) => t.tone === 'error')).toHaveLength(1),
+        );
+        expect(screen.queryByRole('dialog', { name: 'New card from these articles' })).toBeNull();
+        expect(app.calls('POST', '/cards/drafts')).toHaveLength(0);
+      }
     },
   );
 

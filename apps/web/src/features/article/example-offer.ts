@@ -120,13 +120,19 @@ export function createExampleOffers({
 
   async function makeNever(articleIds: string[]): Promise<void> {
     const { signal } = controller;
-    try {
-      const articles = await Promise.all(
-        articleIds.map((id) => api.call(routes.articleGet, { params: { id } }, { signal })),
-      );
-      if (!signal.aborted) openNever(articles.map(({ id, title }) => ({ id, title })));
-    } catch (error) {
-      if (!signal.aborted) toast.show({ message: errorMessage(i18n.t, error), tone: 'error' });
+    const results = await Promise.allSettled(
+      articleIds.map((id) => api.call(routes.articleGet, { params: { id } }, { signal })),
+    );
+    if (signal.aborted) return;
+    const articles = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [{ id: result.value.id, title: result.value.title }] : [],
+    );
+    if (articles.length > 0) {
+      openNever(articles);
+    } else {
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed !== undefined)
+        toast.show({ message: errorMessage(i18n.t, failed.reason), tone: 'error' });
     }
   }
 
