@@ -149,8 +149,8 @@ an assumption until one real Jev answer is recorded.
   - on Admin "Check now";
   - at once when the pinned id fails as `model_unavailable` (at most every 10 minutes).
 
-  It probes the alias. A different concrete answer writes the new resolution (keeping `previous`) and mails the
-  admins on the alert channel:
+  It probes the alias. A different concrete answer is adopted after a second agreeing probe at least 10 minutes
+  later (D-323): it writes the new resolution (keeping `previous`) and mails the admins on the alert channel:
   - same major: "Jev jev-1.13.0 → jev-1.14.0: ratings and personal models kept";
   - otherwise: "major change: personal models restart from new ratings".
 
