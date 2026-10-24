@@ -1,4 +1,5 @@
 import {
+  judgeModelProbe,
   planModelChange,
   type AdminEngineModel,
   type EngineModelProbe,
@@ -163,12 +164,13 @@ export function useModelStatus() {
     (target: string): Promise<ProbeOutcome> =>
       exclusive<ProbeOutcome>({ name: 'probing', model: target }, async (signal) => {
         const first = await read(signal);
-        const reusable = planModelChange(
-          stateOf(first.status),
-          target,
-          first.serverNow() + MODEL_REUSE_SLACK_MS,
-        );
-        if (reusable.state === 'ok') return { state: 'ok', plan: reusable, status: first.status };
+        const reusable = planModelChange(stateOf(first.status), target, first.serverNow());
+        if (
+          reusable.state === 'ok' &&
+          judgeModelProbe(first.status.probes, target, first.serverNow() + MODEL_REUSE_SLACK_MS)
+            .state === 'ok'
+        )
+          return { state: 'ok', plan: reusable, status: first.status };
         const baseline = first.status.probes[target]?.at;
         const baselineMs = baseline === undefined ? Number.NEGATIVE_INFINITY : Date.parse(baseline);
         await sendProbe({ body: { model: target } });

@@ -1071,3 +1071,45 @@ it.each([0, 1])('shows an alias resolution checked %i ms after a recent save', a
   expect(group()).toHaveTextContent(`Resolves to jev-1.14.0 · checked ${printedTime(checkedAt)}`);
   expect(group()).not.toHaveTextContent('Not resolved yet.');
 });
+
+describe('D-304 second save before alias re-resolution', () => {
+  it('requires eval replay from the concrete pin while the alias resolution is dormant', async () => {
+    const { app } = await open({
+      saved: ALIAS,
+      status: {
+        ...aliasStatus(DEFAULT),
+        pin: { model: 'jev-2.0.0', since: T1 },
+        probes: freshProbes('jev-1.14.0'),
+      },
+    });
+    await app.user.click(radio(PINNED_RADIO));
+    await typeId(app, 'jev-1.14.0');
+    await app.user.click(saveButton());
+    const dialog = await restartDialog();
+    expect(tickIn(dialog)).not.toBeChecked();
+    expect(confirmIn(dialog)).toBeDisabled();
+    expect(app.calls(PATCH)).toHaveLength(0);
+    await app.user.click(tickIn(dialog));
+    await app.user.click(confirmIn(dialog));
+    await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
+    expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: 'jev-1.14.0', acknowledge: true });
+  });
+});
+
+it('keeps a nine-minute resolution in force when reusing a fresh probe on a skewed browser clock', async () => {
+  vi.setSystemTime(new Date(Date.parse(MODEL_NOW) + 15 * 60_000));
+  const { app } = await open({
+    saved: ALIAS,
+    status: {
+      ...aliasStatus(DEFAULT, modelAgo(9)),
+      pin: { model: 'jev-2.0.0', since: T1 },
+      probes: freshProbes('jev-1.14.0'),
+    },
+  });
+  await app.user.click(radio(PINNED_RADIO));
+  await typeId(app, 'jev-1.14.0');
+  await app.user.click(saveButton());
+  const dialog = await changeDialog();
+  expect(dialog).toHaveTextContent(KEPT_TEXT);
+  expect(within(dialog).queryByRole('checkbox')).toBeNull();
+});

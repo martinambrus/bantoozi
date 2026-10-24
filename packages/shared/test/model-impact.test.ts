@@ -150,25 +150,40 @@ describe('judgeModelProbe', () => {
 
 describe('concreteModelOf', () => {
   it('is the id itself for a concrete setting, whatever the resolution and the pin say', () => {
-    expect(concreteModelOf('jev-1.14.0', { model: 'jev-1.13.0' }, { model: 'jev-1.12.0' })).toBe(
-      'jev-1.14.0',
-    );
+    expect(
+      concreteModelOf(
+        'jev-1.14.0',
+        { model: 'jev-1.13.0', checkedAt: at(0) },
+        { model: 'jev-1.12.0' },
+        NOW,
+      ),
+    ).toBe('jev-1.14.0');
     expect(concreteModelOf('jev-fake', null, null)).toBe('jev-fake');
   });
 
   it('is the resolution for the alias, then the pin, then nothing', () => {
-    expect(concreteModelOf('jev-latest', { model: 'jev-1.13.0' }, { model: 'jev-1.12.0' })).toBe(
-      'jev-1.13.0',
-    );
+    expect(
+      concreteModelOf(
+        'jev-latest',
+        { model: 'jev-1.13.0', checkedAt: at(0) },
+        { model: 'jev-1.12.0' },
+        NOW,
+      ),
+    ).toBe('jev-1.13.0');
     expect(concreteModelOf('jev-latest', null, { model: 'jev-1.12.0' })).toBe('jev-1.12.0');
     expect(concreteModelOf('jev-latest', undefined, undefined)).toBeNull();
   });
 
   it('does not take an alias for a pinned release', () => {
     expect(concreteModelOf('jev-latest', null, { model: 'jev-latest' })).toBeNull();
-    expect(concreteModelOf('jev-latest', { model: 'jev-1.13.0' }, { model: 'jev-latest' })).toBe(
-      'jev-1.13.0',
-    );
+    expect(
+      concreteModelOf(
+        'jev-latest',
+        { model: 'jev-1.13.0', checkedAt: at(0) },
+        { model: 'jev-latest' },
+        NOW,
+      ),
+    ).toBe('jev-1.13.0');
   });
 });
 
@@ -327,5 +342,30 @@ describe('planModelChange', () => {
     expect(planModelChange(stored, 'jev-1.14.0', NOW + MODEL_PROBE_MAX_AGE_MS).state).toBe(
       'required',
     );
+  });
+});
+
+describe('D-304 alias saved before its first re-resolution', () => {
+  it.each([
+    [-MODEL_PROBE_MAX_AGE_MS - 1, undefined, 'jev-2.0.0', 'restart'],
+    [-MODEL_PROBE_MAX_AGE_MS, undefined, 'jev-1.13.0', 'kept'],
+    [MODEL_PROBE_MAX_SKEW_MS, undefined, 'jev-1.13.0', 'kept'],
+    [MODEL_PROBE_MAX_SKEW_MS + 1, undefined, 'jev-2.0.0', 'restart'],
+    [-86_400_000, 'jev-latest', 'jev-1.13.0', 'kept'],
+  ])('checked offset %i, pin alias %s uses %s', (offset, alias, current, impact) => {
+    const resolution = { model: 'jev-1.13.0', checkedAt: at(offset) };
+    const pin = { model: 'jev-2.0.0', ...(alias === undefined ? {} : { alias }) };
+    expect(
+      planModelChange(
+        {
+          setting: 'jev-latest',
+          resolution,
+          pin,
+          probes: probes(probe('jev-1.14.0', 'jev-1.14.0')),
+        },
+        'jev-1.14.0',
+        NOW,
+      ),
+    ).toMatchObject({ state: 'ok', current, impact });
   });
 });

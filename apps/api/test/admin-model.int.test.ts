@@ -741,3 +741,25 @@ describe('R5: rate limit', () => {
     expect(other.statusCode, other.body).toBe(202);
   });
 });
+
+describe('D-304 second save before alias re-resolution', () => {
+  it.each([
+    ['jev-1.14.0', 409],
+    ['jev-2.0.0', 200],
+  ])('uses the concrete pin for target %s: %i', async (target, code) => {
+    await setRow('engine.typesafe_model', 'jev-2.0.0');
+    await seedModelState(h, {
+      pin: { model: 'jev-2.0.0' },
+      resolution: { model: 'jev-1.13.0', checkedAt: SINCE },
+      probes: [{ requested: 'jev-latest', answered: 'jev-2.0.0' }, ok(target)],
+    });
+    expect((await setModel('jev-latest')).statusCode).toBe(200);
+    const res = await setModel(target);
+    expect(res.statusCode, res.body).toBe(code);
+    if (code === 409) {
+      expect(details(res)).toMatchObject({ reason: 'confirmation_required' });
+      expect(await stored('engine.typesafe_model')).toBe('jev-latest');
+      expect((await setModel(target, { acknowledge: true })).statusCode).toBe(200);
+    }
+  });
+});

@@ -156,7 +156,9 @@ export function ModelEditor({
       setEdit({ mode, id: draft.id });
       return;
     }
-    const resolved = status ? concreteModelOf(status.setting.value, resolution, status.pin) : null;
+    const resolved = status
+      ? concreteModelOf(status.setting.value, resolution, status.pin, Date.parse(status.now))
+      : null;
     setEdit({ mode, id: draft.id === '' ? (resolved ?? '') : draft.id });
   }
 
