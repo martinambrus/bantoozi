@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  CALL_KINDS,
   newUuid,
   PLATFORM_USER_ID,
   type CallKind,
@@ -877,16 +878,7 @@ describe('authorization rechecks at admission (spec 04 §1.1)', () => {
     // other kind.
     const article = await automaticDemand();
     expect(await reserveProbe(article.authorization)).toBeNull();
-    const otherKinds: CallKind[] = [
-      'enrich',
-      'match',
-      'cluster',
-      'suggest',
-      'translate',
-      'eval',
-      'card_draft',
-      'model_probe',
-    ];
+    const otherKinds = CALL_KINDS.filter((kind) => kind !== 'credential_probe');
     const admitted: CallKind[] = [];
     for (const kind of otherKinds) {
       if ((await reserveProbe(first, kind)) !== null) admitted.push(kind);

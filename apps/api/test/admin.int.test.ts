@@ -549,7 +549,9 @@ describe('engine operations (spec 08 §9)', () => {
       `INSERT INTO usage_daily (day, user_id, engine, kind, calls, cost_usd)
        VALUES ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'typesafe', 'match', 4, 0.25),
               ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'enrich', 3, 0.01),
-              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'translate', 2, 0.01)
+              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'translate', 2, 0.01),
+              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'card_draft', 5, 0),
+              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'model_probe', 7, 0)
        ON CONFLICT DO NOTHING`,
     );
     const res = await apiClient(h.server, admin).get('/admin/overview');

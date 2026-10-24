@@ -1,4 +1,5 @@
 import {
+  DECISION_KINDS,
   parseSetting,
   PLATFORM_USER_ID,
   type BudgetSnapshot,
@@ -24,8 +25,6 @@ export const BUDGET_ALERT_THRESHOLDS = [
   { key: 'p80At', ratio: 0.8 },
   { key: 'p100At', ratio: 1 },
 ] as const;
-/** Kinds whose calls share one daily call cap per engine (the LLM fallback cap). */
-export const DECISION_KINDS: readonly CallKind[] = ['enrich', 'match', 'cluster', 'suggest'];
 /** Float tolerance of budget comparisons (well below the 1e-8 USD storage precision). */
 export const USD_EPSILON = 1e-9;
 

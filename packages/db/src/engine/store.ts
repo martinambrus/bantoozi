@@ -1,7 +1,10 @@
 import {
   AppError,
+  CALL_KINDS,
+  DECISION_KINDS,
   EngineCircuitSchema,
   isUuid,
+  kindMatchesAuthorization,
   newUuid,
   parseSetting,
   PLATFORM_USER_ID,
@@ -78,17 +81,6 @@ export interface PgEngineStore extends EngineStore {
   ): Promise<{ circuit: EngineCircuit; changed: boolean }>;
 }
 
-const CALL_KINDS: readonly CallKind[] = [
-  'enrich',
-  'match',
-  'cluster',
-  'suggest',
-  'translate',
-  'eval',
-  'credential_probe',
-  'card_draft',
-  'model_probe',
-];
 const CALL_ENGINES = ['typesafe', 'llm', 'laya', 'libretranslate'] as const;
 const CALL_STATUSES = [
   'ok',
@@ -99,8 +91,6 @@ const CALL_STATUSES = [
   'invalid_response',
   'auth_error',
 ] as const;
-/** Kinds sharing one daily call cap per engine (the LLM fallback cap, spec 04 §5). */
-const DECISION_KINDS: readonly CallKind[] = ['enrich', 'match', 'cluster', 'suggest'];
 const INTERACTIVE_ALLOWANCE = 0.1;
 const ALERT_THRESHOLDS = [
   { key: 'p80At', ratio: 0.8 },
@@ -404,23 +394,9 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
       if (input.userId !== undefined && !isUuid(input.userId)) {
         throw new RangeError('userId must be a UUID');
       }
-      // Eval spend is exempt from the production budget, and probes have their own purpose: each of
-      // eval, credential_probe, card_draft and model_probe needs its own authorization type, and
-      // that type admits only its kind.
-      if ((input.kind === 'eval') !== (input.authorization.type === 'eval')) return null;
-      if (
-        (input.kind === 'credential_probe') !==
-        (input.authorization.type === 'credential_probe')
-      ) {
-        return null;
-      }
-      // A card draft's demand is its pending draft row, and nothing else (D-240).
-      if ((input.kind === 'card_draft') !== (input.authorization.type === 'card_draft'))
-        return null;
-      // A model probe is synthetic and has no demand; only its own authorization type admits it.
-      if ((input.kind === 'model_probe') !== (input.authorization.type === 'model_probe')) {
-        return null;
-      }
+      // Each kind with an authorization type of its own needs it, and that type admits no other
+      // kind (spec 04 §1.1).
+      if (!kindMatchesAuthorization(input.kind, input.authorization.type)) return null;
       const id = newUuid();
       const reserved = reserveUsd(input.estimateUsd);
       return db.transaction(async (tx) => {

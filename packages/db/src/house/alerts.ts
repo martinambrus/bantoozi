@@ -1,3 +1,4 @@
+import { DECISION_KINDS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -93,10 +94,11 @@ export async function latestMetricsSnapshots(
 }
 
 /**
- * The `engine_calls.kind` values of classification work. Other TypeSafe calls (credential checks,
- * evaluations, model probes) fail on purpose or for their own reasons and are not an outage of it.
+ * The `engine_calls.kind` values of classification work: the decision kinds of the kind table
+ * (spec 11 §6.1, D-272). Other TypeSafe calls (credential checks, evaluations, model probes) fail on
+ * purpose or for their own reasons and are not an outage of it.
  */
-const CLASSIFICATION_KINDS = ['enrich', 'match', 'cluster', 'suggest'] as const;
+const CLASSIFICATION_KINDS = DECISION_KINDS;
 
 /** A Jev answer that named another model than the one requested, grouped by the pair. */
 export interface ModelMismatchGroup {

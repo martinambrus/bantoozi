@@ -1,3 +1,4 @@
+import { CALL_KIND_PROFILES, CALL_KINDS } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ClassifyHarness } from './support/classify.js';
@@ -631,6 +632,34 @@ describe('S17 A5: engine latency, errors, coverage and billed cost', () => {
     // Output coverage: live calls that produced a usable output.
     expect(pick(s, 'windows.d7.engine.coverage') as number).toBeCloseTo(21 / 25, 6);
     expect(pick(s, 'windows.d30.engine.calls')).toBe(26);
+  });
+
+  it('counts every live kind of the table and none of the others', async () => {
+    const live = CALL_KINDS.filter((k) => CALL_KIND_PROFILES[k].live);
+    let billed = 0;
+    for (const [i, kind] of CALL_KINDS.entries()) {
+      const engine = kind === 'card_draft' ? 'llm' : 'typesafe';
+      const costUsd = 0.001 * 2 ** i;
+      if (CALL_KIND_PROFILES[kind].live) billed += costUsd;
+      await w.call({ engine, kind, costUsd, at: onDay(0, 7) });
+      await w.call({ engine, kind, status: 'error', costUsd: 0, at: onDay(0, 8) });
+    }
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    expect(pick(s, 'windows.d7.engine.calls')).toBe(2 * live.length);
+    expect(pick(s, 'windows.d7.engine.errors')).toBe(live.length);
+    expect((pick(s, 'windows.d7.engine.billedUsdPerDay') as number) * 7).toBeCloseTo(billed, 6);
+  });
+
+  it('counts a card draft as a live call about no article', async () => {
+    await w.call({ engine: 'llm', kind: 'card_draft', costUsd: 0.25, at: onDay(0, 7) });
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    expect(pick(s, 'windows.d7.engine.calls')).toBe(1);
+    expect(pick(s, 'windows.d7.engine.usd.other') as number).toBeCloseTo(0.25, 6);
+    expect(pick(s, 'windows.d7.engine.offFeedCalls')).toBe(0);
   });
 
   it('reports the degraded share of the articles first seen in the window apart from fetched volume', async () => {
