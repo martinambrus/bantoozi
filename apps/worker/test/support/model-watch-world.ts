@@ -259,6 +259,7 @@ export async function settingValue<T = Record<string, unknown>>(
 }
 
 export interface WatchRow {
+  candidate?: { model: string; firstSeenAt: string; count: number };
   triggeredAt?: string;
   lastCheck?: { at: string; ok: boolean; error?: string };
   notice?: { from: string; to: string; at: string; major: boolean; attempts: number };

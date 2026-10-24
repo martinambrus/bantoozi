@@ -22,7 +22,14 @@ import {
   recordStartResolution,
   resolutionInForce,
 } from '../model-resolution.js';
-import { MODEL_WATCH_KEY, upgradeMail, watchStateOf, writePendingNotice } from '../model-watch.js';
+import {
+  MODEL_WATCH_KEY,
+  isOlderSameMajorRelease,
+  observeModelCandidate,
+  upgradeMail,
+  watchStateOf,
+  writePendingNotice,
+} from '../model-watch.js';
 import type { HandlerLogger, WorkerDeps } from './deps.js';
 import { MODEL_PROBE_DEADLINE_MS } from './model-probe.js';
 import { recordHouseProgress } from './house-purge-auth.js';
@@ -49,7 +56,7 @@ const sameNotice = (a: Notice | undefined, b: Notice): boolean =>
 
 /**
  * `house.model-watch` (every 6 hours, on start, after a retired-model failure, or by hand): probes
- * the alias `jev-latest` and adopts a different concrete answer. The outgoing rating fingerprint is
+ * the alias `jev-latest` and adopts a different concrete answer after two agreeing probes ≥10 min apart. The outgoing rating fingerprint is
  * registered first, then `engine.model_resolution` and the pending notice are written in one
  * transaction and the admins are mailed. A dormant stored resolution (see `resolutionInForce`) is
  * replaced silently by the answer, with no fingerprint, notice or mail. Workers restart through
@@ -59,6 +66,11 @@ const sameNotice = (a: Notice | undefined, b: Notice): boolean =>
 export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<typeof JOB> {
   const { db, prober, logger } = deps;
   const now = (): Date => deps.now?.() ?? new Date();
+
+  const checkedWithoutCandidate = (state: EngineModelWatch): EngineModelWatch => {
+    const { candidate: _gone, ...rest } = state;
+    return { ...rest, lastCheck: { at: now().toISOString(), ok: true } };
+  };
 
   const updateState = (change: (state: EngineModelWatch) => EngineModelWatch): Promise<void> =>
     retryTransaction(db, async (tx) => {
@@ -156,11 +168,22 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     if (stored !== null && stored.alias === alias && !resolutionInForce(stored, pin, now())) {
       const at = now();
       await recordStartResolution(db, { alias, model: answered, now: at, dormant: stored });
-      await updateState((state) => ({ ...state, lastCheck: { at: at.toISOString(), ok: true } }));
+      await updateState(checkedWithoutCandidate);
       await recordHouseProgress({ db }, JOB, now(), true);
       return;
     }
     if (stored !== null && stored.alias === alias && stored.model !== answered) {
+      if (isOlderSameMajorRelease(answered, stored.model)) {
+        logger.warn({ job: JOB, current: stored.model, answered }, 'older Jev release ignored');
+        await updateState(checkedWithoutCandidate);
+        await recordHouseProgress({ db }, JOB, now(), true);
+        return;
+      }
+      if (!(await observeModelCandidate(db, answered, now()))) {
+        logger.info({ job: JOB, model: answered }, 'Jev release awaits confirmation');
+        await recordHouseProgress({ db }, JOB, now(), true);
+        return;
+      }
       await ensureFingerprintRegistered(
         db,
         { settingsEnv: deps.settingsEnv, primaryModel: stored.model },
@@ -173,7 +196,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
       { alias, model: answered, now: at },
       (tx, change) => writePendingNotice(tx, change, at),
     );
-    await updateState((state) => ({ ...state, lastCheck: { at: at.toISOString(), ok: true } }));
+    await updateState(checkedWithoutCandidate);
     if (result.changed && result.previous !== undefined) {
       logger.info({ job: JOB, from: result.previous, to: answered }, 'Jev release adopted');
       await deliverPending();

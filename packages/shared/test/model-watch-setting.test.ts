@@ -73,6 +73,23 @@ describe('engine.model_watch setting', () => {
     ).toBeUndefined();
   });
 
+  it('accepts an optional strict candidate while preserving old rows', () => {
+    const candidate = { model: 'jev-1.14.0', firstSeenAt: AT, count: 1 };
+    expect(EngineModelWatchSchema.parse({ candidate })).toEqual({ candidate });
+    for (const invalid of [
+      { ...candidate, model: 'jev-latest' },
+      { ...candidate, firstSeenAt: 'yesterday' },
+      { ...candidate, count: 0 },
+      { ...candidate, count: 1.5 },
+      { ...candidate, extra: true },
+    ])
+      expect(EngineModelWatchSchema.safeParse({ candidate: invalid }).success).toBe(false);
+    // The previous strict schema ignores the extended row through watchStateOf's fallback.
+    expect(EngineModelWatchSchema.omit({ candidate: true }).safeParse({ candidate }).success).toBe(
+      false,
+    );
+  });
+
   it('accepts the three parts and nothing else', () => {
     const full = {
       triggeredAt: AT,
