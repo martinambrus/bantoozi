@@ -292,8 +292,8 @@ export async function pgBossQueueExists(db: Executor, name: string): Promise<boo
  * Age in seconds of the oldest due, undelivered intent (the relay warns above 5 minutes; spec 11
  * §6.1 "Pipeline backlog"). An intent delayed on purpose (an origin cooldown, a merge retry after
  * an Undo pin) is not backlog before its `available_at` and counts from then. A failed send counts
- * from its creation, also during its backoff: the backoff moves `available_at`, and a send that
- * keeps failing is exactly the backlog this reports.
+ * from its creation once due. Future retries and re-armed deferrals stay out of current backlog;
+ * their last_error and attempts remain available for Admin diagnostics.
  */
 export async function oldestPendingOutboxAgeSeconds(
   db: Executor,
@@ -304,6 +304,6 @@ export async function oldestPendingOutboxAgeSeconds(
     SELECT extract(epoch FROM ${at} - min(CASE WHEN last_error IS NULL THEN available_at
                                                ELSE created_at END))::float8 AS age
       FROM job_outbox
-     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= ${at})`);
+     WHERE delivered_at IS NULL AND available_at <= ${at}`);
   return result.rows[0]?.age ?? null;
 }

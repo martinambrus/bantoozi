@@ -367,11 +367,13 @@ describe('relay primitives (worker role)', () => {
     const due = await oldestPendingOutboxAgeSeconds(ctx.worker);
     expect(due).toBeGreaterThanOrEqual(60);
     expect(due).toBeLessThan(300);
-    // A failed send counts from its creation, also while its backoff moves `available_at`.
+    // A failed send counts from creation once due; future backoff is not current backlog.
     await ctx.owner.query(
       `UPDATE job_outbox SET last_error = 'Error', available_at = now() + interval '15 minutes'
         WHERE delivered_at IS NULL`,
     );
+    expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
+    await ctx.owner.query('UPDATE job_outbox SET available_at = now() WHERE delivered_at IS NULL');
     expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeGreaterThan(3_000);
     await drain();
   });
@@ -686,3 +688,25 @@ it.each([false, true])(
     expect(due.map((row) => row.id)).toEqual([claimed!.id]);
   },
 );
+
+it('retains failure details without counting a future re-arm as backlog', async () => {
+  await drain();
+  const intent = buildJobIntent('house.reconcile', {}, { revision: 'failed-rearm' });
+  await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+  const [failed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  await failOutboxIntent(ctx.worker, failed!, { error: 'broker unavailable', retryInSeconds: 0 });
+  await ctx.owner.query(
+    "UPDATE job_outbox SET created_at = now() - interval '1 hour' WHERE id = $1",
+    [failed!.id],
+  );
+  const [retry] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  const due = new Date(Date.now() + 600_000);
+  await enqueueDelayedWorkerIntent(ctx.worker, intent, due);
+  expect(await completeOutboxIntent(ctx.worker, retry!)).toBe(false);
+  expect((await outboxRows()).find((row) => row.id === failed!.id)).toMatchObject({
+    last_error: 'broker unavailable',
+    attempts: 2,
+  });
+  expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
+  expect(await oldestPendingOutboxAgeSeconds(ctx.worker, due)).toBeGreaterThan(3_000);
+});
