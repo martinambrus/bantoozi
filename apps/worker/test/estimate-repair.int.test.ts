@@ -1,0 +1,97 @@
+import { loadEstimateModel } from '@bantoozi/db';
+import { parseEstimateModel } from '@bantoozi/ranker';
+import PgBoss from 'pg-boss';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+
+import { estimateAction, loadEstimateInputs } from '../src/estimate/inputs.js';
+import { inlineEstimateTrainer } from '../src/estimate/trainer.js';
+import { dispatch } from '../src/handlers/index.js';
+import { loadRankerSettings } from '../src/rank/settings.js';
+import { ClassifyHarness } from './support/classify.js';
+import { EstimateWorld } from './support/estimate-world.js';
+
+let h: ClassifyHarness;
+let w: EstimateWorld;
+let boss: PgBoss;
+beforeAll(async () => {
+  h = await ClassifyHarness.start();
+  w = await EstimateWorld.create(h);
+  boss = new PgBoss({
+    connectionString: h.testDb.urls.worker,
+    migrate: false,
+    supervise: false,
+    schedule: false,
+  });
+  await boss.start();
+}, 240_000);
+afterAll(async () => {
+  await boss?.stop({ graceful: false, wait: true });
+  await w?.close();
+  await h?.close();
+});
+
+it.each(['weights', 'platt'] as const)(
+  'repairs malformed %s of the current spec with an unchanged input hash and then converges',
+  async (column) => {
+    const userId = await w.reader(6, 6);
+    await h.dispatch('user.estimate', { userId });
+    await h.owner.query(
+      `UPDATE user_estimate_models SET ${column} = '[]'::jsonb WHERE user_id = $1`,
+      [userId],
+    );
+    const { config } = await loadRankerSettings(h.db);
+    const inputs = await loadEstimateInputs(h.db, userId, config, new Date());
+    expect(inputs.state?.metrics['inputSha']).toBe(inputs.inputSha);
+    expect(estimateAction(inputs)).toBe('train');
+    await h.clearOutbox();
+    await h.dispatch('user.rank', { userId, reason: 'test' });
+    await h.dispatch('user.rank', { userId, reason: 'test' });
+    expect(await w.pending('user.estimate', userId)).toHaveLength(1);
+    const trainer = vi.fn(inlineEstimateTrainer);
+    const handlers = h.handlersWith({ estimateTrainer: trainer });
+    const run = () =>
+      dispatch(handlers, 'user.estimate', { userId }, { queue: 'user.estimate', jobId: 'direct' });
+    await run();
+    expect(await w.versions(userId)).toEqual([1, 2]);
+    const repaired = await loadEstimateModel(h.db, userId);
+    expect(repaired && parseEstimateModel(repaired)).not.toBeNull();
+    expect(await w.pending('user.rank', userId)).toHaveLength(1);
+    await h.clearOutbox();
+    await run();
+    await h.dispatch('house.nightly-learn', {});
+    expect(trainer).toHaveBeenCalledTimes(1);
+    expect(await w.pending('user.estimate', userId)).toHaveLength(0);
+  },
+);
+
+it('does not write another self-heal intent while an estimate job is already pending', async () => {
+  const userId = await w.reader(6, 6);
+  await h.dispatch('user.estimate', { userId });
+  await h.owner.query(`UPDATE user_estimate_models SET platt = '{}'::jsonb WHERE user_id = $1`, [
+    userId,
+  ]);
+  await h.clearOutbox();
+  expect(
+    await boss.send('user.estimate', { userId }, { singletonKey: `estimate:${userId}` }),
+  ).not.toBeNull();
+  await h.dispatch('user.rank', { userId, reason: 'test' });
+  await h.dispatch('user.rank', { userId, reason: 'test' });
+  expect(await w.pending('user.estimate', userId)).toHaveLength(0);
+});
+
+it('deletes a malformed stored model when the gate closes', async () => {
+  const userId = await w.reader(6, 6);
+  await h.dispatch('user.estimate', { userId });
+  await h.owner.query(`UPDATE user_estimate_models SET weights = '[]'::jsonb WHERE user_id = $1`, [
+    userId,
+  ]);
+  await h.setSetting('ranker.thresholds', { estimate: { minRatings: 13 } });
+  try {
+    await h.clearOutbox();
+    await h.dispatch('user.estimate', { userId });
+    expect(await w.versions(userId)).toEqual([]);
+    expect(await w.pending('user.rank', userId)).toHaveLength(1);
+  } finally {
+    await h.deleteSetting('ranker.thresholds');
+  }
+});

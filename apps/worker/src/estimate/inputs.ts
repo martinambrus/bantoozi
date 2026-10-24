@@ -1,8 +1,8 @@
 import {
   loadEstimateRatings,
-  loadEstimateState,
+  loadEstimateModel,
   type EstimateRating,
-  type EstimateStateRow,
+  type StoredEstimateModel,
   type Executor,
 } from '@bantoozi/db';
 import {
@@ -10,6 +10,7 @@ import {
   ESTIMATE_SPEC,
   estimateGate,
   estimateInputSha,
+  parseEstimateModel,
   type EstimateOptions,
   type RankerSettings,
 } from '@bantoozi/ranker';
@@ -21,7 +22,7 @@ export interface EstimateInputs {
   ratings: EstimateRating[];
   options: EstimateOptions;
   inputSha: string;
-  state: EstimateStateRow | null;
+  state: StoredEstimateModel | null;
   counts: { n: number; nPos: number; nNeg: number };
 }
 
@@ -44,7 +45,7 @@ export async function loadEstimateInputs(
   const since = new Date(now.getTime() - config.model.historyDays * DAY_MS);
   const ratings = await loadEstimateRatings(db, userId, since);
   const inputSha = estimateInputSha(ratings, options);
-  const state = await loadEstimateState(db, userId);
+  const state = await loadEstimateModel(db, userId);
   const nPos = ratings.filter((r) => r.rating === 1).length;
   return {
     ratings,
@@ -57,11 +58,17 @@ export async function loadEstimateInputs(
 
 /**
  * What `user.estimate` does with these inputs: `unchanged` (a model of the current spec with the same
- * input hash), `idle` (gate closed, nothing stored), `delete` (gate closed, a model stored), `train`.
+ * input hash and a parseable model), `idle` (gate closed, nothing stored), `delete` (gate closed,
+ * a model stored), `train`.
  */
 export function estimateAction(inputs: EstimateInputs): 'unchanged' | 'idle' | 'delete' | 'train' {
   const { state, inputSha, counts, options } = inputs;
-  if (state !== null && state.spec === ESTIMATE_SPEC && state.metrics['inputSha'] === inputSha) {
+  if (
+    state !== null &&
+    state.spec === ESTIMATE_SPEC &&
+    state.metrics['inputSha'] === inputSha &&
+    parseEstimateModel(state) !== null
+  ) {
     return 'unchanged';
   }
   if (!estimateGate(counts, options).open) return state === null ? 'idle' : 'delete';
