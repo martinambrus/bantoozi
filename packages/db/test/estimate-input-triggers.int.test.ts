@@ -44,10 +44,21 @@ async function world() {
   const high = await createFeed(ctx.owner);
   const user = await createUser(ctx.owner);
   const other = await createUser(ctx.owner);
+  const unrelated = await createUser(ctx.owner);
+  const unrelatedFeed = await createFeed(ctx.owner);
+  const unrelatedArticle = await createArticle(ctx.owner, { feedIds: [unrelatedFeed.id] });
+  await rate(unrelated.id, unrelatedArticle.id);
   const article = await createArticle(ctx.owner, { feedIds: [low.id, high.id] });
   await rate(user.id, article.id);
   await rate(other.id, article.id, null);
-  return { low: low.id, high: high.id, user: user.id, other: other.id, article: article.id };
+  return {
+    low: low.id,
+    high: high.id,
+    user: user.id,
+    other: other.id,
+    unrelated: unrelated.id,
+    article: article.id,
+  };
 }
 
 it.each(['single', 'batch'] as const)(
@@ -63,6 +74,7 @@ it.each(['single', 'batch'] as const)(
     expect((await loadEstimateRatings(ctx.worker, w.user, new Date(0)))[0]?.feedId).toBe(w.high);
     await insert(w.user);
     await insert(w.other);
+    await insert(w.unrelated);
     expect((await loadEstimateRatings(ctx.worker, w.user, new Date(0)))[0]?.feedId).toBe(w.low);
     expect(await pending()).toEqual([w.user]);
     await ctx.owner.query('DELETE FROM job_outbox');
@@ -70,6 +82,7 @@ it.each(['single', 'batch'] as const)(
     expect(await pending()).toEqual([]);
     await withTenant(ctx.app, w.user, (tx) => deleteSubscription(tx, w.low));
     await withTenant(ctx.app, w.other, (tx) => deleteSubscription(tx, w.low));
+    await withTenant(ctx.app, w.unrelated, (tx) => deleteSubscription(tx, w.low));
     expect(await pending()).toEqual([w.user]);
     expect((await loadEstimateRatings(ctx.worker, w.user, new Date(0)))[0]?.feedId).toBe(w.high);
   },
@@ -119,6 +132,7 @@ it('feed merges wake raters subscribed to either feed, including target-only sub
   await createSubscription(ctx.owner, { userId: targetOnly.id, feedId: w.high });
   await createSubscription(ctx.owner, { userId: w.user, feedId: w.low });
   await createSubscription(ctx.owner, { userId: w.other, feedId: w.low });
+  await createSubscription(ctx.owner, { userId: w.unrelated, feedId: w.low });
   await ctx.worker.transaction((tx) => mergeFeeds(tx, workerOutbox(tx), w.low, w.high));
   expect(await pending()).toEqual([w.user, targetOnly.id].sort());
 });

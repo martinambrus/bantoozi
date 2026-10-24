@@ -66,8 +66,9 @@ it.each([
     `SELECT payload->>'userId' AS user_id FROM job_outbox WHERE queue = 'user.rank' ORDER BY payload->>'userId'`,
   );
   expect(ranks.rows.map((r) => r.user_id)).toEqual(await estimates());
+  await h.owner.query('DELETE FROM job_outbox');
   await patch(thresholds);
-  expect(await estimates()).toHaveLength(2);
+  expect(await estimates()).toEqual([]);
 });
 
 it.each([{ model: { minExplicit: 60 } }, { estimate: { minRatings: 10, minEachClass: 3 } }])(

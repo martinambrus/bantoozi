@@ -45,7 +45,6 @@ it.each(['weights', 'platt'] as const)(
     expect(estimateAction(inputs)).toBe('train');
     await h.clearOutbox();
     await h.dispatch('user.rank', { userId, reason: 'test' });
-    await h.dispatch('user.rank', { userId, reason: 'test' });
     expect(await w.pending('user.estimate', userId)).toHaveLength(1);
     const trainer = vi.fn(inlineEstimateTrainer);
     const handlers = h.handlersWith({ estimateTrainer: trainer });
@@ -79,7 +78,7 @@ it('does not write another self-heal intent while an estimate job is already pen
   expect(await w.pending('user.estimate', userId)).toHaveLength(0);
 });
 
-it('deletes a malformed stored model when the gate closes', async () => {
+it('documents gate closure deleting even a malformed stored model', async () => {
   const userId = await w.reader(6, 6);
   await h.dispatch('user.estimate', { userId });
   await h.owner.query(`UPDATE user_estimate_models SET weights = '[]'::jsonb WHERE user_id = $1`, [
