@@ -337,9 +337,12 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
 }
 
 /**
- * Merges a probe result into `settings['engine.model_probe']`, newest {@link ENGINE_MODEL_PROBES_MAX} by `at`,
- * and records in the same transaction how many live users hold an active personal model
- * (`settings['engine.model_impact']`): the API cannot count other users' models under row-level security.
+ * Merges a probe result into `settings['engine.model_probe']`, newest {@link ENGINE_MODEL_PROBES_MAX} by `at`.
+ * A strictly newer stored probe wins for the same model; equal timestamps replace. Stored timestamps
+ * more than 60 seconds ahead of the writer's clock are ignored for both probe and impact comparisons.
+ * In the same transaction, `settings['engine.model_impact']` always takes the committing recorder's
+ * live active-model count and the newer stored or probe `at`. The API cannot count other users'
+ * models under row-level security.
  */
 export async function recordModelProbe(
   db: Database,

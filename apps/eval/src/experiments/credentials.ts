@@ -10,8 +10,9 @@ import { decryptProviderSecret, ProviderKeyring } from '@bantoozi/shared/server/
  * `provider_credentials` row is read and decrypted for each attempt and never kept; an environment
  * key (`TYPESAFE_API_KEY`/`OLLAMA_API_KEY`) is used only while no row exists; a disabled or pending
  * row and any read or decryption failure make the provider unavailable (`ENGINE_UNAVAILABLE` with a
- * typed reason and no key material, which the router reports as `no_key`). Eval never validates a
- * candidate key, so `useCandidate` is refused.
+ * typed reason and no key material, which the router reports as `no_key` unless the request was
+ * cancelled; cancellation ends the request as `cancelled`). Eval never validates a candidate key,
+ * so `useCandidate` is refused.
  */
 
 type Provider = 'typesafe' | 'ollama';

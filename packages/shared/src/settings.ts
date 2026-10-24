@@ -120,8 +120,9 @@ export type EngineModelProbes = z.infer<typeof EngineModelProbesSchema>;
 export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
 
 /**
- * `settings['engine.model_watch']`, written by the worker's `house.model-watch` and `requestModelWatch`
- * (visible-learning §4.1): when the retired-model trigger last queued a check (its 10-minute rate
+ * `settings['engine.model_watch']`, written only by the worker's `house.model-watch`,
+ * `requestModelWatch` and `writePendingNotice` (visible-learning §4.1): when the retired-model
+ * trigger last queued a check (its 10-minute rate
  * limit), how the newest check ended, and the adoption whose mail is still to be delivered
  * (`major`: the new release is of another major, so personal models restart).
  */
@@ -149,7 +150,9 @@ export type EngineModelWatch = z.infer<typeof EngineModelWatchSchema>;
 /**
  * `settings['engine.model_impact']`, written only by the worker together with every model probe
  * (visible-learning §4.1, JEV-5): how many users hold an active personal model when the probe was
- * recorded. The API cannot count other tenants' `user_models` under row-level security, and the
+ * recorded, always refreshed by the committing recorder. `at` keeps the newer stored or probe
+ * timestamp, ignoring a stored timestamp more than 60 seconds ahead of the writer's clock.
+ * The API cannot count other tenants' `user_models` under row-level security, and the
  * Admin → Settings confirmation of a model change in another family says how many of them restart.
  */
 export const EngineModelImpactSchema = z

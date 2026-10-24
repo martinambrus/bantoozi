@@ -312,7 +312,8 @@ export interface LlmFallbackEngineOptions {
  * the schema's keys; values must be finite and in range, distributions must sum to 1 ± 0.02 (then
  * renormalized, never clamped or invented), and a truncated reply (`done_reason: 'length'` or not
  * `done`) is invalid.
- * Confidence is the entropy proxy of spec 04 §2. HTTP statuses follow the table of spec 04 §3.
+ * Confidence is the entropy proxy of spec 04 §2. HTTP statuses follow the table of spec 04 §3;
+ * a 404 means `model_unavailable` only when Ollama's answer identifies an unknown model.
  */
 export function createLlmFallbackEngine(options: LlmFallbackEngineOptions): DecisionEngine {
   const engine = 'LlmFallbackEngine';
