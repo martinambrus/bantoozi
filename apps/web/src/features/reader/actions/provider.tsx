@@ -164,6 +164,7 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
 
 function createScope({ api, queryClient, toast, i18n, accountId, openNever }: Environment): Scope {
   const toastIds = new Set<string>();
+  const ratingOffers = new Map<string, { handle: ActionHandle; item: ArticleListItem }>();
   const listeners = new Set<SettledListener>();
   /** A newer rating context invalidates delayed offers; one selected batch shares a context. */
   let latestOffer = 0;
@@ -227,6 +228,11 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
 
   const isRecent = (handle: ActionHandle) => store.recent().some((entry) => entry.id === handle.id);
 
+  function showRatingOffer(input: ToastInput, handle: ActionHandle, item: ArticleListItem): void {
+    const id = tracked.show(input);
+    ratingOffers.set(id, { handle, item });
+  }
+
   function offerUndo(
     handle: ActionHandle,
     suggestion: ExampleSuggestion | null,
@@ -273,14 +279,18 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
         if (offered === null) {
           return;
         }
-        show({
-          id: `pattern-offer:${pattern.kind}:${pattern.kind === 'card' ? pattern.cardId : pattern.feedId}`,
-          message,
-          tone: 'success',
-          durationMs: OFFER_TOAST_MS,
-          onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
-          actions: offered,
-        });
+        showRatingOffer(
+          {
+            id: `pattern-offer:${pattern.kind}:${pattern.kind === 'card' ? pattern.cardId : pattern.feedId}`,
+            message,
+            tone: 'success',
+            durationMs: OFFER_TOAST_MS,
+            onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
+            actions: offered,
+          },
+          handle,
+          item,
+        );
       });
       return;
     }
@@ -296,17 +306,21 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       const current = store.view(item);
       if (current.rating !== item.rating || current.reason !== item.reason) return;
       if (offered === null) return;
-      show({
-        id:
-          handle.ratingBatchId === undefined
-            ? undoToastId(handle)
-            : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
-        message,
-        tone: 'success',
-        durationMs: OFFER_TOAST_MS,
-        action: undoAction,
-        actions: offered,
-      });
+      showRatingOffer(
+        {
+          id:
+            handle.ratingBatchId === undefined
+              ? undoToastId(handle)
+              : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
+          message,
+          tone: 'success',
+          durationMs: OFFER_TOAST_MS,
+          action: undoAction,
+          actions: offered,
+        },
+        handle,
+        item,
+      );
     });
   }
 
@@ -463,6 +477,15 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
 
   // A change sent from the page, not by a replay, can be left waiting too.
   store.subscribe(retryLater);
+  store.subscribe(() => {
+    for (const [id, { handle, item }] of ratingOffers) {
+      const current = store.view(item);
+      if (!isRecent(handle) || current.rating !== item.rating || current.reason !== item.reason) {
+        ratingOffers.delete(id);
+        toast.dismiss(id);
+      }
+    }
+  });
 
   return {
     store,
@@ -487,6 +510,7 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       stopRetrying();
       latestOffer += 1;
       offers.release();
+      ratingOffers.clear();
       reasonBar.close();
       store.reset();
       queue.close();
