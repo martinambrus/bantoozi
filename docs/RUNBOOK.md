@@ -272,6 +272,11 @@ means no run recorded progress for 12 h. Rolling back past JEV-3: older workers 
 `DELETE FROM pgboss.schedule WHERE name = 'house.model-watch'` (or let queued jobs expire); `engine.model_watch` is
 ignored by older code.
 
+**Rolling back past PRG (D-309…D-315).** Migration 0035 is expand-only (a new table); an older release ignores it and
+account deletion still cascades. An older worker leaves the estimate model without `ratedThrough`/`fromRatings`; a later
+worker reads that as "no earlier run", so one retrain after a rollback is not announced. A tab cached from before the
+release rejects the new `GET /me/learning` keys until the D-163 reload bar: ship API, worker and web together.
+
 **Rolling back past EST-2…EST-4 (D-281…D-285).** Migration 0034 is expand-only, but an older release rejects rows with
 `score_source = 'estimate'` and a stored `ranker.thresholds.estimate` (ranking stops with `RankerSettingsError`).
 Before starting it: `UPDATE settings SET value = value - 'estimate' WHERE key = 'ranker.thresholds'` (when set) and

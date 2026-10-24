@@ -488,6 +488,12 @@ reports capture failures/partial snapshots and includes retained bookmark bodies
 ---
 
 
+Learning progress (D-312…D-314): an Off or Training feed view shows a **learning chip** in its header (estimate state,
+and for Training the interests agreement or Ready for automatic; the paused state overrides it). After the reader's own
+rating an **effect notice** may appear above the list ("Updated from your ratings: N unread articles moved up, M down",
+Show = Refresh, Dismiss). Settings → Personal learning shows the **learning curve** (three series over the updates,
+milestones, a slider that reads each update, and "Show as table").
+
 Word estimates (D-293): Reading preferences → "Feedback and learning" has the switch "Estimate unanalysed articles"
 (`prefs.estimates`, on by default; its hint says the tier comes from the words of rated articles, that score order
 and a feed's minimum tier include it, that such rows are marked Estimated and that nothing is sent to an AI service).

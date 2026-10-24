@@ -3192,3 +3192,35 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   ('model-unavailable trigger failed'); `alertRecipients` and `deliver` take a job label, and the watch's mails log
   `job: 'house.model-watch'` instead of `house.alerts`. Item 9 (the strict `readSetting` of `engine.model_pin` in
   `apps/api/src/services/analysis.ts:81`) stays with design item 19.
+- D-309: 2026-10-24 (PRG-1 of docs/design/visible-learning.md) — Learning history. `user_learning_history` (migration
+  0035): identity PK, tenant RLS, API SELECT only, FK cascade; a row is appended in the transaction of `user.learn` (a
+  fitted model, activated or rejected) and of `user.estimate` (a trained model), never for a superseded, unchanged,
+  duplicate, under-minimum or pure deactivation run or a gate-closed deletion. Deviations from design §4.5: retention is
+  the newest 200 per user AND kind (estimate runs follow every rating burst and would evict the model rows within hours);
+  extra columns `turned_on` (estimates: no usable model before; model: activated with none active before) and
+  `engine_model` (the Jev model of a learn run), so milestones are recorded when they happen rather than guessed from
+  the oldest retained row. Not backfilled: existing accounts start with an empty curve.
+- D-310: 2026-10-24 (PRG-1, PRG-3) — Estimate provenance. The stored estimate model's metrics gain `ratedThrough` (newest
+  rating it trained on) and `fromRatings` (a previous model of the same spec and stored trainer options exists and this
+  one trained on later ratings). False for the first model, a spec or trainer-option change (the D-301 seed change), window
+  ageing, the D-300 nightly sweep and an un-rate, so only runs caused by the reader's ratings are announced.
+- D-311: 2026-10-24 (PRG-1) — `/me/learning` additions: `feeds` is a union (Training entries gain `estimate {n, auc} |
+  null`; other current subscriptions with per-feed metrics get an agreement-free `{feedId, estimate}`), `estimateGate
+  {needed}`, `estimates.lastRun.fromRatings`; new `GET /me/learning/history`; and a light `GET /me/learning/estimates
+  {estimates, estimateGate}` that loads no training samples (the full status takes 0.2–1.5 s at 5k ratings, D-259).
+- D-312: 2026-10-24 (PRG-2) — Feed header chip in Off and Training feed views: estimate segment ("Rate N more…",
+  "starting", "off", "Estimates on · N rated in this feed", quality only from 30 scored ratings of the feed itself) and,
+  for Training, "Interests agree X · ready at Y" (X is the agreement lower bound) or the Ready-for-automatic row; the
+  paused state overrides all. Off feeds read the light endpoint; Training feeds the full status.
+- D-313: 2026-10-24 (PRG-3) — Effect notice. An own rating in this tab (rate, prompt answer, bulk rating) arms it; the
+  page polls the light `GET /me/learning/estimates` every 5 s for up to 60 s; a newer run with `fromRatings` that moved
+  at least one unread row shows "Updated from your ratings: N unread articles moved up, M down" with Show (= Refresh,
+  D-243/D-245) and Dismiss; nothing reloads by itself. First-time estimates inside `movedUp` are still counted (the
+  first model has `fromRatings` false, so it is never announced).
+- D-314: 2026-10-24 (PRG-4) — Learning curve in Settings → Personal learning (`GET /me/learning/history`): inline SVG, x =
+  update index, three series (personal model, word estimates hollow, interests alone), milestones from `turned_on` and
+  `engine_model`, a native slider that reads each update, "Show as table" with a keyboard-scrollable table; colours
+  validated in both schemes; axe and the 44 px gate pass in the e2e (scenario 12).
+- D-315: 2026-10-24 (PRG, bundled items) — `GET /me/learning.deactivated` reads the newest stamped `user_models` version
+  (`loadLastDeactivation`), not the newest row, so the note survives a later rejected attempt; the New lane's empty text
+  says "analyzed" and mentions estimates.
