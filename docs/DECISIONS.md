@@ -3351,3 +3351,20 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   tier change +0.09). The design target (≤ 10 % rows, ≤ 2 % tiers after a day of ageing) is not reached by any trainer
   variant that keeps the EST-1 quality gate (lower rates failed it): ageing changes the evidence itself. Quality (C1,
   8 seeds), determinism and timing (idle A/B 278 → 276 ms for 4,946 ratings) pass.
+- D-327: 2026-10-24 (FNF-VL-16, task #38; amends D-317, D-319; owner decision "keep starting and alerting") — Missing
+  queues and the worker drain, second pass. A missing cron destination no longer stops the worker: its schedule is
+  retried every 30 s while other work goes on. The `service.queues_missing` incident keeps its identity across a worker
+  restart (`alerts.state` memo `queues_absent`, written with the decision under the row lock) and recovers only after
+  10 min without a report, so a restart sends no second mail. The public `/readyz` reports `missingQueueCount` only;
+  names stay in Admin and the API log (once per change of the missing set). `bantoozi_worker_queue_consumed` is 1 only
+  for a registered consumer on an existing queue and covers the internal cron queue; `bantoozi_worker_queue_missing`
+  is new. A missing `house.alerts` or `__pgboss__send-it` cannot mail about itself: it shows in the log, the metric,
+  Admin and `/readyz`, and the external `/readyz` monitor (owner launch item) is the notification. Admin, alerts and
+  eval share one liveness predicate (`isHeartbeatFresh`, `|now − at| ≤ 90 s`); "No worker heartbeat" ignores
+  heartbeats dated more than 90 s ahead. An orderly drain releases this process's match, analysis, suggestion and
+  provider-validation leases, fenced by their tokens, with the replacement match/analysis intent in the same
+  transaction; a released suggestion lease reopens the reader's daily gate, so a cut run may cost one extra paid
+  attempt that day. Reservations that may have reached a provider keep the spec 04 §6 accounting. Every cleanup step
+  runs even if an earlier one fails, and every shutdown path ends within 115 s (compose grace 120 s). A hard kill still
+  relies on lease expiry. `article.enrich.laya` leaves the stale-guarded set until M9 implements it (its queue options
+  are unchanged).

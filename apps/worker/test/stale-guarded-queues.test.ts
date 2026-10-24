@@ -5,12 +5,17 @@ import { fileURLToPath } from 'node:url';
 import { STALE_GUARDED_QUEUES } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
+import { IMPLEMENTED_QUEUES } from '../src/handlers/index.js';
+
 const HANDLERS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/handlers');
 
 /** Self-recovering queues; interactive drafts keep immediate retries and a delayed stale intent. */
 const EXEMPT = ['analysis.process', 'house.reconcile', 'card.draft'];
 
 describe('stale-worker guarded queues', () => {
+  it('contains only registered handlers', () => {
+    for (const queue of STALE_GUARDED_QUEUES) expect(IMPLEMENTED_QUEUES).toContain(queue);
+  });
   it('lists every queue whose handler asks whether the worker is current', () => {
     const guarded = new Set<string>();
     for (const file of readdirSync(HANDLERS).filter((f) => f.endsWith('.ts'))) {

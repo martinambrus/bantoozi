@@ -9,6 +9,7 @@ import { dropCreatedTestDatabases, setupTestDatabase, type TestDatabase } from '
 import pg from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { createBoss, startWorkerSchedules } from '../src/boss.js';
 import { startHeartbeat } from '../src/eval-mode.js';
 import {
   QUEUES_MISSING_KEY,
@@ -89,7 +90,7 @@ describe("pg-boss's internal cron queue", () => {
         readiness.stop();
       }
     } finally {
-      // Migration 0017 created it (the migrate job does not create it again).
+      // Restore directly for isolation; the migrate job also repairs this queue on every run.
       await owner.query(
         `SELECT pgboss.create_queue('${PG_BOSS_CRON_QUEUE}', '{"policy":"standard"}'::json)`,
       );
@@ -171,4 +172,27 @@ describe('startQueueReadiness', () => {
       readiness.stop();
     }
   });
+});
+
+it('pins the real pg-boss missing schedule destination error and keeps scheduling alive', async () => {
+  await dropQueue('house.alerts');
+  const boss = createBoss(testDb.urls.worker);
+  await boss.start();
+  let schedules: Awaited<ReturnType<typeof startWorkerSchedules>> | undefined;
+  try {
+    await expect(boss.schedule('house.alerts', '*/5 * * * *', {}, { tz: 'UTC' })).rejects.toThrow(
+      /^Queue house\.alerts not found$/,
+    );
+    const missing: string[] = [];
+    schedules = await startWorkerSchedules(
+      boss,
+      ['house.alerts'],
+      (queue) => missing.push(queue),
+      recording().logger,
+    );
+    expect(missing).toEqual(['house.alerts']);
+  } finally {
+    schedules?.stop();
+    await boss.stop({ graceful: true, timeout: 1_000 });
+  }
 });

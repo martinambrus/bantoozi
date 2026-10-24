@@ -12,6 +12,7 @@ vi.mock('@bantoozi/db', () => ({
 }));
 
 let app: FastifyInstance;
+const logLines: string[] = [];
 const probe = () => app.inject({ method: 'GET', url: '/readyz' });
 
 beforeEach(async () => {
@@ -19,7 +20,17 @@ beforeEach(async () => {
   vi.setSystemTime(new Date('2026-10-24T12:00:00Z'));
   queries.queues.mockReset().mockResolvedValue([]);
   queries.migrations.mockReset().mockResolvedValue({ ready: true });
-  app = Fastify();
+  logLines.length = 0;
+  app = Fastify({
+    logger: {
+      level: 'warn',
+      stream: {
+        write: (line: string) => {
+          logLines.push(line);
+        },
+      },
+    },
+  });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   await healthRoutes(app, { db: {} as Database, journal: {} as MigrationJournal });
@@ -62,10 +73,20 @@ describe('readiness queue query cache', () => {
     queries.queues.mockResolvedValueOnce(['user.estimate']);
     expect((await probe()).json()).toMatchObject({
       checks: { queues: 'pending' },
-      missingQueues: ['user.estimate'],
+      missingQueueCount: 1,
     });
     expect((await probe()).statusCode).toBe(200);
     expect(queries.queues).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns only a missing count to an unauthenticated caller', async () => {
+    queries.queues.mockResolvedValue(['house.alerts', '__pgboss__send-it']);
+    const response = await probe();
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ missingQueueCount: 2 });
+    expect(response.body).not.toContain('house.alerts');
+    expect(response.body).not.toContain('__pgboss__send-it');
+    expect(response.json()).not.toHaveProperty('missingQueues');
   });
 
   it('does not cache errors or reuse an expired success after an error', async () => {
@@ -85,7 +106,31 @@ it('reports queue readiness as unknown when the database cannot be reached', asy
   expect(response.json()).toEqual({
     status: 'not_ready',
     checks: { database: 'unreachable', migrations: 'pending', queues: 'unknown' },
-    missingQueues: [],
+    missingQueueCount: 0,
   });
   expect(queries.queues).not.toHaveBeenCalled();
+});
+
+it('logs missing names once per change of the missing set, including recovery and recurrence', async () => {
+  const missingLogs = () =>
+    logLines
+      .map((line) => JSON.parse(line) as { msg: string; missingQueues?: string[] })
+      .filter((entry) => entry.msg === 'readiness: queues missing; run the migrate job');
+  queries.queues.mockResolvedValue(['house.alerts', 'user.estimate']);
+  await Promise.all(Array.from({ length: 6 }, () => probe()));
+  await probe();
+  queries.queues.mockResolvedValue(['user.estimate', 'house.alerts']);
+  await probe();
+  expect(missingLogs()).toHaveLength(1);
+  expect(missingLogs()[0]?.missingQueues).toEqual(['house.alerts', 'user.estimate']);
+  queries.queues.mockResolvedValue(['house.alerts']);
+  await probe();
+  expect(missingLogs()).toHaveLength(2);
+  queries.queues.mockResolvedValue([]);
+  await probe();
+  vi.setSystemTime(Date.now() + 60_000);
+  queries.queues.mockResolvedValue(['house.alerts']);
+  await probe();
+  await probe();
+  expect(missingLogs()).toHaveLength(3);
 });

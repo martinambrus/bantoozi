@@ -110,17 +110,16 @@
                       ],
                       "additionalProperties": false
                     },
-                    "missingQueues": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                    "missingQueueCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
                     "status",
                     "checks",
-                    "missingQueues"
+                    "missingQueueCount"
                   ],
                   "additionalProperties": false
                 }
@@ -179,17 +178,16 @@
                       ],
                       "additionalProperties": false
                     },
-                    "missingQueues": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                    "missingQueueCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
                     "status",
                     "checks",
-                    "missingQueues"
+                    "missingQueueCount"
                   ],
                   "additionalProperties": false
                 }

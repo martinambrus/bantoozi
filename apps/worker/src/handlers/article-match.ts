@@ -51,6 +51,8 @@ import {
 } from '@bantoozi/questions';
 import { enqueueMatch } from '@bantoozi/shared';
 
+import { acquireProcessLease } from '../process-leases.js';
+
 import {
   builtCardQuestion,
   isCurrentCardAnswer,
@@ -143,73 +145,95 @@ export function createArticleMatchHandler(
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');
     const matchSet = requireSet(config.match, 'match');
-    const claim = await claimMatchRows(deps.db, articleId, { leaseMs: classification.leaseMs });
-    if (claim === null) return;
-    const held = new Map(claim.rows.map((row) => [row.cardId, row]));
-
-    const article = await loadClassificationArticle(deps.db, articleId);
-    const facets =
-      article === null || article.revision !== claim.revision
-        ? null
-        : await readFacets(deps.db, articleId, enrichSet.id);
-    if (
-      article === null ||
-      facets === null ||
-      facets.articleRevision !== article.revision ||
-      (article.pipelineState !== 'enriched' && article.pipelineState !== 'matched')
-    ) {
-      // Matching waits for current facets of the claimed revision (spec 05 §5.6 step 4).
-      await releaseRows(deps, articleId, claim.leaseToken, [...held.keys()], { kind: 'release' });
-      return;
-    }
-
-    const input = modelInput(
-      article,
-      await listTranslations(deps.db, articleId, article.revision),
-      config,
+    const claim = await acquireProcessLease(
+      deps.leases,
+      () => claimMatchRows(deps.db, articleId, { leaseMs: classification.leaseMs }),
+      (claim) =>
+        claim === null
+          ? undefined
+          : () =>
+              retryTransaction(deps.db, async (tx) => {
+                const released = await releaseMatchRows(tx, {
+                  articleId,
+                  leaseToken: claim.leaseToken,
+                  cardIds: claim.rows.map((row) => row.cardId),
+                  release: { kind: 'release' },
+                });
+                if (released > 0) await enqueueMatch(workerOutbox(tx), { articleId });
+              }),
     );
-    const state = buildState(input, 'match');
-    const job: MatchJob = {
-      deps,
-      classification,
-      config,
-      enrichSet,
-      matchSet,
-      article,
-      state,
-      fingerprint: {
-        articleRevision: article.revision,
-        matchSetSha: matchSet.sha256,
-        stateSha256: state.sha256,
-      },
-      leaseToken: claim.leaseToken,
-      l2Attempts: l2Attempts ?? 0,
-      held,
-      questions: new Map(),
-      lost: false,
-      stale: false,
-      workerStale: null,
-      yielded: false,
-    };
+    if (claim === null) return;
+    try {
+      const held = new Map(claim.rows.map((row) => [row.cardId, row]));
 
-    const cards = await prepareCards(job);
-    if (!job.stale) await prefilter(job, facets, cards);
-    const packs = job.stale ? [] : await buildPacks(job, facets, cards);
-    for (const [index, pack] of packs.entries()) {
-      if (job.lost || job.stale) break;
-      if (index > 0 && nowOf(deps).getTime() - started >= classification.jobBudgetMs) {
-        // Spec 03 §2.1: the rest runs in a follow-up job, inside its own queue expiration.
-        job.yielded = true;
-        break;
+      const article = await loadClassificationArticle(deps.db, articleId);
+      const facets =
+        article === null || article.revision !== claim.revision
+          ? null
+          : await readFacets(deps.db, articleId, enrichSet.id);
+      if (
+        article === null ||
+        facets === null ||
+        facets.articleRevision !== article.revision ||
+        (article.pipelineState !== 'enriched' && article.pipelineState !== 'matched')
+      ) {
+        // Matching waits for current facets of the claimed revision (spec 05 §5.6 step 4).
+        await releaseRows(deps, articleId, claim.leaseToken, [...held.keys()], { kind: 'release' });
+        return;
       }
-      await askPack(job, pack);
+
+      const input = modelInput(
+        article,
+        await listTranslations(deps.db, articleId, article.revision),
+        config,
+      );
+      const state = buildState(input, 'match');
+      const job: MatchJob = {
+        deps,
+        classification,
+        config,
+        enrichSet,
+        matchSet,
+        article,
+        state,
+        fingerprint: {
+          articleRevision: article.revision,
+          matchSetSha: matchSet.sha256,
+          stateSha256: state.sha256,
+        },
+        leaseToken: claim.leaseToken,
+        l2Attempts: l2Attempts ?? 0,
+        held,
+        questions: new Map(),
+        lost: false,
+        stale: false,
+        workerStale: null,
+        yielded: false,
+      };
+
+      const cards = await prepareCards(job);
+      if (!job.stale) await prefilter(job, facets, cards);
+      const packs = job.stale ? [] : await buildPacks(job, facets, cards);
+      for (const [index, pack] of packs.entries()) {
+        if (job.lost || job.stale) break;
+        if (index > 0 && nowOf(deps).getTime() - started >= classification.jobBudgetMs) {
+          // Spec 03 §2.1: the rest runs in a follow-up job, inside its own queue expiration.
+          job.yielded = true;
+          break;
+        }
+        await askPack(job, pack);
+      }
+      if (!job.lost && job.held.size > 0) {
+        await releaseRows(deps, articleId, job.leaseToken, [...job.held.keys()], {
+          kind: 'release',
+        });
+        job.held.clear();
+      }
+      await finish(job);
+      if (job.workerStale !== null) throw job.workerStale;
+    } finally {
+      deps.leases?.forget(claim);
     }
-    if (!job.lost && job.held.size > 0) {
-      await releaseRows(deps, articleId, job.leaseToken, [...job.held.keys()], { kind: 'release' });
-      job.held.clear();
-    }
-    await finish(job);
-    if (job.workerStale !== null) throw job.workerStale;
   };
   return recoverStaleJob(deps, handle);
 }

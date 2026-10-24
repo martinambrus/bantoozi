@@ -29,6 +29,8 @@ import {
   type Transaction,
   type TranslationInput,
 } from '@bantoozi/db';
+import { acquireProcessLease } from '../process-leases.js';
+
 import type { EngineOutcome, EngineRequest } from '@bantoozi/engine';
 import {
   PackOverflowError,
@@ -181,9 +183,28 @@ export function createAnalysisProcessHandler(
       );
       return;
     }
-    const claim = await claimAnalysisRequest(deps.db, analysisRequestId, {
-      leaseMs: classification.leaseMs,
-    });
+    const claim = await acquireProcessLease(
+      deps.leases,
+      () => claimAnalysisRequest(deps.db, analysisRequestId, { leaseMs: classification.leaseMs }),
+      (claim) =>
+        claim.status !== 'claimed'
+          ? undefined
+          : () =>
+              retryTransaction(deps.db, async (tx) => {
+                const released = await releaseAnalysisRequest(
+                  tx,
+                  analysisRequestId,
+                  claim.leaseToken,
+                  {
+                    kind: 'defer',
+                    nextAttemptAt: nowOf(deps),
+                    errorCode: 'worker_drain',
+                  },
+                );
+                if (released?.status === 'pending')
+                  await enqueueAnalysis(workerOutbox(tx), { analysisRequestId });
+              }),
+    );
     switch (claim.status) {
       case 'missing':
       case 'finished':
@@ -204,6 +225,8 @@ export function createAnalysisProcessHandler(
       await run.process();
     } catch (error) {
       if (!(error instanceof RunEnded)) throw error;
+    } finally {
+      deps.leases?.forget(claim);
     }
   };
 }

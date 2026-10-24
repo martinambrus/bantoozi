@@ -112,6 +112,7 @@ describe('/metrics', () => {
       port: 0,
       token: 'secret-token',
       queues: [],
+      consumingQueues: () => [],
       readHeartbeatAt: async () => new Date(),
     });
     try {

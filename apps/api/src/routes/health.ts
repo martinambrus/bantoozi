@@ -24,7 +24,7 @@ const ReadyResponseSchema = z.object({
     migrations: ReadyCheckSchema,
     queues: ReadyCheckSchema,
   }),
-  missingQueues: z.array(z.string()),
+  missingQueueCount: z.number().int().nonnegative(),
 });
 
 /**
@@ -39,6 +39,7 @@ export async function healthRoutes(
   // The aggregate scans job rows. Share in-flight work and retain only healthy results.
   let queuesHealthyUntil = 0;
   let queueCheck: Promise<string[]> | undefined;
+  let previousMissingSet = '[]';
   const checkQueues = (): Promise<string[]> => {
     if (Date.now() < queuesHealthyUntil) return Promise.resolve([]);
     queueCheck ??= missingReadinessQueues(options.db)
@@ -89,6 +90,12 @@ export async function healthRoutes(
         try {
           missingQueues = await checkQueues();
           queues = missingQueues.length === 0 ? 'ok' : 'pending';
+          const missingSet = JSON.stringify([...new Set(missingQueues)].sort());
+          if (missingSet !== previousMissingSet) {
+            previousMissingSet = missingSet;
+            if (missingQueues.length > 0)
+              request.log.warn({ missingQueues }, 'readiness: queues missing; run the migrate job');
+          }
         } catch (error) {
           request.log.warn({ err: error }, 'readiness: queue check failed');
           queues = 'unreachable';
@@ -101,7 +108,7 @@ export async function healthRoutes(
         .send({
           status: ready ? 'ready' : 'not_ready',
           checks: { database, migrations, queues },
-          missingQueues,
+          missingQueueCount: missingQueues.length,
         });
     },
   );

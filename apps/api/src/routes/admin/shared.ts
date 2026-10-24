@@ -6,6 +6,7 @@ import {
   type AdminPublicationRequestRow,
 } from '@bantoozi/db';
 import {
+  isHeartbeatFresh,
   LAYA_QUEUES,
   KeyringReportSchema,
   type KeyringStatus,
@@ -25,7 +26,7 @@ export const isoOrNull = (date: Date | null): string | null =>
   date === null ? null : date.toISOString();
 
 /** A heartbeat entry is fresh while younger than 90 s (spec 08 §9.1, spec 11 §2). */
-export const HEARTBEAT_FRESH_MS = 90_000;
+export { HEARTBEAT_FRESH_MS } from '@bantoozi/shared';
 
 export interface FreshWorker {
   queues: readonly string[];
@@ -51,8 +52,7 @@ export async function freshWorkers(db: Executor, now: Date): Promise<FreshWorker
     if (!parsed.success) continue;
     const value = parsed.data[processId];
     if (value === undefined) continue;
-    const age = now.getTime() - Date.parse(value.at);
-    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    if (!isHeartbeatFresh(Date.parse(value.at), now)) continue;
     workers.push({ queues: value.queues, envCredentials: value.envCredentials });
   }
   return workers;
@@ -78,8 +78,7 @@ export async function freshWorkerKeyrings(
     const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
     const value = parsed.success ? parsed.data[processId] : undefined;
     if (value === undefined) continue;
-    const age = now.getTime() - Date.parse(value.at);
-    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    if (!isHeartbeatFresh(Date.parse(value.at), now)) continue;
     const report = KeyringReportSchema.safeParse(value.runtime?.['keyring']);
     if (!report.success) continue;
     const { status, activeKeyId } = report.data;
@@ -116,8 +115,7 @@ export async function freshWorkerStatuses(db: Executor, now: Date): Promise<Work
     const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
     const value = parsed.success ? parsed.data[processId] : undefined;
     if (value === undefined) continue;
-    const age = now.getTime() - Date.parse(value.at);
-    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    if (!isHeartbeatFresh(Date.parse(value.at), now)) continue;
     const rawProblems = value.runtime?.['problems'];
     const problems = (Array.isArray(rawProblems) ? rawProblems : []).flatMap((item) => {
       if (item === null || typeof item !== 'object' || Array.isArray(item)) return [];
@@ -156,8 +154,7 @@ export async function freshWorkerRuntimeDefaults(
     const value = parsed.success ? parsed.data[processId] : undefined;
     if (value === undefined) continue;
     const at = Date.parse(value.at);
-    const age = now.getTime() - at;
-    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    if (!isHeartbeatFresh(at, now)) continue;
     const defaults = value.runtime?.defaults;
     if (defaults === null || typeof defaults !== 'object' || Array.isArray(defaults)) continue;
     beats.push({ at, defaults: defaults as Record<string, unknown> });

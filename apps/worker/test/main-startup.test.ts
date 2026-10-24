@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as Boss from '../src/boss.js';
 import type * as EvalMode from '../src/eval-mode.js';
 
 const h = vi.hoisted(() => ({
@@ -10,8 +11,14 @@ const h = vi.hoisted(() => ({
   boss: { on: vi.fn(), start: vi.fn(), stop: vi.fn(), schedule: vi.fn() },
   heartbeat: { stop: vi.fn() },
   health: { close: vi.fn() },
-  readiness: { stop: vi.fn(), missing: () => ['house.alerts'], problems: () => [] },
+  readiness: {
+    stop: vi.fn(),
+    reportMissing: vi.fn(),
+    missing: () => ['house.alerts'],
+    problems: () => [],
+  },
   queueReadiness: vi.fn(),
+  createDeps: vi.fn(),
   modelsClose: vi.fn(),
   cpuClose: vi.fn(),
   mailClose: vi.fn(),
@@ -38,7 +45,7 @@ vi.mock('../src/readiness.js', () => ({
   startQueueReadiness: h.queueReadiness,
   assertProductionReady: () => [],
 }));
-vi.mock('../src/handlers/deps.js', () => ({ createWorkerDeps: () => ({}) }));
+vi.mock('../src/handlers/deps.js', () => ({ createWorkerDeps: h.createDeps }));
 vi.mock('../src/handlers/index.js', () => ({ createHandlers: () => ({}) }));
 vi.mock('../src/runtime.js', () => ({
   createWorkerRuntime: async () => ({
@@ -66,7 +73,11 @@ vi.mock('../src/eval-mode.js', async (original) => ({
   assertWorkerMode: async () => {},
   startHeartbeat: async () => h.heartbeat,
 }));
-vi.mock('../src/boss.js', () => ({
+vi.mock('../src/housekeeping.js', () => ({ enqueueOverdueHousekeeping: async () => [] }));
+vi.mock('../src/outbox-relay.js', () => ({ startOutboxRelay: () => ({ stop: async () => {} }) }));
+vi.mock('../src/boss.js', async (original) => ({
+  ...(await original<typeof Boss>()),
+  pgBossBroker: () => ({}),
   createBoss: () => h.boss,
   registerHandlers: async () => ({ consuming: [h.queue], unavailable: [] }),
 }));
@@ -78,9 +89,13 @@ const originalInt = new Set(process.listeners('SIGINT'));
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  h.createDeps.mockReturnValue({});
+  h.boss.stop.mockResolvedValue(undefined);
   h.ingestOnly = false;
   h.readinessFailure = false;
-  h.boss.schedule.mockRejectedValue(new Error('Queue missing not found'));
+  h.boss.schedule.mockImplementation(async (queue: string) => {
+    throw new Error(`Queue ${queue} not found`);
+  });
   h.queueReadiness.mockImplementation(async () => {
     if (h.readinessFailure) throw new Error('readiness test stop');
     return h.readiness;
@@ -99,7 +114,7 @@ afterEach(() => {
 
 describe('worker startup failure cleanup', () => {
   it.each(['feed.schedule', 'house.alerts'])(
-    'drains normally when scheduling %s fails',
+    'keeps running and reports missing queues when scheduling %s fails',
     async (queue) => {
       h.queue = queue;
       let failure: unknown;
@@ -114,15 +129,15 @@ describe('worker startup failure cleanup', () => {
         {},
         { tz: 'UTC' },
       );
-      expect(h.boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 100_000, wait: true });
-      expect(h.heartbeat.stop).toHaveBeenCalledOnce();
-      expect(h.health.close).toHaveBeenCalledOnce();
-      expect(h.readiness.stop).toHaveBeenCalledOnce();
-      expect(h.modelsClose).toHaveBeenCalledOnce();
-      expect(h.cpuClose).toHaveBeenCalledOnce();
-      expect(h.mailClose).toHaveBeenCalledOnce();
-      expect(h.pool.end).toHaveBeenCalledTimes(2);
-      expect(process.exitCode).toBe(1);
+      expect(h.boss.stop).not.toHaveBeenCalled();
+      expect(h.heartbeat.stop).not.toHaveBeenCalled();
+      expect(h.readiness.reportMissing).toHaveBeenCalledWith(queue);
+      expect(process.exitCode).toBe(initialExitCode);
+      const terminate = process
+        .listeners('SIGTERM')
+        .find((listener) => !originalTerm.has(listener));
+      terminate?.('SIGTERM');
+      await vi.waitFor(() => expect(h.modelsClose).toHaveBeenCalledOnce());
       expect(failure).toBeUndefined();
     },
   );
@@ -138,5 +153,37 @@ describe('ingest-only queue readiness', () => {
         queues: ['feed.schedule', 'feed.fetch', 'article.extract', '__pgboss__send-it'],
       }),
     );
+  });
+});
+
+describe('shutdown cleanup isolation', () => {
+  it.each(['boss', 'leases'])('continues every cleanup after %s fails', async (failing) => {
+    const { ProcessLeases } = await import('../src/process-leases.js');
+    const drain = vi.spyOn(ProcessLeases.prototype, 'drain');
+    if (failing === 'boss') h.boss.stop.mockRejectedValueOnce(new Error('boss failed'));
+    else drain.mockRejectedValueOnce(new AggregateError([new Error('release failed')]));
+    try {
+      await import('../src/main.js');
+      const terminate = process
+        .listeners('SIGTERM')
+        .find((listener) => !originalTerm.has(listener));
+      terminate?.('SIGTERM');
+      await vi.waitFor(() => expect(h.pool.end).toHaveBeenCalledTimes(2));
+      expect(h.createDeps).toHaveBeenCalledWith(
+        expect.objectContaining({ leases: expect.any(ProcessLeases) }),
+      );
+      expect(drain).toHaveBeenCalledOnce();
+      expect(h.boss.stop.mock.invocationCallOrder[0]).toBeLessThan(
+        drain.mock.invocationCallOrder[0]!,
+      );
+      expect(h.readiness.stop).toHaveBeenCalledOnce();
+      expect(h.heartbeat.stop).toHaveBeenCalledOnce();
+      expect(h.modelsClose).toHaveBeenCalledOnce();
+      expect(h.cpuClose).toHaveBeenCalledOnce();
+      expect(h.mailClose).toHaveBeenCalledOnce();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      drain.mockRestore();
+    }
   });
 });

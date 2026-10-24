@@ -351,6 +351,15 @@ describe('jobs registry (spec 03 §2)', () => {
     const others = QUEUE_NAMES.filter(
       (q) => !(STALE_GUARDED_QUEUES as readonly string[]).includes(q),
     ).filter((q) => (QUEUES[q].options as QueueCreateOptions).retryDelay === 30);
-    expect(others.sort()).toEqual(['article.capture-bookmark', 'article.extract']);
+    expect(others.sort()).toEqual([
+      'article.capture-bookmark',
+      'article.enrich.laya',
+      'article.extract',
+    ]);
   });
+});
+
+it('preserves the dormant laya queue retry option independently of stale-guard membership', () => {
+  expect(QUEUES['article.enrich.laya'].options.retryDelay).toBe(STALE_WORKER_RETRY_DELAY_SECONDS);
+  expect(STALE_GUARDED_QUEUES).not.toContain('article.enrich.laya');
 });

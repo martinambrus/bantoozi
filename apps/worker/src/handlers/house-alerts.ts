@@ -7,10 +7,11 @@ import {
   POOL_MEMO_KEY,
   alertEmail,
   applyRun,
-  planNotifications,
+  planWithQueueGrace,
   recoveryEmail,
   seenMemoKey,
   type MailOutcome,
+  type NotificationPlan,
 } from '../alerts/notify.js';
 import { ALERT_RULES } from '../alerts/rules.js';
 import {
@@ -38,7 +39,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     const { mailer } = deps;
     if (mailer === undefined) throw new Error('house.alerts needs a mailer');
     const admins = await alertRecipients(deps);
-    const state = parseSetting(
+    let state = parseSetting(
       'alerts.state',
       (await readStoredSetting(deps.db, 'alerts.state')) ?? {},
     );
@@ -77,7 +78,22 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
       }
     }
 
-    const plan = planNotifications(state, conditions, skipped, now);
+    let plan!: NotificationPlan;
+    // The first absent observation and the recovery decision must commit together, or a restart
+    // could lose the grace window and re-arm a still-open queue incident.
+    await retryTransaction(deps.db, (tx) =>
+      updateSettingLocked(tx, 'alerts.state', {}, (current) => {
+        const decision = planWithQueueGrace(
+          parseSetting('alerts.state', current ?? {}),
+          conditions,
+          skipped,
+          now,
+        );
+        state = decision.state;
+        plan = decision.plan;
+        return state;
+      }),
+    );
     const outcome: MailOutcome = {};
     if (admins.length === 0) {
       if (plan.alerts.length + plan.recoveries.length > 0) {

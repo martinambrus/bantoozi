@@ -184,3 +184,20 @@ describe('ingest-sample --dry-run', () => {
     });
   });
 });
+
+it('excludes heartbeats beyond the shared future-skew window', () => {
+  const now = new Date('2026-10-24T12:00:00Z');
+  expect(
+    checkWorkers(
+      {
+        skewed: {
+          at: new Date(now.getTime() + 90_001).toISOString(),
+          queues: ['feed.fetch', 'article.extract'],
+          evalIngestOnly: true,
+          envCredentials: [],
+        },
+      },
+      now,
+    ),
+  ).toMatchObject({ ok: false, reason: 'no_ingest_only_worker' });
+});

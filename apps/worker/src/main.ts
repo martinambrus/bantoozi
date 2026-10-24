@@ -6,16 +6,10 @@ import {
   createPgOriginLimiter,
   createPool,
 } from '@bantoozi/db';
-import {
-  FEED_SCHEDULE_CRON,
-  HOUSE_CRON_SCHEDULES,
-  type HouseCronQueue,
-  type HouseCronSchedule,
-} from '@bantoozi/shared';
 import { createLogger, createMailer, loadConfig } from '@bantoozi/shared/server';
 
 import { createLibreTranslateProbe } from './alerts/probe.js';
-import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
+import { createBoss, pgBossBroker, registerHandlers, startWorkerSchedules } from './boss.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
 import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
 import { CpuPool, cpuPoolSize } from './cpu-pool.js';
@@ -34,6 +28,8 @@ import { poolTrainer } from './learn/trainer.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady, startQueueReadiness } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
+import { ProcessLeases } from './process-leases.js';
+import { withShutdownDeadline } from './shutdown-deadline.js';
 import { createShutdownGate } from './shutdown-gate.js';
 import { verifyQuestionSets } from './seed.js';
 
@@ -120,9 +116,11 @@ const mailer = createMailer({
   smtpUrl: config.smtpUrl,
   logger,
 });
+const leases = new ProcessLeases();
 const handlers = createHandlers(
   createWorkerDeps({
     db,
+    leases,
     lockPool,
     fetch: {
       userAgent: config.fetchUserAgent,
@@ -166,32 +164,47 @@ let heartbeat: Heartbeat | undefined;
 let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
 let health: HealthServer | undefined;
+let consumingQueues: readonly string[] = [];
 const processId = `${hostname()}:${process.pid}`;
+let schedules: Awaited<ReturnType<typeof startWorkerSchedules>> | undefined;
 let stopped: Promise<void> | undefined;
 function shutdown(signal: string): Promise<void> {
-  stopped ??= stop(signal);
+  stopped ??= withShutdownDeadline(
+    () => stop(signal),
+    () => {
+      logger.error({ signal }, 'worker shutdown deadline exceeded');
+      process.exit(1);
+    },
+  );
   return stopped;
 }
 async function stop(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   if (settingsTimer !== undefined) clearInterval(settingsTimer);
-  try {
-    // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
-    // removed only after the relay and the queue consumers have stopped.
-    await health?.close();
-    await relay?.stop();
-    // Compose gives both workers 120 s: allow 100 s for in-flight calls, leaving 20 s for cleanup.
-    await boss?.stop({ graceful: true, timeout: 100_000, wait: true });
-    queueReadiness.stop();
-    await heartbeat?.stop();
-    await models.close();
-    await cpuPool.close();
-    mailer.close();
-    await Promise.all([pool.end(), lockPool.end()]);
-  } catch (error) {
-    logger.error({ err: error }, 'worker shutdown failed');
-    process.exitCode = 1;
+  // Keep cleanup ordered, but attempt every step even if an earlier one fails.
+  const steps: (() => unknown)[] = [
+    () => schedules?.stop(),
+    () => health?.close(),
+    () => relay?.stop(),
+    // Remove the heartbeat only after consumers stop. Compose allows 120 s in total.
+    () => boss?.stop({ graceful: true, timeout: 100_000, wait: true }),
+    () => leases.drain(),
+    () => queueReadiness.stop(),
+    () => heartbeat?.stop(),
+    () => models.close(),
+    () => cpuPool.close(),
+    () => mailer.close(),
+    () => pool.end(),
+    () => lockPool.end(),
+  ];
+  for (const cleanup of steps) {
+    try {
+      await cleanup();
+    } catch (error) {
+      logger.error({ err: error }, 'worker shutdown failed');
+      process.exitCode = 1;
+    }
   }
 }
 try {
@@ -235,6 +248,7 @@ try {
       port: config.workerMetricsPort,
       token: config.metricsToken,
       queues: workerQueues,
+      consumingQueues: () => consumingQueues,
       missingQueues: () => queueReadiness.missing(),
       readHeartbeatAt: async () => {
         const result = await pool.query<{ at: string | null }>(
@@ -248,19 +262,15 @@ try {
     boss = createBoss(config.databaseUrlWorker);
     boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
     await boss.start();
+    consumingQueues = [PG_BOSS_CRON_QUEUE];
     const registration = await registerHandlers(boss, handlers, workerQueues, logger);
-    if (registration.consuming.includes('feed.schedule')) {
-      // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
-      await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
-    }
-    const houseSchedules = Object.entries(HOUSE_CRON_SCHEDULES) as Array<
-      [HouseCronQueue, HouseCronSchedule]
-    >;
-    for (const [queue, schedule] of houseSchedules) {
-      if (registration.consuming.includes(queue)) {
-        await boss.schedule(queue, schedule.cron, {}, { tz: 'UTC' });
-      }
-    }
+    consumingQueues = [...registration.consuming, PG_BOSS_CRON_QUEUE];
+    schedules = await startWorkerSchedules(
+      boss,
+      registration.consuming,
+      (queue) => queueReadiness.reportMissing(queue),
+      logger,
+    );
     // Runs missed while no worker was up (spec 11 §6); the relay below delivers them.
     const overdue = await enqueueOverdueHousekeeping(
       db,

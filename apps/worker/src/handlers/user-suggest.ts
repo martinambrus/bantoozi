@@ -1,3 +1,4 @@
+import { acquireProcessLease } from '../process-leases.js';
 import {
   claimSuggestLease,
   finishSuggestRun,
@@ -71,7 +72,14 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
     const pin = await readSuggestPin(deps.db, classification.primaryModel);
 
     await assertWorkerCurrent(deps.db, classification);
-    const claim = await claimSuggestLease(deps.db, userId, { leaseMs: classification.leaseMs });
+    const claim = await acquireProcessLease(
+      deps.leases,
+      () => claimSuggestLease(deps.db, userId, { leaseMs: classification.leaseMs }),
+      (claim) =>
+        claim.status !== 'claimed'
+          ? undefined
+          : () => releaseSuggestLease(deps.db, userId, claim.leaseToken, { resetDailyGate: true }),
+    );
     if (claim.status !== 'claimed') return;
     const { leaseToken } = claim;
     const finish = async (results: { cardId: string; score: number }[] | null) => {
@@ -145,6 +153,8 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
     } catch (error) {
       await releaseSuggestLease(deps.db, userId, leaseToken).catch(() => undefined);
       throw error;
+    } finally {
+      deps.leases?.forget(claim);
     }
   };
   return recoverStaleJob(deps, handle);

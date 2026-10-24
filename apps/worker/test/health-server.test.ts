@@ -20,7 +20,8 @@ async function start(
     host: '127.0.0.1',
     port: 0,
     token: 'secret-token',
-    queues: ['feed.fetch', 'house.alerts'],
+    queues: ['feed.fetch', 'house.alerts', 'article.enrich.laya'],
+    consumingQueues: () => ['feed.fetch', 'house.alerts', '__pgboss__send-it'],
     ...(missingQueues === undefined ? {} : { missingQueues }),
     now: () => NOW,
     startedAt: new Date(NOW.getTime() - 5000),
@@ -52,6 +53,30 @@ describe('worker health server', () => {
     expect(initial).toContain('bantoozi_worker_queue_consumed{queue="house.alerts"} 0');
     missing = [];
     expect(await scrape()).toContain('bantoozi_worker_queue_consumed{queue="house.alerts"} 1');
+  });
+
+  it('exposes missing alert and cron queues independently of the alert consumer', async () => {
+    const base = await start(NOW, () => ['house.alerts', '__pgboss__send-it']);
+    const response = await fetch(`${base}/metrics`, {
+      headers: { authorization: 'Bearer secret-token' },
+    });
+    const metrics = await response.text();
+    expect(metrics).toContain('bantoozi_worker_queue_missing{queue="house.alerts"} 1');
+    expect(metrics).toContain('bantoozi_worker_queue_missing{queue="__pgboss__send-it"} 1');
+  });
+
+  it('reports stubs as unconsumed and includes the internal cron consumer', async () => {
+    let missing = ['__pgboss__send-it'];
+    const base = await start(NOW, () => missing);
+    const scrape = async () =>
+      (
+        await fetch(`${base}/metrics`, { headers: { authorization: 'Bearer secret-token' } })
+      ).text();
+    const metrics = await scrape();
+    expect(metrics).toContain('bantoozi_worker_queue_consumed{queue="article.enrich.laya"} 0');
+    expect(metrics).toContain('bantoozi_worker_queue_consumed{queue="__pgboss__send-it"} 0');
+    missing = [];
+    expect(await scrape()).toContain('bantoozi_worker_queue_consumed{queue="__pgboss__send-it"} 1');
   });
 
   it('answers /healthz 200 with a fresh heartbeat', async () => {

@@ -142,3 +142,36 @@ it('puts every missing name in a structured heartbeat field, including names bey
     readiness.stop();
   }
 });
+
+it('does not arm a second timer when reportMissing arrives during a refresh', async () => {
+  vi.useFakeTimers();
+  const execute = vi.fn().mockResolvedValue({ rows: [{ name: 'user.estimate' }] });
+  const readiness = await startQueueReadiness({
+    db: { execute } as unknown as Executor,
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    queues: ['user.estimate'],
+  });
+  let complete!: (value: { rows: { name: string }[] }) => void;
+  execute.mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  const refresh = readiness.refresh();
+  try {
+    readiness.reportMissing('user.estimate');
+    readiness.reportMissing('user.estimate');
+    expect(vi.getTimerCount()).toBe(0);
+    complete({ rows: [] });
+    await refresh;
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(1);
+  } finally {
+    complete({ rows: [] });
+    await refresh;
+    readiness.stop();
+  }
+  expect(vi.getTimerCount()).toBe(0);
+});

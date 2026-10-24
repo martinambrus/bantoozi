@@ -1,6 +1,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 
+import { PG_BOSS_CRON_QUEUE } from '@bantoozi/db';
+
 import { fingerprintCounters } from './learn/fingerprints.js';
 
 /** A heartbeat older than this makes `/healthz` answer 503 (spec 11 §2). */
@@ -18,6 +20,8 @@ export interface HealthServerOptions {
   port: number;
   token: string | undefined;
   queues: readonly string[];
+  /** Registered handlers; read on every scrape so startup never advertises a stub. */
+  consumingQueues: () => readonly string[];
   /** Current missing queues from queue readiness, re-read on each scrape. */
   missingQueues?: () => readonly string[];
   /** When this worker's last heartbeat write landed; undefined when none; may reject. */
@@ -77,6 +81,7 @@ export async function startHealthServer(options: HealthServerOptions): Promise<H
           return;
         }
         const missing = new Set(options.missingQueues?.() ?? []);
+        const consuming = new Set(options.consumingQueues());
         const lines = [
           '# TYPE bantoozi_worker_uptime_seconds gauge',
           `bantoozi_worker_uptime_seconds ${Math.floor((now().getTime() - startedAt.getTime()) / 1000)}`,
@@ -84,9 +89,14 @@ export async function startHealthServer(options: HealthServerOptions): Promise<H
           ...(age === undefined
             ? []
             : [`bantoozi_worker_heartbeat_age_seconds ${Math.floor(age / 1000)}`]),
+          '# TYPE bantoozi_worker_queue_missing gauge',
+          ...[...new Set([...options.queues, PG_BOSS_CRON_QUEUE, ...missing])].map(
+            (q) => `bantoozi_worker_queue_missing{queue="${q}"} ${missing.has(q) ? 1 : 0}`,
+          ),
           '# TYPE bantoozi_worker_queue_consumed gauge',
-          ...options.queues.map(
-            (q) => `bantoozi_worker_queue_consumed{queue="${q}"} ${missing.has(q) ? 0 : 1}`,
+          ...[...new Set([...options.queues, PG_BOSS_CRON_QUEUE])].map(
+            (q) =>
+              `bantoozi_worker_queue_consumed{queue="${q}"} ${!missing.has(q) && consuming.has(q) ? 1 : 0}`,
           ),
           '# TYPE bantoozi_worker_rating_fingerprint_evicted_total counter',
           `bantoozi_worker_rating_fingerprint_evicted_total ${fingerprintCounters.evicted}`,

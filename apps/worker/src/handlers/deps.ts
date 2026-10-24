@@ -20,6 +20,7 @@ import type { JobSender, OriginLimiter } from '@bantoozi/shared';
 import type { Mailer } from '@bantoozi/shared/server';
 import type pg from 'pg';
 
+import type { ProcessLeases } from '../process-leases.js';
 import type { ClassificationEnv } from '../classify/config.js';
 import type { TranslationDeps } from '../classify/translation.js';
 import { createPipelineGate } from '../gate.js';
@@ -90,6 +91,7 @@ export interface ClassificationDeps {
 /** Everything the M1 ingestion handlers need; built once per worker process. */
 export interface WorkerDeps {
   db: Database;
+  leases?: ProcessLeases;
   /**
    * A separate worker-role pool for the per-feed fetch locks (spec 03 §3): each fetch pins one
    * connection for its whole duration and runs all of its statements on it, so the lock fences
