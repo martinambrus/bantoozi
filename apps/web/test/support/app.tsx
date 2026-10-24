@@ -3,6 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createMemoryHistory } from '@tanstack/react-router';
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 
 import { App, createAppServices } from '../../src/app.js';
 import { forgetCardMoves } from '../../src/features/interests/card-moves.js';
@@ -99,7 +100,11 @@ export async function renderApp(options: {
     queryClient,
   });
   await services.router.load();
-  const user = userEvent.setup();
+  const user = userEvent.setup({
+    advanceTimers: (ms) => {
+      if (vi.isFakeTimers()) vi.advanceTimersByTime(ms);
+    },
+  });
   const view = render(<App services={services} />);
   return {
     ...view,

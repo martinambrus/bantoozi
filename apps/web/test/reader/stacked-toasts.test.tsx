@@ -1,6 +1,6 @@
 import type { ArticleListItem } from '@bantoozi/shared';
 import { screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { actionResponse, findToast, makeItem, renderReader } from '../article/harness.js';
@@ -23,6 +23,7 @@ function Row({ item }: { item: ArticleListItem }) {
 
 describe('rating toasts', () => {
   it('a like and a later dislike each keep their own toast on screen', async () => {
+    vi.useFakeTimers();
     const liked = makeItem({ id: '101' });
     const disliked = makeItem({ id: '102', title: 'Old Skoda 100 for sale' });
     let call = 0;

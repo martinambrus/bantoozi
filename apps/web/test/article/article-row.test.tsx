@@ -594,6 +594,7 @@ describe('ArticleRow rating and bookmark', () => {
   });
 
   it('holds a dislike for the reason bar and sends it with the reason that is picked', async () => {
+    vi.useFakeTimers();
     const item = makeItem();
     const { user, calls } = renderRow(
       item,

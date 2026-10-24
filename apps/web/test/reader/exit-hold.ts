@@ -22,6 +22,8 @@ export function holdExits() {
     queue.push({ id, run: () => void handler(...args) });
     return id;
   }) as typeof setTimeout;
+  // Keep Testing Library's fake-clock detection when exits are held over plain fake timers.
+  if ('clock' in realSet) Object.assign(globalThis.setTimeout, { clock: realSet.clock });
   globalThis.clearTimeout = ((id?: number) => {
     if (typeof id === 'number' && queue.some((held) => held.id === id)) {
       queue = queue.filter((held) => held.id !== id);

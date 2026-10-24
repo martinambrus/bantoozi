@@ -86,7 +86,7 @@ interface OpenOptions {
 
 /** The reader on a feed view (all lanes) with three unread rows; fake timers; row exits held. */
 async function openReader({ path = '/read/feed/7', routes = {} }: OpenOptions = {}) {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.useFakeTimers();
   const exits = holdExits();
   const opened = await open({
     path,

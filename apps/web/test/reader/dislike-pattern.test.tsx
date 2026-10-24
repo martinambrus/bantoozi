@@ -1,6 +1,6 @@
 import type { ArticleListItem, CardDto } from '@bantoozi/shared';
 import { screen, within, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { failure, json } from '../api/fake-fetch.js';
@@ -44,6 +44,10 @@ interface Pattern {
   offer: string[] | null;
   offerId: string | null;
 }
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
 
 const apps: { unhandled: string[] }[] = [];
 

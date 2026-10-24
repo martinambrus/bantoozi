@@ -1,6 +1,6 @@
 import type { ArticleListItem, Subscription } from '@bantoozi/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { failure, json } from '../api/fake-fetch.js';
@@ -437,6 +437,7 @@ describe('an article the list no longer holds', () => {
     app.user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
 
   it('leaves the selection when the next load omits it (rated elsewhere), and a bulk Dislike sends nothing for it', async () => {
+    vi.useFakeTimers();
     const { app, served } = await openFeed(numbered(3), {
       routes: { [RATE]: () => json(200, { ok: true }) },
     });
@@ -1131,6 +1132,9 @@ describe('in Slovak', () => {
 });
 
 describe('the selection bar', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   const bulk = (name: RegExp) => within(panel()!).getByRole('button', { name });
 
   const ratedBodies = (app: App) =>
