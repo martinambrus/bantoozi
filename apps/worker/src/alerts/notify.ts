@@ -73,6 +73,38 @@ export function planNotifications(
   return { alerts, recoveries, silent };
 }
 
+/** Two alert periods without a missing-queue report before recovery, including worker restarts. */
+export const QUEUE_RECOVERY_GRACE_MS = 10 * 60_000;
+const QUEUE_ABSENT_MEMO = 'memo.queues_absent';
+
+/** Called under the alerts.state row lock: persist the grace decision with its first absent time. */
+export function planWithQueueGrace(
+  current: AlertState,
+  conditions: readonly Condition[],
+  skipped: readonly string[],
+  now: Date,
+): { state: AlertState; plan: NotificationPlan } {
+  const state = { ...current };
+  const key = 'service.queues_missing';
+  const failed = skipped.includes('service');
+  const firing = conditions.some((condition) => condition.key === key);
+  if (firing || failed || !state[key]?.active) delete state[QUEUE_ABSENT_MEMO];
+  else {
+    state[QUEUE_ABSENT_MEMO] ??= {
+      firstAt: now.toISOString(),
+      lastSentAt: null,
+      active: false,
+    };
+  }
+  const absentAt = state[QUEUE_ABSENT_MEMO]?.firstAt;
+  const grace =
+    absentAt !== undefined && now.getTime() - Date.parse(absentAt) < QUEUE_RECOVERY_GRACE_MS;
+  return {
+    state,
+    plan: planNotifications(state, conditions, grace ? [...skipped, key] : skipped, now),
+  };
+}
+
 /** The alert digest email (subject and text) of the conditions to send. */
 export function alertEmail(alerts: readonly Condition[]): { subject: string; text: string } {
   const first = alerts[0];

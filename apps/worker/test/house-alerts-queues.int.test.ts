@@ -54,11 +54,26 @@ describe('missing queue alerts', () => {
     expect(mailer.to(ADMIN)).toHaveLength(1);
     await w.setting('worker.heartbeat', { healthy: heartbeat(0, []) });
     await w.run(NOW, { mailer });
+    expect(mailer.to(ADMIN)).toHaveLength(1);
+    await w.run(new Date(NOW.getTime() + 10 * 60_000), { mailer });
     expect(mailer.to(ADMIN)).toHaveLength(2);
     expect((await w.state())['service.queues_missing']?.active ?? false).toBe(false);
     expect(mailer.lastEmail()?.text).toContain('Missing pg-boss queues');
     await w.run(NOW, { mailer });
     expect(mailer.to(ADMIN)).toHaveLength(2);
+  });
+
+  it('keeps an incident open across heartbeat deletion and restart without another alert mail', async () => {
+    const mailer = new RecordingMailer();
+    const problems = [{ key: 'queues.missing', message: MESSAGE }];
+    await w.setting('worker.heartbeat', { missing: heartbeat(0, problems) });
+    await w.run(NOW, { mailer });
+    await w.setting('worker.heartbeat', { healthy: heartbeat(0, []) });
+    await w.run(NOW, { mailer });
+    expect((await w.state())['service.queues_missing']).toMatchObject({ active: true });
+    await w.setting('worker.heartbeat', { restarted: heartbeat(0, problems) });
+    await w.run(NOW, { mailer });
+    expect(mailer.to(ADMIN)).toHaveLength(1);
   });
 
   it('unions different missing sets without truncating names or repeating migrate advice', async () => {
