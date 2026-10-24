@@ -69,9 +69,12 @@ async function insertDelayedWorkerIntents(
       FROM (${intentRows(distinct)}) batch
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
-    DO UPDATE SET available_at = least(job_outbox.available_at, excluded.available_at)
+    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_token IS NOT NULL
+                                     THEN excluded.available_at
+                                     ELSE least(job_outbox.available_at, excluded.available_at) END,
+                  lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND excluded.available_at < job_outbox.available_at`);
+        AND (job_outbox.lease_token IS NOT NULL OR excluded.available_at < job_outbox.available_at)`);
 }
 
 /**
@@ -87,9 +90,13 @@ export async function rankCovered(tx: TenantTx): Promise<boolean> {
 }
 
 /**
- * A delayed worker intent: identical undelivered work keeps its earliest due time and its lease.
+ * A delayed worker intent: identical unleased work keeps its earliest due time. A leased intent
+ * may already have reached a handler (for example analysis.process seeing not_due) before the
+ * relay acknowledges it. Re-arm that row at the requested time and revoke the relay lease, so its
+ * late acknowledgement or failure cannot erase the deferral. The in-flight job remains safe to
+ * finish; consumers are idempotent. Subsequent unleased deferrals again keep the earliest time.
  * Worker-role only: requires SELECT and UPDATE on job_outbox; the API role has INSERT only.
- * Returns true when work was inserted or brought forward; false when already due no later.
+ * Returns true when inserted, re-armed or brought forward; false when already pending no later.
  */
 export async function enqueueDelayedWorkerIntent(
   tx: Executor,
@@ -102,9 +109,12 @@ export async function enqueueDelayedWorkerIntent(
             greatest(now(), ${availableAt.toISOString()}::timestamptz))
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
-    DO UPDATE SET available_at = least(job_outbox.available_at, excluded.available_at)
+    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_token IS NOT NULL
+                                     THEN excluded.available_at
+                                     ELSE least(job_outbox.available_at, excluded.available_at) END,
+                  lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND excluded.available_at < job_outbox.available_at
+        AND (job_outbox.lease_token IS NOT NULL OR excluded.available_at < job_outbox.available_at)
     RETURNING id`);
   return result.rows.length > 0;
 }

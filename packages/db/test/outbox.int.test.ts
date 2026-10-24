@@ -463,14 +463,19 @@ it('the earliest delayed intent wins without changing leases, payloads or delive
   );
   const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
   expect(claimed).toBeDefined();
-  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(false);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(true);
   pending = (await outboxRows('article.enrich')).filter((r) => r.delivered_at === null);
   expect(pending[0]).toMatchObject({
-    lease_token: claimed!.leaseToken,
+    lease_token: null,
+    available_at: late,
     attempts: 1,
     payload: intent.payload,
   });
-  await completeOutboxIntent(ctx.worker, claimed!);
+  expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(false);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, early)).toBe(true);
+  await ctx.owner.query('UPDATE job_outbox SET available_at = now() WHERE id = $1', [claimed!.id]);
+  const [replacement] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  expect(await completeOutboxIntent(ctx.worker, replacement!)).toBe(true);
   expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, early)).toBe(true);
   const rows = (await outboxRows('article.enrich')).filter(
     (r) => r.dedupe_key === intent.dedupeKey,
@@ -583,7 +588,7 @@ it('batch inserts preserve pending duplicates, null keys and delivered history',
   expect(pendingRows.every((r) => r.user_id === null)).toBe(true);
 });
 
-it('delayed batches retain the earliest time and leases, including duplicate and null keys', async () => {
+it('delayed batches retain the earliest time and re-arm leases, including duplicate and null keys', async () => {
   await drain();
   const pending = buildJobIntent('article.extract', { articleId: '990' });
   const fresh = buildJobIntent('article.extract', { articleId: '991' });
@@ -608,7 +613,7 @@ it('delayed batches retain the earliest time and leases, including duplicate and
   expect(before.every((r) => r.available_at.getTime() === early.getTime())).toBe(true);
   expect(before[0]).toMatchObject({
     payload: pending.payload,
-    lease_token: '00000000-0000-4000-8000-000000000001',
+    lease_token: null,
   });
   await ctx.worker.transaction(async (tx) => {
     await workerOutbox(tx, { availableAt: late }).enqueueMany!([pending, fresh]);
@@ -623,3 +628,36 @@ it('delayed batches retain the earliest time and leases, including duplicate and
     (await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 })).map((r) => r.payload),
   ).toEqual([fresh.payload]);
 });
+
+it.each([false, true])(
+  'preserves a deferral made before relay acknowledgement (batch %s)',
+  async (batch) => {
+    await drain();
+    const intent = buildJobIntent('analysis.process', {
+      analysisRequestId: '00000000-0000-4000-8000-000000000043',
+    });
+    await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    expect(claimed).toBeDefined();
+    const due = new Date(Date.now() + 600_000);
+    // The just-sent handler sees not_due, schedules itself, and finishes before the relay acks.
+    await ctx.worker.transaction(async (tx) => {
+      const sender = workerOutbox(tx, { availableAt: due });
+      if (batch) await sender.enqueueMany!([intent]);
+      else await sender.enqueue(intent);
+    });
+    expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(false);
+    expect(
+      await failOutboxIntent(ctx.worker, claimed!, {
+        error: 'late send failure',
+        retryInSeconds: 1,
+      }),
+    ).toBe(false);
+    const pending = (await outboxRows('analysis.process')).filter(
+      (row) => row.delivered_at === null,
+    );
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.available_at).toEqual(due);
+    expect(pending[0]!.lease_token).toBeNull();
+  },
+);
