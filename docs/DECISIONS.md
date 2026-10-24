@@ -2949,7 +2949,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   records the pin and the single rebuild. Mail to the active admins: same major "ratings and personal models kept",
   otherwise "major change: personal models restart from new ratings". Deviations from design §4.1: a failed watch
   probe is not a trigger of the `engine.breaker` alert (D-272 excludes probes) but is named in its details; no
-  confirmation probe, so an alias that flaps is adopted at each flip and a late older probe can move it back.
+  confirmation probe, so an alias that flaps is adopted at each flip and a late older probe can move it back
+  (superseded by D-323).
 - D-287: 2026-10-21 (JEV-3) — The upgrade notice is durable (`engine.model_watch.notice`): delivered at least once,
   retried on every run, merged when the alias moves again before delivery (earliest `from`, latest `to`, `major`
   sticky), dropped with a warning without mailer or recipients, given up after 8 failed rounds. A duplicate mail is
@@ -3305,3 +3306,18 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   that meets an identical undelivered, unleased one keeps the EARLIEST `available_at` (`enqueueDelayedWorkerIntent`,
   worker role only); no caller relies on the later time, and D-319's hop delays use distinct keys. The admin model editor
   hides an alias resolution checked before the setting was saved.
+- D-323: 2026-10-24 (JEV-8, design item #25; amends D-286, D-297) — `house.model-watch` replaces an in-force
+  `jev-latest` resolution only after two agreeing probes at least 10 minutes apart. The pending answer lives in its own
+  worker-written key `engine.model_candidate = {model, firstSeenAt, count}` (null when cleared), not in
+  `engine.model_watch`, whose strict shape is unchanged so an older worker still reads notices, checks and the trigger
+  rate limit (the D-296 precedent); transactions touching both lock the watch row first. The first sighting and a
+  delayed confirmation intent commit together; an early or failed attempt queues another delayed retry (at most three
+  per candidate, due at the later of `firstSeenAt + 10 min` and `now + 1 min`), and cron or "Check now" can still
+  confirm afterwards. An answer equal to the current resolution cancels the candidate; a third answer restarts the
+  clock. A lower release of the same major is ignored with a warning unless a fresh probe of the current model
+  answers `model_unavailable` (a retired release), and even then needs confirmation. Precedence: numeric
+  major/minor/patch and an optional fourth hotfix component; `-` suffixes by semver (`-rc10` sorts below `-rc9`);
+  build metadata ignored. The locked resolution write checks the model the decision was based on and leaves an
+  interleaved adoption untouched. Only a confirmed adoption registers the fingerprint and takes the D-286 path (one
+  rebuild, one mail). Fresh and dormant resolutions still adopt at once (D-274, D-305). `GET /admin/engine/model` does
+  not show the candidate yet (worker log "Jev release awaits confirmation"). No migration.

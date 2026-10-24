@@ -290,7 +290,7 @@ const clearModelState: Hook<Record<string, never>> = {
   async run(db) {
     const { rows } = await db.query(
       `DELETE FROM settings
-        WHERE key IN ('engine.model_probe','engine.model_resolution','engine.model_watch','engine.model_impact')
+        WHERE key IN ('engine.model_probe','engine.model_resolution','engine.model_watch', 'engine.model_candidate','engine.model_impact')
        RETURNING key`,
     );
     return { deleted: rows.length };

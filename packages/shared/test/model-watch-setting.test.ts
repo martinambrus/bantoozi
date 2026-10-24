@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EngineModelCandidateSchema,
   EngineModelWatchSchema,
   HOUSE_CRON_QUEUES,
   HOUSE_CRON_SCHEDULES,
@@ -106,5 +107,29 @@ describe('engine.model_watch setting', () => {
     expect(
       EngineModelWatchSchema.safeParse({ lastCheck: { at: AT, ok: false, error: '' } }).success,
     ).toBe(false);
+  });
+});
+
+describe('engine.model_candidate setting', () => {
+  it('is separate, strict, worker-written and has no default', () => {
+    expect(SETTINGS['engine.model_candidate'].writers).toEqual(['worker']);
+    const candidate = { model: 'jev-1.14.0', firstSeenAt: AT, count: 1 };
+    expect(EngineModelCandidateSchema.parse(candidate)).toEqual(candidate);
+    for (const invalid of [
+      { ...candidate, model: 'jev-latest' },
+      { ...candidate, firstSeenAt: 'yesterday' },
+      { ...candidate, count: 0 },
+      { ...candidate, count: 1.5 },
+      { ...candidate, extra: true },
+    ])
+      expect(EngineModelCandidateSchema.safeParse(invalid).success).toBe(false);
+    expect(SETTINGS['engine.model_candidate'].schema.parse(null)).toBeNull();
+    expect(
+      settingDefault('engine.model_candidate', {
+        dailyBudgetUsd: 2,
+        languageModes: { en: 'native' },
+        signupMode: 'invite',
+      }),
+    ).toBeUndefined();
   });
 });

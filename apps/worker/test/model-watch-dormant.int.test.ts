@@ -49,7 +49,12 @@ afterAll(async () => {
 beforeEach(async () => {
   await resetWorld(h, { model: V113 });
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-    ['engine.model_watch', 'engine.rating_fingerprints', 'house.progress'],
+    [
+      'engine.model_watch',
+      'engine.model_candidate',
+      'engine.rating_fingerprints',
+      'house.progress',
+    ],
   ]);
   await clearAdmins(h.owner);
   await addAdmin(h.owner, 'dormant-admin@example.test');
@@ -76,7 +81,7 @@ describe('W1: the watch and a dormant resolution', () => {
     expect(await progressOf(h.owner)).toBeDefined();
   });
 
-  it('control: with an alias-marked pin the row is in force and flips with a notice and one mail', async () => {
+  it('control: with an alias-marked pin the row is in force and confirms before flipping with one mail', async () => {
     await setSetting(h.owner, 'engine.model_pin', {
       model: V113,
       alias: ALIAS,
@@ -84,6 +89,10 @@ describe('W1: the watch and a dormant resolution', () => {
     });
     const mailer = new WatchMailer();
     await runWatch(h, { prober: realProber(h, fake, NOW), mailer, now: NOW });
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: DORMANT_MODEL });
+    expect(mailer.attempts).toBe(0);
+    const later = new Date(NOW.getTime() + 10 * 60_000);
+    await runWatch(h, { prober: realProber(h, fake, later), mailer, now: later });
     expect(await resolutionRow(h.owner)).toMatchObject({
       model: V114,
       previous: { model: DORMANT_MODEL },

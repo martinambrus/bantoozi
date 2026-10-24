@@ -6,16 +6,128 @@ import {
   type Transaction,
 } from '@bantoozi/db';
 import {
+  EngineModelCandidateSchema,
   EngineModelWatchSchema,
   enqueueModelWatch,
   sameModelFamily,
+  type EngineModelCandidate,
   type EngineModelWatch,
 } from '@bantoozi/shared';
 
+export const MODEL_CANDIDATE_KEY = 'engine.model_candidate';
 export const MODEL_WATCH_KEY = 'engine.model_watch';
+export const MODEL_WATCH_CONFIRM_MS = 10 * 60_000;
+const MODEL_WATCH_MAX_RETRIES = 3;
+const MODEL_WATCH_RETRY_MS = 60_000;
 export const MODEL_WATCH_TRIGGER_GAP_MS = 10 * 60_000;
 
 type Notice = NonNullable<EngineModelWatch['notice']>;
+
+/**
+ * Validated concrete Jev releases: a fourth numeric component is a hotfix above the base release.
+ * Build metadata is ignored; `-` suffixes use semver precedence (ASCII: `-rc10` < `-rc9`).
+ */
+export function isOlderSameMajorRelease(answered: string, current: string): boolean {
+  const parts = (model: string) => /^jev-(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(.*)$/.exec(model)!;
+  const a = parts(answered);
+  const b = parts(current);
+  if (BigInt(a[1]!) !== BigInt(b[1]!)) return false;
+  for (const i of [2, 3, 4]) {
+    const left = BigInt(a[i] ?? '0');
+    const right = BigInt(b[i] ?? '0');
+    if (left !== right) return left < right;
+  }
+  const suffix = (value: string) => value.split('+')[0]!;
+  const left = suffix(a[5]!);
+  const right = suffix(b[5]!);
+  if (left === right || left === '') return false;
+  if (right === '') return true;
+  const l = left.slice(1).split('.');
+  const r = right.slice(1).split('.');
+  for (let i = 0; i < Math.max(l.length, r.length); i += 1) {
+    const x = l[i];
+    const y = r[i];
+    if (x === y) continue;
+    if (x === undefined) return true;
+    if (y === undefined) return false;
+    const nx = /^\d+$/.test(x);
+    const ny = /^\d+$/.test(y);
+    if (nx && ny) {
+      if (BigInt(x) !== BigInt(y)) return BigInt(x) < BigInt(y);
+      continue;
+    }
+    if (nx !== ny) return nx;
+    return x < y;
+  }
+  return false;
+}
+
+/** Save an observation and its confirmation intent atomically; only an aged agreement adopts. */
+export async function observeModelCandidate(
+  db: Database,
+  model: string,
+  now: Date,
+): Promise<boolean> {
+  return retryTransaction(db, async (tx) => {
+    let started = false;
+    let confirmed = false;
+    // All transactions touching both rows lock watch first, then candidate.
+    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => ({
+      ...watchStateOf(current),
+      lastCheck: { at: now.toISOString(), ok: true },
+    }));
+    const candidate = await updateSettingLocked<EngineModelCandidate | null>(
+      tx,
+      MODEL_CANDIDATE_KEY,
+      null,
+      (current) => {
+        const parsed = EngineModelCandidateSchema.safeParse(current);
+        const old = parsed.success ? parsed.data : undefined;
+        started = old === undefined || old.model !== model;
+        const candidate = started
+          ? { model, firstSeenAt: now.toISOString(), count: 1 }
+          : { ...old!, count: Math.min(Number.MAX_SAFE_INTEGER, old!.count + 1) };
+        confirmed =
+          !started && now.getTime() - Date.parse(candidate.firstSeenAt) >= MODEL_WATCH_CONFIRM_MS;
+        return candidate;
+      },
+    );
+    if (candidate !== null && !confirmed) {
+      await enqueueCandidateConfirmation(tx, candidate, now, started);
+    }
+    return confirmed;
+  });
+}
+
+/** The caller holds the watch lock before taking the candidate lock, in this transaction. */
+export async function retryModelCandidate(tx: Transaction, now: Date): Promise<void> {
+  const candidate = await updateSettingLocked<EngineModelCandidate | null>(
+    tx,
+    MODEL_CANDIDATE_KEY,
+    null,
+    (current) => {
+      const parsed = EngineModelCandidateSchema.safeParse(current);
+      return parsed.success
+        ? { ...parsed.data, count: Math.min(Number.MAX_SAFE_INTEGER, parsed.data.count + 1) }
+        : null;
+    },
+  );
+  if (candidate !== null) await enqueueCandidateConfirmation(tx, candidate, now, false);
+}
+
+async function enqueueCandidateConfirmation(
+  tx: Transaction,
+  candidate: EngineModelCandidate,
+  now: Date,
+  started: boolean,
+): Promise<void> {
+  if (!started && candidate.count > 1 + MODEL_WATCH_MAX_RETRIES) return;
+  const due = Date.parse(candidate.firstSeenAt) + MODEL_WATCH_CONFIRM_MS;
+  const availableAt = new Date(started ? due : Math.max(due, now.getTime() + MODEL_WATCH_RETRY_MS));
+  await enqueueModelWatch(workerOutbox(tx, { availableAt }), {
+    revision: `confirm:${candidate.model}:${candidate.firstSeenAt}:${candidate.count}`,
+  });
+}
 
 /** Queues one `house.model-watch` check; a check already waiting absorbs it. */
 export async function enqueueModelWatchNow(db: Database): Promise<void> {
