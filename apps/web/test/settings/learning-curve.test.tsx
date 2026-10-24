@@ -406,10 +406,10 @@ describe('learning curve: the table', () => {
     ).toBeVisible();
   });
 
-  it('keeps unknown historical activation blank and translates multiple or unknown reasons', async () => {
+  it('shows false historical activation and translates multiple or unknown reasons', async () => {
     const { learning, t, user } = await open(
       makeHistory([
-        row(0, { kind: 'model', activated: null, turnedOn: null, reason: 'low_auc,worse_logloss' }),
+        row(0, { kind: 'model', activated: false, turnedOn: false, reason: 'low_auc,worse_logloss' }),
         row(1, { kind: 'model', reason: 'future_reason' }),
       ]),
     );
@@ -417,7 +417,7 @@ describe('learning curve: the table', () => {
     expect(learning.getByText('Quality too low; Less reliable predictions')).toBeVisible();
     expect(learning.getByText('Update was not activated')).toBeVisible();
     const rows = within(learning.getByRole('table')).getAllByRole('row');
-    expect(within(rows[2]!).getAllByRole('cell')[5]).toHaveTextContent('–');
+    expect(within(rows[2]!).getAllByRole('cell')[5]).toHaveTextContent('No');
     expect(learning.queryByRole('list', { name: t.milestones })).toBeNull();
   });
 

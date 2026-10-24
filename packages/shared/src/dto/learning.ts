@@ -144,8 +144,8 @@ export const LearningHistoryItemSchema = z
     n: count,
     auc: z.number().nullable(),
     baselineAuc: z.number().nullable(),
-    activated: z.boolean().nullable(),
-    turnedOn: z.boolean().nullable(),
+    activated: z.boolean(),
+    turnedOn: z.boolean(),
     engineModel: z.string().nullable(),
     reason: z.string().nullable(),
   })

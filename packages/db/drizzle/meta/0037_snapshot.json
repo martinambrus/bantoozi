@@ -8243,14 +8243,14 @@
           "name": "activated",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "default": false
         },
         "turned_on": {
           "name": "turned_on",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "default": false
         },
         "engine_model": {

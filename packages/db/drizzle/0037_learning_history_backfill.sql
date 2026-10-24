@@ -1,8 +1,6 @@
-ALTER TABLE "user_learning_history" ALTER COLUMN "activated" DROP NOT NULL;--> statement-breakpoint
-ALTER TABLE "user_learning_history" ALTER COLUMN "turned_on" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "user_learning_history" ADD COLUMN "reason" text;--> statement-breakpoint
--- Backfill retained runs only. Missing metrics, historical activation state and turn-on
--- provenance stay NULL; never infer a milestone from the oldest surviving version.
+-- Backfill fitted terminal runs only. Missing quality and engine identity stay NULL.
+-- Unknown activation or turn-on provenance is false for compatibility with older readers.
 -- Existing PRG rows were appended in the training transaction (normally at trained_at).
 -- The interval also recognises older appenders whose history clock followed the insert.
 WITH models AS (
@@ -21,14 +19,14 @@ WITH models AS (
     CASE WHEN jsonb_typeof(metrics->'baselineAuc') = 'number'
       THEN (metrics->>'baselineAuc')::double precision END AS baseline_auc,
     CASE WHEN metrics->>'status' = 'activated' OR active THEN true
-      WHEN metrics->>'status' IN ('rejected', 'superseded') THEN false END AS activated,
+      ELSE false END AS activated,
     CASE WHEN jsonb_typeof(metrics->'turnedOn') = 'boolean' THEN (metrics->>'turnedOn')::boolean
       WHEN metrics->>'status' IN ('rejected', 'superseded') THEN false
       WHEN (metrics->>'status' = 'activated' OR active)
         AND previous_count = version - 1 AND previous_rejections = previous_count THEN true
       WHEN (metrics->>'status' = 'activated' OR active) AND previous_version = version - 1
         AND previous_metrics->>'status' = 'activated'
-        AND previous_metrics->>'deactivatedAt' IS NULL THEN false END AS turned_on,
+        AND previous_metrics->>'deactivatedAt' IS NULL THEN false ELSE false END AS turned_on,
     CASE WHEN jsonb_typeof(metrics->'engineModel') = 'string'
       THEN nullif(metrics->>'engineModel', '') END AS engine_model,
     CASE WHEN jsonb_typeof(metrics->'reason') = 'string'
@@ -40,10 +38,10 @@ WITH models AS (
   UNION ALL
   SELECT user_id, trained_at, 'estimate', n,
     CASE WHEN jsonb_typeof(metrics->'auc') = 'number' THEN (metrics->>'auc')::double precision END,
-    NULL::double precision, NULL::boolean,
+    NULL::double precision, false,
     CASE WHEN jsonb_typeof(metrics->'turnedOn') = 'boolean' THEN (metrics->>'turnedOn')::boolean
       WHEN version = 1 THEN true
-      WHEN previous_version = version - 1 THEN previous_spec <> spec END,
+      WHEN previous_version = version - 1 THEN previous_spec <> spec ELSE false END,
     NULL::text, NULL::text,
     min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
       GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING)

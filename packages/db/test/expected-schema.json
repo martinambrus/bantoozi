@@ -3736,17 +3736,61 @@
     },
     "user_estimate_models": {
       "columns": {
-        "user_id": { "type": "uuid", "nullable": false, "default": null },
-        "version": { "type": "integer", "nullable": false, "default": null },
-        "spec": { "type": "text", "nullable": false, "default": null },
-        "trained_at": { "type": "timestamp with time zone", "nullable": false, "default": "now()" },
-        "n": { "type": "integer", "nullable": false, "default": null },
-        "n_pos": { "type": "integer", "nullable": false, "default": null },
-        "n_neg": { "type": "integer", "nullable": false, "default": null },
-        "intercept": { "type": "double precision", "nullable": false, "default": null },
-        "weights": { "type": "jsonb", "nullable": false, "default": null },
-        "platt": { "type": "jsonb", "nullable": false, "default": null },
-        "metrics": { "type": "jsonb", "nullable": false, "default": null }
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "version": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "spec": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "trained_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "n": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "n_pos": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "n_neg": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "intercept": {
+          "type": "double precision",
+          "nullable": false,
+          "default": null
+        },
+        "weights": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "platt": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "metrics": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        }
       },
       "primaryKey": ["user_id", "version"],
       "unique": [],
@@ -3760,21 +3804,68 @@
         }
       ],
       "indexes": {},
-      "rls": { "forced": true }
+      "rls": {
+        "forced": true
+      }
     },
     "user_learning_history": {
       "columns": {
-        "id": { "type": "bigint", "nullable": false, "default": null, "identity": "always" },
-        "user_id": { "type": "uuid", "nullable": false, "default": null },
-        "at": { "type": "timestamp with time zone", "nullable": false, "default": "now()" },
-        "kind": { "type": "text", "nullable": false, "default": null },
-        "n": { "type": "integer", "nullable": false, "default": null },
-        "auc": { "type": "double precision", "nullable": true, "default": null },
-        "baseline_auc": { "type": "double precision", "nullable": true, "default": null },
-        "activated": { "type": "boolean", "nullable": true, "default": "false" },
-        "turned_on": { "type": "boolean", "nullable": true, "default": "false" },
-        "engine_model": { "type": "text", "nullable": true, "default": null },
-        "reason": { "type": "text", "nullable": true, "default": null }
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "n": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "auc": {
+          "type": "double precision",
+          "nullable": true,
+          "default": null
+        },
+        "baseline_auc": {
+          "type": "double precision",
+          "nullable": true,
+          "default": null
+        },
+        "activated": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "turned_on": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "engine_model": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "reason": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
       },
       "primaryKey": ["id"],
       "unique": [],
@@ -3793,7 +3884,9 @@
           "definition": "(user_id, at DESC, id DESC)"
         }
       },
-      "rls": { "forced": true }
+      "rls": {
+        "forced": true
+      }
     },
     "user_models": {
       "columns": {

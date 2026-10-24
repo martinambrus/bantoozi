@@ -118,6 +118,12 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   const first = (await read()).rows;
   expect.soft(first.filter((r) => r.user_id === excluded.id).map((r) => r.n)).toEqual([3, 4]);
   expect.soft(first.find((r) => r.user_id === excluded.id && r.n === 3)?.turned_on).toBe(true);
+  expect
+    .soft(first.every((r) => typeof r.activated === 'boolean' && typeof r.turned_on === 'boolean'))
+    .toBe(true);
+  expect
+    .soft(first.filter((r) => r.kind === 'estimate').every((r) => r.activated === false))
+    .toBe(true);
   const models = first.filter((r) => r.user_id === user.id && r.kind === 'model');
   const estimates = first.filter((r) => r.user_id === user.id && r.kind === 'estimate');
   expect(estimates).toHaveLength(200);
@@ -155,8 +161,8 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   expect(rows.find((r) => r.kind === 'model' && r.n === 3)).toMatchObject({
     auc: null,
     baseline_auc: null,
-    activated: null,
-    turned_on: null,
+    activated: false,
+    turned_on: false,
     engine_model: null,
     reason: null,
   });
@@ -164,7 +170,8 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
     n: 20,
     auc: 0.7,
     baseline_auc: null,
-    turned_on: null,
+    activated: false,
+    turned_on: false,
     engine_model: null,
     reason: null,
   });
