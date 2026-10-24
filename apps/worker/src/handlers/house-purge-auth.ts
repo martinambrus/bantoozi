@@ -86,7 +86,7 @@ export const sweepCursorOf = (
 export type RebuildJob = 'house.reenrich' | 'house.rematch';
 export type RebuildRun = HouseProgressCursor<RebuildJob>['pending'][number];
 
-/** Preserve the frozen scope even when a stale fence fails partway through a rebuild pass. */
+/** Park the final attempt's frozen scope when a stale fence fails during a rebuild pass. */
 export function recoverStaleRebuild<Q extends RebuildJob>(
   deps: WorkerDeps,
   job: Q,
@@ -103,7 +103,10 @@ export function recoverStaleRebuild<Q extends RebuildJob>(
     try {
       await handle(frozen, context);
     } catch (error) {
-      if (error instanceof StaleWorkerError) {
+      if (
+        error instanceof StaleWorkerError &&
+        (context.retry === undefined || context.retry.count >= context.retry.limit)
+      ) {
         await recordRebuildProgress(deps, job, started, { complete: false, pending: frozen });
       }
       throw error;

@@ -13,8 +13,8 @@ import type { ClassificationDeps } from './handlers/deps.js';
  * setting or the model pin moved, so this process, which has not restarted yet, must neither ask its
  * old model nor write its answers. The job fails and the queue retries it after `retryDelaySeconds`
  * (the `retryDelay` of every queue in `STALE_GUARDED_QUEUES`), by when a drained worker has
- * restarted. On the last attempt guarded stages leave a delayed outbox intent, and rebuilds
- * park their scope for reconcile, so a persistently stale process cannot consume the last intent.
+ * restarted. Only on the last attempt guarded stages leave a delayed outbox intent, and rebuilds
+ * park that attempt's frozen scope for reconcile, so a stale process cannot consume the last intent.
  * `analysis.process` does not throw: it reschedules the request itself.
  */
 export class StaleWorkerError extends Error {

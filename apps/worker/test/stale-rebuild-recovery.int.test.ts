@@ -104,3 +104,74 @@ it.each(['house.reenrich', 'house.rematch'] as const)(
     expect(result.rows[0]?.pending).toEqual([{ since: '2026-10-10T12:00:00.000Z' }]);
   },
 );
+
+it.each(['house.reenrich', 'house.rematch'] as const)(
+  '%s leaves no parked run when a current worker completes the queue retry',
+  async (queue) => {
+    const old = await boot(OLD_MODEL);
+    const current = await boot(NEW_MODEL);
+    const payload = { since: '2026-10-01T00:00:00.000Z' };
+    await expect(
+      dispatch(handlersFor(h, old, new ScriptedRouter(h.db, old.processModel)), queue, payload, {
+        queue,
+        jobId: 'retried-rebuild',
+        retry: { count: 0, limit: 1 },
+      }),
+    ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+    await dispatch(
+      handlersFor(h, current, new ScriptedRouter(h.db, current.processModel)),
+      queue,
+      payload,
+      {
+        queue,
+        jobId: 'retried-rebuild',
+        retry: { count: 1, limit: 1 },
+      },
+    );
+    const result = await h.owner.query<{ pending: unknown }>(
+      "SELECT value -> $1 -> 'cursor' -> 'pending' AS pending FROM settings WHERE key = 'house.progress'",
+      [queue],
+    );
+    expect(result.rows[0]?.pending ?? []).toEqual([]);
+  },
+);
+
+it.each(['house.reenrich', 'house.rematch'] as const)(
+  '%s parks a fresh trigger only on its final attempt and preserves earlier progress',
+  async (queue) => {
+    const old = await boot(OLD_MODEL);
+    await boot(NEW_MODEL);
+    const completedAt = '2026-10-20T00:00:00.000Z';
+    const pending = { since: '2026-10-01T00:00:00.000Z' };
+    await setSetting(h.owner, 'house.progress', {
+      [queue]: { cursor: { pending: [pending] }, completedAt, updatedAt: completedAt, version: 1 },
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const handlers = h.handlersWith({
+        now: () => new Date(NOW.getTime() + attempt * 30_000),
+        classification: old.models.classification,
+      });
+      await expect(
+        dispatch(
+          handlers,
+          queue,
+          {},
+          {
+            queue,
+            jobId: 'fresh-rebuild',
+            retry: { count: attempt, limit: 1 },
+          },
+        ),
+      ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+    }
+    const result = await h.owner.query<{ value: Record<string, unknown> }>(
+      "SELECT value FROM settings WHERE key = 'house.progress'",
+    );
+    expect(result.rows[0]?.value[queue]).toEqual({
+      cursor: { pending: [pending, { since: '2026-10-10T12:00:30.000Z' }] },
+      completedAt,
+      updatedAt: '2026-10-24T12:00:30.000Z',
+      version: 1,
+    });
+  },
+);
