@@ -31,7 +31,7 @@ import { conflictReason } from './use-admin.js';
 
 export interface RuntimeEditorProps {
   settingKey: RuntimeSettingKey;
-  /** The stored value; null while the key reads its environment default. */
+  /** The effective value, including the environment default when no valid value is stored. */
   value: unknown;
   /** The environment default; null when no process can tell. */
   defaultValue: unknown;
