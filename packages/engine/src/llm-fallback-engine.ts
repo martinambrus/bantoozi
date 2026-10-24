@@ -1,6 +1,7 @@
 import {
   CHARS_PER_TOKEN,
   isUnfamiliarScript,
+  MODEL_UNAVAILABLE_DETAIL,
   REQUEST_OVERHEAD_TOKENS,
   systemClock,
   TOKEN_SAFETY_FACTOR,
@@ -381,6 +382,23 @@ export function createLlmFallbackEngine(options: LlmFallbackEngineOptions): Deci
       if (outcome.kind === 'failed') return outcome.failure;
       const nowMs = clock.now().getTime();
       if (outcome.status < 200 || outcome.status > 299) {
+        // Ollama uses a string-valued error for a missing model; a generic 404 may be a bad endpoint.
+        if (outcome.status === 404) {
+          const json = parseJsonBody(outcome.body);
+          const error = json.ok ? field(json.value, 'error') : undefined;
+          if (
+            typeof error === 'string' &&
+            /^model ["'][^"'\r\n]+["'] not found(?:[,.]|$)/i.test(error)
+          ) {
+            return {
+              ok: false,
+              status: 'error',
+              retryable: false,
+              detail: `${MODEL_UNAVAILABLE_DETAIL}:http_404`,
+              billing: 'known',
+            };
+          }
+        }
         return httpStatusFailure(outcome.status, outcome.headers, outcome.body, nowMs);
       }
       if (outcome.tooLarge) return invalidResponse('response_too_large', undefined);

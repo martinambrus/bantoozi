@@ -754,7 +754,21 @@ describe('spec 04 §8 post-processing', () => {
       });
     });
 
-    it('404 (unknown model id): a permanent error', async () => {
+    it.each([
+      'model "glm-5.3-flash" not found, try pulling it first',
+      "model 'glm-5.3-flash' not found",
+    ])('recognizes Ollama unknown-model errors: %s', async (error) => {
+      fake.setOptions({ statusOverride: () => ({ status: 404, body: { error } }) });
+      expect(await ask(llm())).toEqual({
+        ok: false,
+        status: 'error',
+        retryable: false,
+        detail: 'model_unavailable:http_404',
+        billing: 'known',
+      });
+    });
+
+    it('bare 404: a permanent endpoint or provider error', async () => {
       fake.setOptions({ mode: 'status', status: 404 });
       expect(await ask(llm())).toEqual({
         ok: false,
