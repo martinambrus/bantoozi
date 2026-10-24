@@ -4,7 +4,7 @@ import {
   enqueueAnalysis,
   enqueueExtract,
   enqueueMatch,
-  enqueueRank,
+  enqueueRankMany,
   enqueueTranslate,
   type JobSender,
 } from '@bantoozi/shared';
@@ -152,22 +152,35 @@ export async function after(
         return;
       }
       // Degraded or failed enrichment: no match; every subscriber is ranked (BM25 where authorized).
-      for (const userId of await gate.usersToRank(articleId, 'enrich')) {
-        await enqueueRank(sender, { userId, reason: 'degraded' });
-      }
+      await enqueueRankMany(
+        sender,
+        (await gate.usersToRank(articleId, 'enrich')).map((userId) => ({
+          userId,
+          reason: 'degraded',
+        })),
+      );
       return;
     case 'match':
-      for (const userId of await gate.usersToRank(articleId, 'match')) {
-        await enqueueRank(sender, { userId, reason: 'match' });
-      }
+      await enqueueRankMany(
+        sender,
+        (await gate.usersToRank(articleId, 'match')).map((userId) => ({
+          userId,
+          reason: 'match',
+        })),
+      );
       return;
     case 'cluster':
       // Membership is a ranking input (read stories, mute-story rules), and match may already have
       // ranked the article: a changed membership re-ranks every affected user in full (spec 06 §7).
       if (outcome.status !== 'ok' || outcome.clusterChanged !== true) return;
-      for (const userId of await gate.usersToRank(articleId, 'cluster')) {
-        await enqueueRank(sender, { userId, reason: 'cluster', full: true });
-      }
+      await enqueueRankMany(
+        sender,
+        (await gate.usersToRank(articleId, 'cluster')).map((userId) => ({
+          userId,
+          reason: 'cluster',
+          full: true,
+        })),
+      );
       return;
     case 'rank':
       return;
@@ -196,9 +209,10 @@ export async function afterNewCarrier(
   if (context.ingestOnly === true) return;
   const demand = await gate.newCarrierDemand(articleId, feedId);
   if (demand === null) return;
-  for (const userId of demand.subscriberIds) {
-    await enqueueRank(sender, { userId, reason: 'ingest' });
-  }
+  await enqueueRankMany(
+    sender,
+    demand.subscriberIds.map((userId) => ({ userId, reason: 'ingest' })),
+  );
   const ok: StageOutcome = { status: 'ok', revision: demand.revision };
   switch (demand.pipelineState) {
     case 'enriched':
