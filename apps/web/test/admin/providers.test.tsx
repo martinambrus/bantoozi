@@ -209,6 +209,14 @@ describe('provider accounts (spec 09 §8)', () => {
       'probe_budget_exceeded',
       'The validation reached its spending limit before it finished. Validate again.',
     ],
+    [
+      'keyring_unavailable',
+      'The worker cannot open stored keys because its keyring is unavailable. Check the worker keyring configuration, then validate again.',
+    ],
+    [
+      'lookup_failed',
+      'The worker could not read the credential from the database. Validate again later.',
+    ],
     ['decrypt_failed', 'The worker could not decrypt the staged key. Stage the key again.'],
     [
       'budget_unavailable',
@@ -220,7 +228,7 @@ describe('provider accounts (spec 09 §8)', () => {
     ],
     [
       'request_rejected',
-      'The provider rejected the test request, for example because the model is not available to this key.',
+      'The provider rejected the test request. Check the endpoint and request configuration.',
     ],
     ['provider_error', 'The provider returned an error during validation.'],
     ['cost_overrun', 'The test call cost more than expected and was stopped. Validate again.'],
@@ -246,6 +254,30 @@ describe('provider accounts (spec 09 §8)', () => {
     });
 
     expect(panel().getByText(explanation)).toBeVisible();
+  });
+
+  it.each([
+    [
+      'keyring_unavailable',
+      'Worker nemôže otvoriť uložené kľúče, pretože jeho zväzok kľúčov nie je dostupný. Skontrolujte konfiguráciu zväzku kľúčov workera a potom overte znova.',
+    ],
+    [
+      'lookup_failed',
+      'Worker nedokázal načítať prihlasovací údaj z databázy. Overte znova neskôr.',
+    ],
+  ])('explains %s in Slovak', async (code, explanation) => {
+    await render({
+      language: 'sk',
+      path: '/admin/providers',
+      server: {
+        me: adminMe(),
+        routes: adminRoutes({
+          'GET /admin/engine/credentials': () =>
+            json(200, { items: [jevCredential({ lastErrorCode: code })], keyring: OK_KEYRING }),
+        }),
+      },
+    });
+    expect(await screen.findByText(explanation)).toBeVisible();
   });
 
   it('stages a key without keeping it anywhere, and sends the revision it was staged against', async () => {

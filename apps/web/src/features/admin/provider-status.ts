@@ -63,6 +63,8 @@ export const KNOWN_ERROR_CODES: readonly string[] = [
   'not_configured',
   'probe_budget_exceeded',
   'decrypt_failed',
+  'keyring_unavailable',
+  'lookup_failed',
   'budget_unavailable',
   'auth_rejected',
   'request_rejected',
