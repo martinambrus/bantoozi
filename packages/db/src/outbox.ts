@@ -35,7 +35,11 @@ export async function rankCovered(tx: TenantTx): Promise<boolean> {
   return result.rows[0]?.covered === true;
 }
 
-/** A worker intent that becomes due only at `availableAt` (the relay skips it until then). */
+/**
+ * A delayed worker intent: identical undelivered work keeps its earliest due time and its lease.
+ * Worker-role only: requires SELECT and UPDATE on job_outbox; the API role has INSERT only.
+ * Returns true when work was inserted or brought forward; false when already due no later.
+ */
 export async function enqueueDelayedWorkerIntent(
   tx: Executor,
   intent: JobIntent,
@@ -45,7 +49,12 @@ export async function enqueueDelayedWorkerIntent(
     INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
     VALUES (${intent.queue}, ${JSON.stringify(intent.payload)}::jsonb, ${intent.dedupeKey}, NULL,
             greatest(now(), ${availableAt.toISOString()}::timestamptz))
-    ON CONFLICT DO NOTHING RETURNING id`);
+    ON CONFLICT (queue, dedupe_key)
+      WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
+    DO UPDATE SET available_at = least(job_outbox.available_at, excluded.available_at)
+      WHERE job_outbox.delivered_at IS NULL
+        AND excluded.available_at < job_outbox.available_at
+    RETURNING id`);
   return result.rows.length > 0;
 }
 
@@ -59,7 +68,7 @@ export function tenantOutbox(tx: TenantTx): JobSender {
  * A worker transaction's outbox writer (follow-on jobs; no requester). With `availableAt`, every
  * intent it writes is delayed until then: a job deferred by a publisher cooldown or a known retry
  * time records such an intent instead of sleeping inside a worker (spec 03 §8.2). An identical
- * pending intent still coalesces it (the earlier one wins).
+ * pending intent still coalesces it (the earliest due time wins).
  */
 export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = {}): JobSender {
   const { availableAt } = options;

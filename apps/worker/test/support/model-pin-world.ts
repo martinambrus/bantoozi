@@ -3,6 +3,7 @@ import type { EngineModelPin } from '@bantoozi/shared';
 import type pg from 'pg';
 
 import { runSeed } from '../../src/seed.js';
+import type { recordModelPin } from '../../src/model-pin.js';
 
 /** The pin a worker derives from its config: `llm` exists only while the fallback is on. */
 export interface WorkerPin {
@@ -32,11 +33,12 @@ export async function callRecordModelPin(
   db: Database,
   pin: WorkerPin,
   now: Date,
-): Promise<{ changed: boolean }> {
+  options: Parameters<typeof recordModelPin>[3] = {},
+): ReturnType<typeof recordModelPin> {
   const mod = (await import('../../src/model-pin.js')) as {
-    recordModelPin: (db: Database, pin: WorkerPin, now: Date) => Promise<{ changed: boolean }>;
+    recordModelPin: typeof recordModelPin;
   };
-  return mod.recordModelPin(db, pin, now);
+  return mod.recordModelPin(db, pin, now, options);
 }
 
 export const dbOf = (pool: pg.Pool) => createDatabase(pool);

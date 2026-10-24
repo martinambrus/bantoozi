@@ -6,6 +6,7 @@ import {
   heldCardTexts,
   loadCardDraftArticles,
   loadCardDraftWork,
+  retryTransaction,
   type CardDraftArticle,
 } from '@bantoozi/db';
 import { TAXONOMY } from '@bantoozi/questions';
@@ -22,6 +23,8 @@ import type { TranslationDeps } from '../classify/translation.js';
 import { isCredentialUnavailableError } from '../credentials/resolver.js';
 import type { ClassificationDeps, WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
+import { assertTranslationWorkerCurrent, lockTranslationWorkerCurrent } from '../stale-worker.js';
 
 const JOB = 'card.draft' as const;
 /** One draft call: the attempt's own 60 s plus the key lookup. */
@@ -97,6 +100,7 @@ async function draftWithLlm(
         'ollama',
         AbortSignal.timeout(DRAFT_ATTEMPT_DEADLINE_MS),
         async (auth): Promise<Sent> => {
+          await assertTranslationWorkerCurrent(deps.db, classification);
           const reservationId = await router.reserveExternalCall({
             engine: 'llm',
             kind: 'card_draft',
@@ -169,7 +173,8 @@ export function createCardDraftHandler(
   classification: ClassificationDeps,
   translation: TranslationDeps | undefined,
 ): QueueHandler<'card.draft'> {
-  return async ({ draftId }) => {
+  const handle: QueueHandler<'card.draft'> = async ({ draftId }) => {
+    await assertTranslationWorkerCurrent(deps.db, classification);
     const work = await loadCardDraftWork(deps.db, draftId);
     if (work === null) return;
     const articles = await loadCardDraftArticles(deps.db, work.articleIds);
@@ -198,21 +203,26 @@ export function createCardDraftHandler(
             },
           );
     const draft = llm ?? fallbackDraft(articles, work.locale);
-    await finishCardDraft(
-      deps.db,
-      draftId,
-      draft === null
-        ? { status: 'failed', errorCode: 'no_text' }
-        : {
-            status: 'complete',
-            title: draft.title,
-            interest: draft.interest,
-            source: llm === null ? 'fallback' : 'llm',
-          },
-    );
+    await retryTransaction(deps.db, async (tx) => {
+      const stale = await lockTranslationWorkerCurrent(tx, classification);
+      if (stale !== null) throw stale;
+      await finishCardDraft(
+        tx,
+        draftId,
+        draft === null
+          ? { status: 'failed', errorCode: 'no_text' }
+          : {
+              status: 'complete',
+              title: draft.title,
+              interest: draft.interest,
+              source: llm === null ? 'fallback' : 'llm',
+            },
+      );
+    });
     deps.logger.info(
       { job: JOB, draftId, source: llm === null ? 'fallback' : 'llm' },
       'card draft written',
     );
   };
+  return recoverStaleJob(deps, handle);
 }

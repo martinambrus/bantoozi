@@ -38,6 +38,8 @@ export interface RuntimeEditorProps {
   source: 'env' | 'stored' | 'last_good';
   /** Whether a row is stored for the key, valid or not (an invalid one reads as `env`). */
   hasStoredRow: boolean;
+  /** When the current stored setting was saved; absent for environment defaults. */
+  storedAt?: string | null;
   /** What the live workers refused of this key. */
   problems: readonly string[];
   /** Called as the request is sent: its place in the order of the screen's settings requests. */

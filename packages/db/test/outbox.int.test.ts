@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../src/client.js';
 import {
+  enqueueDelayedWorkerIntent,
   claimOutboxIntents,
   completeOutboxIntent,
   failOutboxIntent,
@@ -443,4 +444,84 @@ describe('relay primitives (worker role)', () => {
     );
     expect(rows.rows).toEqual([{ user_id: null }]);
   });
+});
+
+it('the earliest delayed intent wins without changing leases, payloads or delivered history', async () => {
+  await drain();
+  const intent = buildJobIntent('article.enrich', { articleId: '987' }, { revision: 'earliest' });
+  const early = new Date(Date.now() + 60_000);
+  const late = new Date(Date.now() + 600_000);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(true);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, early)).toBe(true);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(false);
+  let pending = (await outboxRows('article.enrich')).filter((r) => r.delivered_at === null);
+  expect(pending).toHaveLength(1);
+  expect(pending[0]?.available_at).toEqual(early);
+  await ctx.owner.query(
+    "UPDATE job_outbox SET available_at = now() - interval '1 second' WHERE id = $1",
+    [pending[0]?.id],
+  );
+  const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  expect(claimed).toBeDefined();
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(false);
+  pending = (await outboxRows('article.enrich')).filter((r) => r.delivered_at === null);
+  expect(pending[0]).toMatchObject({
+    lease_token: claimed!.leaseToken,
+    attempts: 1,
+    payload: intent.payload,
+  });
+  await completeOutboxIntent(ctx.worker, claimed!);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, early)).toBe(true);
+  const rows = (await outboxRows('article.enrich')).filter(
+    (r) => r.dedupe_key === intent.dedupeKey,
+  );
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.delivered_at).not.toBeNull();
+});
+
+it('inserts a new delayed intent when delivery commits while deduplication waits', async () => {
+  await drain();
+  const intent = buildJobIntent(
+    'article.enrich',
+    { articleId: '988' },
+    { revision: 'delivery-race' },
+  );
+  const late = new Date(Date.now() + 600_000);
+  const early = new Date(Date.now() + 60_000);
+  await enqueueDelayedWorkerIntent(ctx.worker, intent, late);
+  const row = (await outboxRows('article.enrich')).find((r) => r.dedupe_key === intent.dedupeKey)!;
+  const delivery = await ctx.owner.connect();
+  let enqueue: Promise<boolean> | undefined;
+  try {
+    await delivery.query('BEGIN');
+    await delivery.query('UPDATE job_outbox SET delivered_at = now() WHERE id = $1', [row.id]);
+    enqueue = enqueueDelayedWorkerIntent(ctx.worker, intent, early);
+    await expect
+      .poll(
+        async () => {
+          const waiting = await ctx.worker.execute(sql`SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND query LIKE '%INSERT INTO job_outbox%'`);
+          return waiting.rows.length;
+        },
+        { timeout: 5_000 },
+      )
+      .toBeGreaterThan(0);
+    await delivery.query('COMMIT');
+    expect(await enqueue).toBe(true);
+    const rows = (await outboxRows('article.enrich')).filter(
+      (r) => r.dedupe_key === intent.dedupeKey,
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      id: row.id,
+      available_at: late,
+      delivered_at: expect.any(Date),
+    });
+    expect(rows[1]).toMatchObject({ available_at: early, delivered_at: null });
+  } finally {
+    await delivery.query('ROLLBACK');
+    await enqueue;
+    delivery.release();
+  }
 });

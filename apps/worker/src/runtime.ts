@@ -30,6 +30,7 @@ import { credentialResolverFromConfig } from './credentials/resolver.js';
 import { createWorkerEngineRouter } from './engine-router.js';
 import { createModelProber, recordModelProbe } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
+import { ensureFingerprintRegistered, guardedRegistration } from './learn/fingerprints.js';
 import { lockRestartCurrent } from './stale-worker.js';
 import {
   MODEL_WATCH_TRIGGER_GAP_MS,
@@ -63,6 +64,8 @@ export type WorkerRuntimeConfig = WorkerModelConfig &
     | 'fetchTimeoutMs'
     | 'fetchMaxBytes'
     | 'rateLimitsEnabled'
+    | 'languageModes'
+    | 'signupMode'
   >;
 
 /** The configuration fields the effective runtime values replace. */
@@ -83,6 +86,20 @@ export interface RuntimeLogger {
   info(obj: object, msg: string): void;
   warn(obj: object, msg: string): void;
   error(obj: object, msg: string): void;
+}
+
+/** The restart settings used by translation, independent of Jev and its fallback switch. */
+function translationRestartFingerprint(values: RuntimeSettingsValues): string {
+  return createHash('sha256')
+    .update(
+      canonicalJson({
+        ollamaModels: values.ollamaModels,
+        ollamaBaseUrl: values.ollamaBaseUrl,
+        ollamaMaxConcurrency: values.ollamaMaxConcurrency,
+        libretranslateUrl: values.libretranslateUrl,
+      }),
+    )
+    .digest('hex');
 }
 
 /** The hash of exactly the restart-class values; every other field is ignored. */
@@ -367,6 +384,28 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
           if (await requestModelWatch(db, at)) lastClaimMs = at.getTime();
         }
       : undefined;
+  if (options.recordPin !== false && modelState.kind !== 'unresolved') {
+    // Save the outgoing exact fingerprint before recordModelPin replaces it: a first start after
+    // an upgrade must preserve ratings even if no earlier start or learn registered the old pin.
+    await guardedRegistration(
+      () =>
+        ensureFingerprintRegistered(
+          db,
+          {
+            settingsEnv: {
+              prefilterMinCards: config.prefilterMinCards,
+              dailyBudgetUsd: config.dailyBudgetUsd,
+              languageModes: config.languageModes,
+              signupMode: config.signupMode,
+            },
+            primaryModel: processModel,
+          },
+          now(),
+        ),
+      logger,
+      { rethrow: true },
+    );
+  }
   const models = createWorkerModels(db, liveConfig, logger, {
     primaryModel: processModel,
     ...(onModelUnavailable === undefined ? {} : { onModelUnavailable }),
@@ -407,6 +446,15 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   models.classification.currentness = {
     fingerprint,
     pin: processPin,
+    translation: {
+      fingerprint: translationRestartFingerprint(values),
+      async restartFingerprint(executor) {
+        const cache =
+          executor === undefined ? guardCache : createWorkerSettingsCache(executor, config);
+        cache.invalidate();
+        return translationRestartFingerprint((await cache.get()).values);
+      },
+    },
     async restartFingerprint(executor) {
       // Inside a completion transaction the values are read through it (under its share locks).
       const cache =

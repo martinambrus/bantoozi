@@ -102,6 +102,7 @@ export function ModelEditor({
   defaultValue,
   source,
   hasStoredRow,
+  storedAt,
   problems,
   onSend,
   onSaved,
@@ -155,9 +156,7 @@ export function ModelEditor({
       setEdit({ mode, id: draft.id });
       return;
     }
-    const resolved = status
-      ? concreteModelOf(status.setting.value, status.resolution, status.pin)
-      : null;
+    const resolved = status ? concreteModelOf(status.setting.value, resolution, status.pin) : null;
     setEdit({ mode, id: draft.id === '' ? (resolved ?? '') : draft.id });
   }
 
@@ -281,7 +280,14 @@ export function ModelEditor({
     }
   }
 
-  const resolution = status?.resolution ?? null;
+  const storedResolution = status?.resolution ?? null;
+  // A concrete worker can leave an old alias resolution behind. After saving the alias again,
+  // show it only once a check has confirmed it for this setting change.
+  const resolution =
+    storedResolution !== null &&
+    (storedAt == null || Date.parse(storedResolution.checkedAt) >= Date.parse(storedAt))
+      ? storedResolution
+      : null;
   const lastCheck = status?.watch.lastCheck ?? null;
   const checkFailed =
     lastCheck !== null &&

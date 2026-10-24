@@ -3295,3 +3295,13 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   model error code; a bare 404 or a 413 carrying such a code is not a retired model). The credential resolver reports a
   key again after it recovered and failed anew; the eval resolver honours its abort signal. Admin texts exist for
   `keyring_unavailable` and `lookup_failed` and use the screen's "key store" terms (en/sk).
+- D-322: 2026-10-24 (FNF-VL-13, task #35; extends D-307/D-319) — The remaining restart-class clients are fenced. `user.suggest`
+  checks the worker before claiming its lease and after the model call; a stale worker that discards a post-call answer
+  clears the reader's `last_suggested_at` and lease in the same transaction, so a current worker can still suggest that
+  day. `card.draft` is fenced only on the translation restart settings it uses (Ollama models, base URL, concurrency,
+  LibreTranslate URL), not on the Jev pin, and has no queue retry delay (the editor waits 30 s; the D-319 recovery intent
+  covers the stale case); the cached-enrich continuation takes the worker lock like its siblings. A start-time pin move
+  registers the OUTGOING rating fingerprint first (a failed registration leaves the pin unmoved). A delayed outbox intent
+  that meets an identical undelivered, unleased one keeps the EARLIEST `available_at` (`enqueueDelayedWorkerIntent`,
+  worker role only); no caller relies on the later time, and D-319's hop delays use distinct keys. The admin model editor
+  hides an alias resolution checked before the setting was saved.

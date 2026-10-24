@@ -98,6 +98,8 @@ export interface WorkerRuntimeConfigLike {
   typesafePricePerMtokUsd: number;
   engineConcurrency: number;
   dailyBudgetUsd: number;
+  languageModes: { en: 'native'; sk: 'native'; cs: 'native' };
+  signupMode: 'invite';
   ollamaBaseUrl: string;
   ollamaModelFast: string;
   ollamaModelStrong: string;
@@ -134,6 +136,8 @@ export function baseConfig(
     typesafePricePerMtokUsd: 0.042,
     engineConcurrency: 8,
     dailyBudgetUsd: 5,
+    languageModes: { en: 'native', sk: 'native', cs: 'native' },
+    signupMode: 'invite',
     ollamaBaseUrl: 'https://ollama.com',
     ollamaModelFast: LLM.fast,
     ollamaModelStrong: LLM.strong,
@@ -357,10 +361,13 @@ export async function pinRow(owner: pg.Pool): Promise<EngineModelPin | undefined
   return result.rows[0]?.value;
 }
 
-/** A clean slate: no runtime rows, no heartbeat, an empty outbox, the pin at `OLD_MODEL`. */
+/** A clean alias world: no runtime rows, no heartbeat, an empty outbox, pin at `OLD_MODEL`. */
 export async function resetWorld(
   h: ClassifyHarness,
-  pin: { model: string; llm?: { fast: string; strong: string } } = { model: OLD_MODEL },
+  pin: { model: string; alias?: 'jev-latest'; llm?: { fast: string; strong: string } } = {
+    model: OLD_MODEL,
+    alias: 'jev-latest',
+  },
 ): Promise<void> {
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     [...RUNTIME_KEYS, 'engine.model_pin', 'worker.heartbeat'],

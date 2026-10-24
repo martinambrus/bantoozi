@@ -52,6 +52,49 @@ export const RESTART_SETTING_KEYS = [
   'translate.libretranslate_url',
 ] as const;
 
+/** Drafts use the translator's Ollama configuration, regardless of the Jev pin or fallback. */
+const TRANSLATION_RESTART_SETTING_KEYS = [
+  'engine.ollama_models',
+  'engine.ollama_base_url',
+  'engine.ollama_max_concurrency',
+  'translate.libretranslate_url',
+] as const;
+
+async function translationWorkerStaleness(
+  db: Executor,
+  classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
+): Promise<StaleWorkerError | null> {
+  const currentness = classification.currentness?.translation;
+  return currentness !== undefined &&
+    (await currentness.restartFingerprint(db)) !== currentness.fingerprint
+    ? new StaleWorkerError(
+        classification.primaryModel,
+        classification.primaryModel,
+        'restart_settings',
+      )
+    : null;
+}
+
+export async function assertTranslationWorkerCurrent(
+  db: Executor,
+  classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
+): Promise<void> {
+  const stale = await translationWorkerStaleness(db, classification);
+  if (stale !== null) throw stale;
+}
+
+/** Keep only the translator's restart settings stable through a draft's completion. */
+export async function lockTranslationWorkerCurrent(
+  tx: Executor,
+  classification: Pick<ClassificationDeps, 'primaryModel' | 'currentness'>,
+): Promise<StaleWorkerError | null> {
+  await shareLockSettings(
+    tx,
+    TRANSLATION_RESTART_SETTING_KEYS.map((key) => ({ key, initial: null })),
+  );
+  return translationWorkerStaleness(tx, classification);
+}
+
 /**
  * The non-throwing core of {@link assertWorkerCurrent}: the error describing why this process is not
  * what the database now asks for, or null while it is current.

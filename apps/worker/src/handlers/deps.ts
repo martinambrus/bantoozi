@@ -62,6 +62,11 @@ export interface ClassificationDeps {
     fingerprint: string;
     pin: { model: string; llm?: { fast: string; strong: string } | undefined };
     restartFingerprint(executor?: Executor): Promise<string>;
+    /** Drafts depend on the translator settings, independently of the Jev pin and fallback. */
+    translation?: {
+      fingerprint: string;
+      restartFingerprint(executor?: Executor): Promise<string>;
+    };
   };
   /**
    * Lease of claimed `match_queue` rows and analysis requests. It must outlast one router call

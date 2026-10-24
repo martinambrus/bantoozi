@@ -204,6 +204,7 @@ describe('W3: the alias with a stored resolution', () => {
   });
 
   it('control: the dormant twin (unmarked pin, old row of 1.14.0) asks Jev once and pins its answer', async () => {
+    await resetWorld(h, { model: OLD_MODEL });
     await storeResolution(h.owner, NEW_MODEL);
     await useAlias();
     const probe = spy(okProbe(OLD_MODEL));

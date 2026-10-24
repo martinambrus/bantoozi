@@ -266,7 +266,7 @@ export const QUEUES = {
   'user.suggest': spec({
     payload: userOnly,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   // A card draft the person is waiting for in the editor (D-240): quick, one retry.
   'card.draft': spec({
@@ -317,9 +317,11 @@ export type QueueName = keyof typeof QUEUES;
 
 /**
  * Queues whose handlers fail a job on a stale worker (`StaleWorkerError`) and so rely on the queue's
- * {@link STALE_WORKER_RETRY_DELAY_SECONDS}. `analysis.process` is not listed: it reschedules itself.
+ * {@link STALE_WORKER_RETRY_DELAY_SECONDS}. `analysis.process` reschedules itself; interactive
+ * `card.draft` keeps immediate queue retries and relies on its delayed recovery intent when stale.
  */
 export const STALE_GUARDED_QUEUES = [
+  'user.suggest',
   'article.translate',
   'article.enrich',
   'article.cluster',

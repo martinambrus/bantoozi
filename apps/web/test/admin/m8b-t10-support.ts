@@ -46,6 +46,8 @@ export function worker(over: Partial<WorkerStatus> = {}): WorkerStatus {
 }
 
 export interface RuntimeFixture {
+  /** When this fixture's stored settings changed. */
+  storedAt?: string;
   /** Stored values by key; every other runtime key reads its effective environment default. */
   stored?: Partial<Record<keyof typeof RUNTIME_DEFAULTS, unknown>>;
   /** Sources by key; defaults to stored for a stored key, env otherwise. */
@@ -66,7 +68,10 @@ export function runtimeSettings(fixture: RuntimeFixture = {}): AdminSettings & {
   }
   const base = makeSettings({
     values: values as AdminSettings['values'],
-    stored: Object.keys(stored).map((key) => ({ key: key as never, updatedAt: T1 })),
+    stored: Object.keys(stored).map((key) => ({
+      key: key as never,
+      updatedAt: fixture.storedAt ?? T1,
+    })),
     sources,
     defaults: { ...RUNTIME_DEFAULTS },
   });
