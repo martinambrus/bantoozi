@@ -21,8 +21,8 @@ import { meKey } from '../../../api/query-keys.js';
 import { retryLaterMs } from '../../../api/retry-later.js';
 import { routes } from '../../../api/routes.js';
 import { errorMessage } from '../../../components/error-message.js';
-import { useToast, type ToastApi } from '../../../components/toast/toast-provider.js';
-import type { ToastAction, ToastInput } from '../../../components/toast/toast-store.js';
+import { useToastStore, type ToastApi } from '../../../components/toast/toast-provider.js';
+import type { ToastAction, ToastInput, ToastStore } from '../../../components/toast/toast-store.js';
 import { isHandedBack } from '../../../components/toast/toaster.js';
 import { setRecordsState } from '../../../offline/queue.js';
 import {
@@ -125,7 +125,7 @@ type NeverArticles = readonly { id: string; title: string }[];
 interface Environment {
   api: ApiClient;
   queryClient: QueryClient;
-  toast: ToastApi;
+  toast: ToastStore;
   i18n: I18n;
   accountId: string;
   openNever: (articles: NeverArticles) => void;
@@ -165,6 +165,12 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
 function createScope({ api, queryClient, toast, i18n, accountId, openNever }: Environment): Scope {
   const toastIds = new Set<string>();
   const ratingOffers = new Map<string, { handle: ActionHandle; item: ArticleListItem }>();
+  const stopTrackingOffers = toast.subscribe(() => {
+    const active = new Set(toast.getSnapshot().map((entry) => entry.id));
+    for (const id of ratingOffers.keys()) {
+      if (!active.has(id)) ratingOffers.delete(id);
+    }
+  });
   const listeners = new Set<SettledListener>();
   /** A newer rating context invalidates delayed offers; one selected batch shares a context. */
   let latestOffer = 0;
@@ -273,6 +279,8 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       },
     };
     const showPlain = (plainMessage = message) => {
+      // Later acknowledgements in a selection keep its existing teaching offer and Undo.
+      if (handle.ratingBatchId !== undefined && ratingOffers.has(undoToastId(handle))) return;
       show({
         id: undoToastId(handle),
         message: plainMessage,
@@ -312,17 +320,14 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
     showPlain();
     void offers.actionsFor(suggestion, handle.articleId).then((offered) => {
       // A later acknowledgement in the same selection must not swallow its teaching offer.
-      // Batch offers have their own toast, so they never replace a newer rating's undo toast.
+      // Different batches have distinct ids, so a newer rating keeps its own undo toast.
       if (turn !== latestOffer || !isRecent(handle)) return;
       const current = store.confirmed(item);
       if (current.rating !== item.rating || current.reason !== item.reason) return;
       if (offered === null) return;
       showRatingOffer(
         {
-          id:
-            handle.ratingBatchId === undefined
-              ? undoToastId(handle)
-              : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
+          id: undoToastId(handle),
           message,
           tone: 'success',
           durationMs: OFFER_TOAST_MS,
@@ -521,6 +526,7 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       stopRetrying();
       latestOffer += 1;
       offers.release();
+      stopTrackingOffers();
       ratingOffers.clear();
       reasonBar.close();
       store.reset();
@@ -641,7 +647,7 @@ function useScope(): Scope {
   const holder = useContext(HolderContext);
   const api = useApi();
   const queryClient = useQueryClient();
-  const toast = useToast();
+  const toast = useToastStore();
   const { i18n } = useTranslation();
   if (holder === null) {
     throw new Error('The reader actions need a <ReaderActionsProvider> above them');

@@ -104,6 +104,64 @@ async function press(toast: HTMLElement, name: string, app: ReturnType<typeof re
 }
 
 describe('the offer in the undo toast', () => {
+  it.each(['early', 'late'] as const)(
+    'shows one batch offer toast with Undo when the suggestion arrives %s',
+    async (timing) => {
+      vi.useFakeTimers();
+      const first = makeItem();
+      const second = makeItem({ id: '102' });
+      const list = deferred<Response>();
+      function Batch() {
+        const store = useReaderActions();
+        return (
+          <>
+            <button
+              onClick={() =>
+                store.dispatch(first, { type: 'rate', rating: 1 }, { ratingBatchId: 'batch' })
+              }
+            >
+              First batch rating
+            </button>
+            <button
+              onClick={() =>
+                store.dispatch(second, { type: 'rate', rating: 1 }, { ratingBatchId: 'batch' })
+              }
+            >
+              Next batch rating
+            </button>
+          </>
+        );
+      }
+      const app = renderReader(<Batch />, {
+        routes: {
+          'POST /articles/101/rating': rates(first, YES),
+          'POST /articles/102/rating': rates(second, null),
+          'POST /articles/undo': () => undoResponse(first),
+          'GET /cards': () => (timing === 'early' ? json(200, CARDS) : list.promise),
+        },
+      });
+      apps.push(app);
+      await app.user.click(screen.getByRole('button', { name: 'First batch rating' }));
+      await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
+      if (timing === 'early') await screen.findByRole('button', { name: TEACH_YES });
+      await app.user.click(screen.getByRole('button', { name: 'Next batch rating' }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      if (timing === 'late') {
+        await act(async () => {
+          list.resolve(json(200, CARDS));
+          await vi.advanceTimersByTimeAsync(20);
+        });
+      }
+      expect(screen.getByRole('button', { name: TEACH_YES })).toBeVisible();
+      expect(app.toasts.getSnapshot()).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1);
+      await app.user.click(screen.getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(app.calls('POST', '/articles/undo')).toHaveLength(1));
+    },
+  );
+
   it('stays 8 seconds and adds Teach and Stop suggesting to Undo', async () => {
     const item = makeItem();
     const app = renderRow(item, server(item, YES));
