@@ -151,6 +151,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     await deliverPending();
     const alias = await deps.configuredModel();
     if (!isModelAlias(alias)) {
+      await updateState((state) => state, true);
       await recordHouseProgress({ db }, JOB, now(), true);
       return;
     }
@@ -171,6 +172,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     }
 
     if ((await deps.configuredModel()) !== alias) {
+      await updateState((state) => state, true);
       await recordHouseProgress({ db }, JOB, now(), true);
       return;
     }
