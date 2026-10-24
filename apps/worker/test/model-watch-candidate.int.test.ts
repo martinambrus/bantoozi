@@ -172,6 +172,19 @@ describe('JEV-8: alias flap controls', () => {
     expect(intents.at(-1)!.availableAt.getTime()).toBe(NOW.getTime() + GAP);
   });
 
+  it('requestModelWatch preserves an existing candidate byte for byte', async () => {
+    await answer(V114);
+    const before = await rawSetting(h.owner, 'engine.model_candidate');
+    const { requestModelWatch } = await import('../src/model-watch.js');
+    expect(await requestModelWatch(h.db, NOW)).toBe(true);
+    expect(await rawSetting(h.owner, 'engine.model_candidate')).toEqual(before);
+    expect(await watchRow(h.owner)).toMatchObject({
+      triggeredAt: iso(NOW),
+      lastCheck: { at: iso(NOW), ok: true },
+    });
+    expect(await h.intents('house.model-watch', { pending: true })).toHaveLength(2);
+  });
+
   it('retries an early confirmation with a distinct delayed intent', async () => {
     await answer(V114);
     await answer(V114, GAP - 1);
