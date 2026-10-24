@@ -3250,3 +3250,11 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   normal shutdown when scheduling a missing cron queue fails, scopes the comparison to the queues it consumes
   (EVAL_INGEST_ONLY, WORKER_QUEUES), keeps re-checking after a healthy result (slower cadence) and re-reads an unreadable
   catalog every 30 s with an in-flight guard, warning only on a state change.
+- D-318: 2026-10-24 (FNF-VL-10, task #33; completes D-302 item 1) — The call-kinds table also carries `route`
+  (`ask` | `external` | `both`; `eval` is both: the eval router asks, and an eval router records external calls as `eval`)
+  and `budgetExempt` (only `eval`; separate from `live` because the synthetic probes are not live but are charged to the
+  production budget). `ASK_KINDS`, `AskCallKind` (`EngineRequest.kind`), `ExternalCallKind` (`ExternalCall.kind`) and
+  `BUDGET_EXEMPT_KINDS` (the store's committed spend, admission and settlement crossings; the router's status and
+  advisory spend) derive from it, so a new kind does not compile until it is routed and classified for the budget. No
+  behaviour change; the engine's in-memory test store now pairs kinds and authorizations with `kindMatchesAuthorization`
+  like the real store (it admitted 27 pairings the store refuses).
