@@ -9,6 +9,7 @@ import {
 import { enqueueReenrich, enqueueRematch } from '@bantoozi/shared';
 
 import { primaryAvailability } from '../classify/availability.js';
+import { workerStaleness } from '../stale-worker.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import {
   HOUSE_RUN_BUDGET_MS,
@@ -112,12 +113,13 @@ export function createReconcileHandler(
   };
 }
 
-/** Re-enqueues each pending rebuild run once, and only while the primary engine is available. */
+/** Re-enqueues pending runs only while this worker is current and the primary engine is available. */
 async function resumePendingRebuilds(
   deps: WorkerDeps,
   classification: ClassificationDeps,
   now: Date,
 ): Promise<number> {
+  if ((await workerStaleness(deps.db, classification)) !== null) return 0;
   const availability = await primaryAvailability(
     deps.db,
     classification.router,

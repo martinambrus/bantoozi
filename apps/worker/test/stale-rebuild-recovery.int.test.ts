@@ -175,3 +175,45 @@ it.each(['house.reenrich', 'house.rematch'] as const)(
     });
   },
 );
+
+it.each(['pin', 'restart_settings'] as const)(
+  'reconcile leaves rebuilds parked while its worker has stale %s',
+  async (reason) => {
+    const old = await boot(OLD_MODEL);
+    if (reason === 'pin') await boot(NEW_MODEL);
+    else await setSetting(h.owner, 'engine.typesafe_model', NEW_MODEL);
+    const completedAt = '2026-10-20T00:00:00.000Z';
+    const progress = Object.fromEntries(
+      ['house.reenrich', 'house.rematch'].map((queue) => [
+        queue,
+        {
+          cursor: { pending: [{ since: '2026-10-01T00:00:00.000Z' }] },
+          completedAt,
+          updatedAt: completedAt,
+          version: 1,
+        },
+      ]),
+    );
+    await setSetting(h.owner, 'house.progress', progress);
+    await h.clearOutbox();
+    const handlers = handlersFor(h, old, new ScriptedRouter(h.db, old.processModel));
+    for (let run = 0; run < 2; run += 1) {
+      await dispatch(
+        handlers,
+        'house.reconcile',
+        {},
+        { queue: 'house.reconcile', jobId: `stale-reconcile-${run}` },
+      );
+    }
+    const result = await h.owner.query<{ value: Record<string, unknown> }>(
+      "SELECT value FROM settings WHERE key = 'house.progress'",
+    );
+    for (const queue of ['house.reenrich', 'house.rematch'] as const) {
+      expect(result.rows[0]?.value[queue]).toEqual(progress[queue]);
+      expect(await h.intents(queue, { pending: true })).toEqual([]);
+    }
+    expect(result.rows[0]?.value['house.reconcile']).toMatchObject({
+      completedAt: expect.any(String),
+    });
+  },
+);
