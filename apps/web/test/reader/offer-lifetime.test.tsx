@@ -70,7 +70,11 @@ describe('delayed rating offers', () => {
       });
       const plain = await findToast('Marked as disliked');
       expect(within(plain).getByRole('button', { name: 'Undo' })).toBeVisible();
-      expect(screen.queryByRole('button', { name: 'Show fewer like these' })).toBeNull();
+      expect(
+        screen.queryByRole('button', {
+          name: kind === 'pattern' ? 'Show fewer like these' : 'Teach EV battery tech: not this',
+        }),
+      ).toBeNull();
       expect(app.unhandled).toEqual([]);
     },
   );

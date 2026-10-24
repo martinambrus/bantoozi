@@ -2,7 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Dialog } from '../../src/components/dialog.js';
 import { ToastProvider } from '../../src/components/toast/toast-provider.js';
@@ -44,13 +44,17 @@ function show(store: ToastStore, input: Partial<ToastInput> = {}) {
   });
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 const undoAction = () => ({ label: 'Undo', onAction: vi.fn() });
 const undoButton = () => screen.getByRole('button', { name: 'Undo' });
 
 describe('a toast while a modal opens and closes', () => {
   it('sends one impression across modal remounts and a new one for a replacement', () => {
     vi.useFakeTimers();
-    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     const onSeen = vi.fn();
     const { store, rerender } = renderApp(modal(false));
     show(store, { durationMs: null, onSeen });
@@ -64,7 +68,6 @@ describe('a toast while a modal opens and closes', () => {
     show(store, { durationMs: null, onSeen });
     advance(1000);
     expect(onSeen).toHaveBeenCalledTimes(2);
-    visibility.mockRestore();
   });
 
   it('goes at 5 s, not at 8 s, when a modal opens at 3 s', () => {

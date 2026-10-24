@@ -5,7 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useReaderActions } from '../../src/features/reader/actions/provider.js';
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { failure, json } from '../api/fake-fetch.js';
-import { actionResponse, bodyOf, deferred, makeItem, renderReader } from '../article/harness.js';
+import {
+  actionResponse,
+  bodyOf,
+  deferred,
+  makeItem,
+  renderReader,
+  undoResponse,
+} from '../article/harness.js';
 import { makeCard } from '../interests/support.js';
 import { acked } from './actions/fake-transport.js';
 import { holdExits } from './exit-hold.js';
@@ -154,6 +161,103 @@ describe('an offer bound to its rating', () => {
       await waitFor(() =>
         expect(screen.queryByRole('button', { name: 'Show fewer like these' })).toBeNull(),
       );
+      expect(app.unhandled).toEqual([]);
+    },
+  );
+});
+
+const offerKinds = [
+  { kind: 'card', label: 'Show fewer like these', pattern, exampleSuggestion: null },
+  {
+    kind: 'feed',
+    label: 'Make a Never card from these',
+    pattern: { kind: 'feed', feedId: '7', offer: pattern.offer, offerId: pattern.offerId },
+    exampleSuggestion: null,
+  },
+  {
+    kind: 'suggestion',
+    label: 'Teach EV battery tech: not this',
+    pattern: null,
+    exampleSuggestion: { cardId: '31', side: 'no' },
+  },
+];
+
+describe.each(offerKinds)('$kind offer dismissal', (offered) => {
+  function setup() {
+    const item = makeItem();
+    let version = BigInt(item.stateVersion);
+    function BatchChange() {
+      const store = useReaderActions();
+      return (
+        <button
+          onClick={() =>
+            store.dispatch(item, { type: 'rate', rating: 1 }, { ratingBatchId: 'change-batch' })
+          }
+        >
+          Change in batch
+        </button>
+      );
+    }
+    const app = renderReader(
+      <>
+        <Row item={item} />
+        <BatchChange />
+      </>,
+      {
+        routes: {
+          'GET /cards': () => json(200, [CARD]),
+          'GET /subscriptions': () => json(200, []),
+          'POST /articles/:id/rating': (request) => {
+            const { rating } = bodyOf(request) as { rating: 1 | -1 | null };
+            return actionResponse(
+              acked(item, {
+                rating,
+                reason: rating === -1 ? 'off_topic' : null,
+                readAt: READ_AT,
+                stateVersion: String(++version),
+              }),
+              rating === -1
+                ? { pattern: offered.pattern, exampleSuggestion: offered.exampleSuggestion }
+                : { pattern: null, exampleSuggestion: null },
+            );
+          },
+          'POST /articles/undo': () =>
+            undoResponse(acked(item, { stateVersion: String(++version) })),
+          'POST /articles/:id/pattern-offer': () => new Response(null, { status: 204 }),
+        },
+      },
+    );
+    return app;
+  }
+
+  async function showOffer(app: ReturnType<typeof setup>) {
+    await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+    await screen.findByRole('button', { name: offered.label });
+  }
+
+  it.each(['button', 'keyboard'] as const)('dismisses on Undo using the %s', async (input) => {
+    const app = setup();
+    await showOffer(app);
+    const undo = screen.getByRole('button', { name: 'Undo' });
+    if (input === 'button') await app.user.click(undo);
+    else {
+      act(() => undo.focus());
+      await app.user.keyboard('{Enter}');
+    }
+    await waitFor(() => expect(app.calls('POST', '/articles/undo')).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole('button', { name: offered.label })).toBeNull());
+    expect(app.unhandled).toEqual([]);
+  });
+
+  it.each(['Like', 'Dislike', 'Change in batch'])(
+    'dismisses after %s changes or removes the rating',
+    async (button) => {
+      const app = setup();
+      await showOffer(app);
+      await app.user.click(screen.getByRole('button', { name: button }));
+      await waitFor(() => expect(screen.queryByRole('button', { name: offered.label })).toBeNull());
+      expect(app.calls('POST', '/articles/101/rating')).toHaveLength(2);
       expect(app.unhandled).toEqual([]);
     },
   );
