@@ -120,6 +120,31 @@ async function dislike(
 }
 
 describe('rating pattern (DPF-3)', () => {
+  it.each(['visible', 'hidden-only'] as const)(
+    'selects the %s subscribed carrier when the rating DTO has no feed context',
+    async (scenario) => {
+      const w = await world({}, 'training');
+      await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+      const other = await subscribedFeed(h, w.user.id, { mode: 'training' });
+      for (const title of [D1, D2])
+        await rate(w.user.id, await carriedArticle(h, [other], { title }), -1, 1);
+      await h.owner.query(
+        'UPDATE subscriptions SET hidden = true WHERE user_id = $1 AND feed_id = $2',
+        [w.user.id, w.feed],
+      );
+      if (scenario === 'hidden-only')
+        await h.owner.query('UPDATE subscriptions SET hidden = true WHERE user_id = $1', [
+          w.user.id,
+        ]);
+      const target = await carriedArticle(h, [w.feed, other], { title: TARGET });
+      const body = await dislike(w, target);
+      expect(body.pattern).toMatchObject({
+        kind: 'feed',
+        feedId: scenario === 'hidden-only' ? w.feed : other,
+      });
+    },
+  );
+
   it('P1 two prior similar dislikes lower the card and offer three examples', async () => {
     const w = await world();
     const target = await candidate(w, TARGET);

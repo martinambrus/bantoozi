@@ -1550,7 +1550,7 @@ async function dislikePattern(
   };
 }
 
-/** Same pool and pure check as card offers, restricted to the lowest-id subscribed carrier. */
+/** Same pool and pure check as card offers, preferring a visible subscribed carrier by id. */
 async function feedDislikePattern(
   tx: TenantTx,
   lock: ReaderLock,
@@ -1562,7 +1562,7 @@ async function feedDislikePattern(
   const carrier = await tx.execute<{ id: string }>(sql`
     SELECT fi.feed_id::text AS id FROM feed_items fi
       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${lock.user}::uuid
-     WHERE fi.article_id = ${article.articleId}::bigint ORDER BY fi.feed_id LIMIT 1`);
+     WHERE fi.article_id = ${article.articleId}::bigint ORDER BY s.hidden, fi.feed_id LIMIT 1`);
   const feed = carrier.rows[0];
   if (
     feed === undefined ||
