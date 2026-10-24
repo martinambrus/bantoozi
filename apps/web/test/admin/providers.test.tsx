@@ -261,10 +261,7 @@ describe('provider accounts (spec 09 §8)', () => {
       'keyring_unavailable',
       'Worker nemôže otvoriť uložené kľúče, pretože jeho úložisko kľúčov nie je dostupné. Postupujte podľa pokynov v upozornení na úložisko kľúčov vyššie a potom overte znova.',
     ],
-    [
-      'lookup_failed',
-      'Worker nedokázal načítať prístupový údaj z databázy. Overte znova neskôr.',
-    ],
+    ['lookup_failed', 'Worker nedokázal načítať prístupový údaj z databázy. Overte znova neskôr.'],
   ])('explains %s in Slovak', async (code, explanation) => {
     await render({
       language: 'sk',

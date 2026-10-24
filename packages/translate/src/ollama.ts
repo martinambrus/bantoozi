@@ -402,7 +402,10 @@ function readEnvelope(value: unknown): Envelope {
 }
 
 /** The failure an HTTP status means; only a 5xx may have generated (billed) output. */
-function statusFailure(statusCode: number): {
+function statusFailure(
+  statusCode: number,
+  unknownModel: boolean,
+): {
   reason: Tier2FailureReason;
   status: CallStatus;
   retryable: boolean;
@@ -411,7 +414,7 @@ function statusFailure(statusCode: number): {
   if (statusCode === 401 || statusCode === 403) {
     return { reason: 'auth_error', status: 'auth_error', retryable: false, billing: 'known' };
   }
-  if (statusCode === 404) {
+  if (statusCode === 404 && unknownModel) {
     return { reason: 'model_unavailable', status: 'error', retryable: false, billing: 'known' };
   }
   if (statusCode === 400 || statusCode === 413 || statusCode === 422) {
@@ -546,8 +549,37 @@ export function createOllamaTranslator(options: OllamaTranslatorOptions): Ollama
       // A deadline abort destroys an unread body with an error; nobody may be listening yet.
       responseBody.on('error', noop);
       if (statusCode !== 200) {
+        let unknownModel = false;
+        if (statusCode === 404) {
+          try {
+            const bytes = await readBoundedBody(
+              responseBody,
+              firstHeader(response.headers['content-length']),
+              maxResponseBytes,
+            );
+            const parsed = bytes === undefined ? undefined : parseJsonBytes(bytes);
+            const error = isPlainObject(parsed?.value)
+              ? ownValue(parsed.value, 'error')
+              : undefined;
+            unknownModel =
+              typeof error === 'string' &&
+              /^model ["'][^"'\r\n]+["'] not found(?:[,.]|$)/i.test(error);
+          } catch (error) {
+            const failure = classifyThrown(error, deadline);
+            return {
+              ok: false,
+              reason: failure.kind,
+              retryable: failure.kind !== 'cancelled',
+              attempt: record(failure.status, {
+                httpStatus: statusCode,
+                error: failure.error,
+                billing: 'known',
+              }),
+            };
+          }
+        }
         discardBody(responseBody);
-        const failure = statusFailure(statusCode);
+        const failure = statusFailure(statusCode, unknownModel);
         const wait =
           statusCode === 429 || statusCode === 503
             ? retryAfterMs(firstHeader(response.headers['retry-after']), clock.now().getTime())
