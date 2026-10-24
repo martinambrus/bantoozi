@@ -59,7 +59,9 @@ const sameNotice = (a: Notice | undefined, b: Notice): boolean =>
 /**
  * `house.model-watch` (every 6 hours, on start, after a retired-model failure, or by hand): probes
  * the alias `jev-latest` and adopts a different concrete answer after two agreeing probes ≥10 min
- * apart. The outgoing rating fingerprint is registered first, then `engine.model_resolution` and
+ * apart, within 24 hours. Expired candidates restart confirmation; leaving the alias clears them.
+ * A setting changed away during a probe also clears the candidate before returning.
+ * The outgoing rating fingerprint is registered first, then `engine.model_resolution` and
  * the pending notice are written in one transaction and the admins are mailed. A dormant stored
  * resolution (see `resolutionInForce`) is replaced silently by the answer, with no fingerprint,
  * notice or mail. Workers restart through

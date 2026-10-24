@@ -143,7 +143,8 @@ export function tenantOutbox(tx: TenantTx): JobSender {
  * A worker transaction's outbox writer (follow-on jobs; no requester). With `availableAt`, every
  * intent it writes is delayed until then: a job deferred by a publisher cooldown or a known retry
  * time records such an intent instead of sleeping inside a worker (spec 03 §8.2). An identical
- * pending intent still coalesces it (the earliest due time wins).
+ * pending intent without a live lease still coalesces it (the earliest delayed due time wins).
+ * A live lease is revoked and the row re-armed, fencing late relay acknowledgements.
  */
 export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = {}): JobSender {
   const { availableAt } = options;

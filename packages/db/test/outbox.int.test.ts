@@ -448,7 +448,7 @@ describe('relay primitives (worker role)', () => {
   });
 });
 
-it('the earliest delayed intent wins without changing leases, payloads or delivered history', async () => {
+it('the earliest delayed intent wins unless re-arming a live lease; payloads and history stay', async () => {
   await drain();
   const intent = buildJobIntent('article.enrich', { articleId: '987' }, { revision: 'earliest' });
   const early = new Date(Date.now() + 60_000);
