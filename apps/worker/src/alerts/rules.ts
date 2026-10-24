@@ -11,6 +11,7 @@ import {
   typesafeModelMismatches,
 } from '@bantoozi/db';
 import {
+  HEARTBEAT_FRESH_MS,
   HOUSE_CRON_SCHEDULES,
   HOUSE_PROGRESS_CURSORS,
   HostHealthDetailSchema,
@@ -40,7 +41,7 @@ export const ALERT_THRESHOLDS = {
   outboxSeconds: 5 * 60,
   heartbeatStaleMs: 30 * MINUTE,
   /** Live-worker window used by Admin (three heartbeat periods). */
-  heartbeatFreshMs: 90_000,
+  heartbeatFreshMs: HEARTBEAT_FRESH_MS,
   houseOverduePeriods: 2,
   degradedMinArticles: 20,
   feedsMinSubscribed: 5,

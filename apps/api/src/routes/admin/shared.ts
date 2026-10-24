@@ -6,6 +6,7 @@ import {
   type AdminPublicationRequestRow,
 } from '@bantoozi/db';
 import {
+  HEARTBEAT_FRESH_MS,
   LAYA_QUEUES,
   KeyringReportSchema,
   type KeyringStatus,
@@ -25,7 +26,7 @@ export const isoOrNull = (date: Date | null): string | null =>
   date === null ? null : date.toISOString();
 
 /** A heartbeat entry is fresh while younger than 90 s (spec 08 §9.1, spec 11 §2). */
-export const HEARTBEAT_FRESH_MS = 90_000;
+export { HEARTBEAT_FRESH_MS } from '@bantoozi/shared';
 
 export interface FreshWorker {
   queues: readonly string[];

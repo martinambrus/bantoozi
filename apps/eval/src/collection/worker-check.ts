@@ -1,4 +1,4 @@
-import { parseSetting, type QueueName } from '@bantoozi/shared';
+import { HEARTBEAT_FRESH_MS, parseSetting, type QueueName } from '@bantoozi/shared';
 
 /**
  * The worker precondition of `eval ingest-sample` (spec 10 §2.1, D-96): a worker heartbeat younger
@@ -9,7 +9,7 @@ import { parseSetting, type QueueName } from '@bantoozi/shared';
  */
 
 /** Spec 10 §2.1: a heartbeat counts as live for 90 s. */
-export const HEARTBEAT_FRESH_MS = 90_000;
+export { HEARTBEAT_FRESH_MS } from '@bantoozi/shared';
 
 /** The queues collection needs an ingest-only worker to consume. */
 export const COLLECTION_QUEUES: readonly QueueName[] = ['feed.fetch', 'article.extract'];
