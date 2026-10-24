@@ -1,6 +1,7 @@
 import {
   compareBigIntStrings,
   type ArticleListItem,
+  type DislikePattern,
   type MarkReadFilter,
   type RatingReason,
   type UserPreferences,
@@ -124,14 +125,7 @@ export interface ExampleSuggestion {
   side: 'yes' | 'no';
 }
 
-/** What a dislike says about the card's recent dislikes (DPF-3). */
-export interface DislikePattern {
-  cardId: string;
-  lowered: boolean;
-  offerId: string | null;
-  /** Up to three articles to offer as "no" examples of the card, or null when there is no offer. */
-  offer: string[] | null;
-}
+export type { DislikePattern } from '@bantoozi/shared';
 
 export type ActionResult =
   | {

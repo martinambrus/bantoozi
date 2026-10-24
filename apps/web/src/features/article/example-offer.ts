@@ -21,6 +21,7 @@ export interface ExampleOffersEnvironment {
   toast: Pick<ToastApi, 'show'>;
   i18n: I18n;
   accountId: string;
+  openNever: (articles: readonly { id: string; title: string }[]) => void;
 }
 
 export interface ExampleOffers {
@@ -57,6 +58,7 @@ export function createExampleOffers({
   toast,
   i18n,
   accountId,
+  openNever,
 }: ExampleOffersEnvironment): ExampleOffers {
   const why = i18n.getFixedT(null, 'why');
   const cache = cardCache(queryClient, accountId);
@@ -116,6 +118,18 @@ export function createExampleOffers({
     toast.show({ message: i18n.t('article:toast.suggestionsOff'), tone: 'success' });
   }
 
+  async function makeNever(articleIds: string[]): Promise<void> {
+    const { signal } = controller;
+    try {
+      const articles = await Promise.all(
+        articleIds.map((id) => api.call(routes.articleGet, { params: { id } }, { signal })),
+      );
+      if (!signal.aborted) openNever(articles.map(({ id, title }) => ({ id, title })));
+    } catch (error) {
+      if (!signal.aborted) toast.show({ message: errorMessage(i18n.t, error), tone: 'error' });
+    }
+  }
+
   function patternEvent(
     pattern: DislikePattern,
     articleId: string,
@@ -166,6 +180,20 @@ export function createExampleOffers({
     async patternActions(pattern, articleId) {
       const { offer } = pattern;
       if (offer === null) return null;
+      if (pattern.kind === 'feed')
+        return [
+          {
+            label: i18n.t('article:toast.makeNeverFromThese'),
+            onAction: () => {
+              patternEvent(pattern, articleId, 'accepted');
+              void makeNever(offer);
+            },
+          },
+          {
+            label: i18n.t('article:toast.notNow'),
+            onAction: () => patternEvent(pattern, articleId, 'dismissed'),
+          },
+        ];
       let cards: CardDto[];
       try {
         cards = await ensureCards(queryClient, api, accountId);

@@ -11326,36 +11326,80 @@
                     },
                     "pattern": {
                       "nullable": true,
-                      "type": "object",
-                      "properties": {
-                        "cardId": {
-                          "type": "string"
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "card"
+                              ]
+                            },
+                            "cardId": {
+                              "type": "string"
+                            },
+                            "lowered": {
+                              "type": "boolean"
+                            },
+                            "offerId": {
+                              "nullable": true,
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "offer": {
+                              "nullable": true,
+                              "minItems": 1,
+                              "maxItems": 3,
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "cardId",
+                            "lowered",
+                            "offerId",
+                            "offer"
+                          ],
+                          "additionalProperties": false
                         },
-                        "lowered": {
-                          "type": "boolean"
-                        },
-                        "offerId": {
-                          "nullable": true,
-                          "type": "string",
-                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                        },
-                        "offer": {
-                          "nullable": true,
-                          "minItems": 1,
-                          "maxItems": 3,
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "feed"
+                              ]
+                            },
+                            "feedId": {
+                              "type": "string"
+                            },
+                            "offer": {
+                              "minItems": 3,
+                              "maxItems": 3,
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "offerId": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "feedId",
+                            "offer",
+                            "offerId"
+                          ],
+                          "additionalProperties": false
                         }
-                      },
-                      "required": [
-                        "cardId",
-                        "lowered",
-                        "offerId",
-                        "offer"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": [

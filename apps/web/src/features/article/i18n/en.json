@@ -150,6 +150,8 @@
     "teachYes": "Teach {{title}}: this is it",
     "teachNo": "Teach {{title}}: not this",
     "stopSuggesting": "Stop suggesting",
+    "makeNeverFromThese": "Make a Never card from these",
+    "similarFeedLowered": "Similar unread articles in this feed will be ranked lower.",
     "fewerLikeThese": "Show fewer like these",
     "notNow": "Not now",
     "fewerTaught": "{{title}} will show fewer like these.",

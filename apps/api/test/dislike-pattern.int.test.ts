@@ -67,7 +67,7 @@ async function rate(
 
 async function world(
   preferences: Record<string, unknown> = {},
-  mode: 'active' | 'training' = 'active',
+  mode: 'active' | 'training' | 'off' = 'active',
 ) {
   const r = await newReader(h, preferences);
   const feed = await subscribedFeed(h, r.user.id, { mode });
@@ -228,6 +228,70 @@ describe('rating pattern (DPF-3)', () => {
     expect(after.rows[0].seen_at).toEqual(before.rows[0].seen_at);
     expect(after.rows[0].answer).toBe('accepted');
     expect(after.rows[0].answered_at).toBeTruthy();
+  });
+
+  it.each(['active', 'training', 'off'] as const)(
+    'DPF-8 a %s feed dislike offers three articles without a deciding card',
+    async (mode) => {
+      const w = await world({}, mode);
+      await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+      const target = await carriedArticle(h, [w.feed], { title: TARGET });
+      const body = await dislike(w, target);
+      expect(body.pattern).toMatchObject({
+        kind: 'feed',
+        feedId: w.feed,
+        offer: expect.arrayContaining([target]),
+        offerId: expect.any(String),
+      });
+      expect(body.pattern?.offer).toHaveLength(3);
+    },
+  );
+
+  it('DPF-8 feed pools exclude another feed, old ratings and quality dislikes', async () => {
+    const w = await world({}, 'training');
+    await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+    const otherFeed = await subscribedFeed(h, w.user.id, { mode: 'training' });
+    expect(
+      (await dislike(w, await carriedArticle(h, [otherFeed], { title: TARGET }))).pattern,
+    ).toBeNull();
+    await h.owner.query(
+      "UPDATE user_article SET rated_at = now() - interval '31 days' WHERE user_id = $1 AND rating = -1",
+      [w.user.id],
+    );
+    for (const title of [D1, D2]) {
+      const id = await carriedArticle(h, [w.feed], { title });
+      await rate(w.user.id, id, -1, 1);
+      await h.owner.query(
+        "UPDATE user_article SET reason = 'clickbait' WHERE user_id = $1 AND article_id = $2",
+        [w.user.id, id],
+      );
+    }
+    expect(
+      (await dislike(w, await carriedArticle(h, [w.feed], { title: TARGET }))).pattern,
+    ).toBeNull();
+  });
+
+  it('DPF-8 seen feed cooldowns leave a second feed eligible', async () => {
+    const w = await world({}, 'training');
+    await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+    const target = await carriedArticle(h, [w.feed], { title: TARGET });
+    const first = await dislike(w, target);
+    expect(first.pattern?.kind).toBe('feed');
+    expect(
+      (
+        await w.api.post(`/articles/${target}/pattern-offer`, {
+          offerId: first.pattern?.offerId,
+          event: 'seen',
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect((await dislike(w, await carriedArticle(h, [w.feed], { title: D3 }))).pattern).toBeNull();
+    const otherFeed = await subscribedFeed(h, w.user.id, { mode: 'training' });
+    for (const title of [D1, D2])
+      await rate(w.user.id, await carriedArticle(h, [otherFeed], { title }), -1, 1);
+    expect(
+      (await dislike(w, await carriedArticle(h, [otherFeed], { title: TARGET }))).pattern,
+    ).toMatchObject({ kind: 'feed', feedId: otherFeed });
   });
 
   it('P4 a clickbait reason has no pattern', async () => {

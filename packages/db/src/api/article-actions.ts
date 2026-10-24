@@ -1398,12 +1398,15 @@ async function suggestionContext(
 const PATTERN_OFFER_LOOKBACK_DAYS = 14;
 
 /** The dislike-pattern value of a rating (spec 06 §10): the card, whether it lowers, the offer. */
-export interface DislikePatternValue {
-  cardId: string;
-  lowered: boolean;
-  offer: string[] | null;
-  offerId: string | null;
-}
+export type DislikePatternValue =
+  | {
+      kind: 'card';
+      cardId: string;
+      lowered: boolean;
+      offer: string[] | null;
+      offerId: string | null;
+    }
+  | { kind: 'feed'; feedId: string; offer: string[]; offerId: string };
 
 /** The injected similar-dislikes check and the size of the rating pool it reads. */
 export interface DislikePatternCheck {
@@ -1413,7 +1416,7 @@ export interface DislikePatternCheck {
 }
 
 export interface DislikePatternContext {
-  cardId: string;
+  scopeId: string;
   target: { articleId: string; title: string };
   /** The card's newest ratings of the window, the target's own included. */
   labelled: SimilarFeedbackRow[];
@@ -1517,7 +1520,7 @@ async function dislikePattern(
   check: DislikePatternCheck,
 ): Promise<DislikePatternValue | null> {
   const card = await patternCard(tx, lock.user, article.articleId, config.lanes.maybe, now);
-  if (card === null) return null;
+  if (card === null) return feedDislikePattern(tx, lock, article, now, check);
   const labelled = await loadSimilarFeedback(tx, lock.user, now, {
     minP: config.lanes.maybe,
     windowDays: check.windowDays,
@@ -1525,13 +1528,14 @@ async function dislikePattern(
     cardIds: [card.cardId],
   });
   const judged = check.judge({
-    cardId: card.cardId,
+    scopeId: card.cardId,
     target: { articleId: article.articleId, title: article.title },
     labelled: labelled.get(card.cardId) ?? [],
     now,
   });
   const offer = lock.prefs.exampleSuggestions && !card.offered ? judged.offer : null;
   return {
+    kind: 'card',
     cardId: card.cardId,
     lowered: lock.prefs.demote.similar === 'off' ? false : judged.lowered,
     offer,
@@ -1539,6 +1543,57 @@ async function dislikePattern(
       offer === null
         ? null
         : await insertPatternOffer(tx, lock.user, 'card', card.familyId, offer, now),
+  };
+}
+
+/** Same pool and pure check as card offers, restricted to the lowest-id subscribed carrier. */
+async function feedDislikePattern(
+  tx: TenantTx,
+  lock: ReaderLock,
+  article: LockedArticle,
+  now: Date,
+  check: DislikePatternCheck,
+): Promise<DislikePatternValue | null> {
+  if (!lock.prefs.exampleSuggestions) return null;
+  const carrier = await tx.execute<{ id: string }>(sql`
+    SELECT fi.feed_id::text AS id FROM feed_items fi
+      JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${lock.user}::uuid
+     WHERE fi.article_id = ${article.articleId}::bigint ORDER BY fi.feed_id LIMIT 1`);
+  const feed = carrier.rows[0];
+  if (feed === undefined || (await patternScopeSeen(tx, lock.user, 'feed', feed.id, now)))
+    return null;
+  const since = new Date(now.getTime() - check.windowDays * 86_400_000);
+  const rows = await tx.execute<{
+    article_id: string;
+    title: string | null;
+    rating: number;
+    rated_at: RawTimestamp;
+  }>(sql`
+    SELECT ua.article_id::text AS article_id, a.title, ua.rating, ua.rated_at
+      FROM user_article ua JOIN articles a ON a.id = ua.article_id
+     WHERE ua.user_id = ${lock.user}::uuid AND ua.rating IN (1, -1)
+       AND ua.article_id <> ${article.articleId}::bigint
+       AND ua.rated_at > ${since.toISOString()}::timestamptz AND ua.rated_at <= ${now.toISOString()}::timestamptz
+       AND (ua.rating = 1 OR ua.reason IS NULL OR ua.reason IN ('off_topic', 'other'))
+       AND EXISTS (SELECT 1 FROM feed_items fi WHERE fi.article_id = ua.article_id AND fi.feed_id = ${feed.id}::bigint)
+     ORDER BY ua.rated_at DESC, ua.article_id DESC LIMIT ${check.poolSize}`);
+  const judged = check.judge({
+    scopeId: feed.id,
+    target: { articleId: article.articleId, title: article.title },
+    now,
+    labelled: rows.rows.map((row) => ({
+      articleId: row.article_id,
+      title: row.title,
+      rating: row.rating === 1 ? 1 : -1,
+      ratedAt: toDate(row.rated_at),
+    })),
+  });
+  if (judged.offer === null) return null;
+  return {
+    kind: 'feed',
+    feedId: feed.id,
+    offer: judged.offer,
+    offerId: await insertPatternOffer(tx, lock.user, 'feed', feed.id, judged.offer, now),
   };
 }
 
@@ -1612,7 +1667,13 @@ async function applyRating(
     now: Date;
     config: RankerConfig;
     suggestion?: ExampleSuggestionValue | null;
-    dislikePattern?: { cardId: string; articleIds: string[] } | null;
+    dislikePattern?: {
+      kind: 'card' | 'feed';
+      cardId?: string;
+      feedId?: string;
+      articleIds: string[];
+      offerId: string | null;
+    } | null;
     matchFingerprint?: MatchFingerprint | undefined;
     /** Receives the target's rank-relevant change (S22). */
     changes: ReaderRankChange[];
@@ -1754,7 +1815,14 @@ export async function rateArticle(
       now: input.now,
       config,
       suggestion: offered ? null : suggestion,
-      dislikePattern: offered ? { cardId: pattern.cardId, articleIds: offer } : null,
+      dislikePattern: offered
+        ? {
+            kind: pattern.kind,
+            ...(pattern.kind === 'card' ? { cardId: pattern.cardId } : { feedId: pattern.feedId }),
+            articleIds: offer,
+            offerId: pattern.offerId,
+          }
+        : null,
       matchFingerprint: input.matchFingerprint,
       changes,
     },

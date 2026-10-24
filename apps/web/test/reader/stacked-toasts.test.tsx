@@ -42,7 +42,13 @@ describe('rating toasts', () => {
                 })
               : actionResponse(acked(disliked, { rating: -1, readAt: READ_AT }), {
                   exampleSuggestion: null,
-                  pattern: { cardId: '31', lowered: true, offer: null, offerId: null },
+                  pattern: {
+                    kind: 'card',
+                    cardId: '31',
+                    lowered: true,
+                    offer: null,
+                    offerId: null,
+                  },
                 });
           },
         },

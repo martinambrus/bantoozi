@@ -9,12 +9,14 @@ import {
   bodyOf,
   findToast,
   makeItem,
+  makeMe,
+  makeDetail,
   setVisibility,
   restoreVisibility,
   renderReader,
   type ReaderHarnessOptions,
 } from '../article/harness.js';
-import { cardResult, makeCard } from '../interests/support.js';
+import { cardDraftRoutes, cardResult, makeCard } from '../interests/support.js';
 import { holdExits } from './exit-hold.js';
 import { acked } from './actions/fake-transport.js';
 
@@ -36,6 +38,7 @@ const NOT_NOW = 'Not now';
 const SINGLE_TEACH = 'Teach EV battery tech: not this';
 
 interface Pattern {
+  kind: 'card';
   cardId: string;
   lowered: boolean;
   offer: string[] | null;
@@ -61,6 +64,7 @@ function server(item: ArticleListItem, pattern: Pattern | null, suggestion = fal
         pattern,
       }),
     'POST /articles/:id/pattern-offer': () => json(204, null),
+    'GET /subscriptions': () => json(200, []),
     'GET /cards': () => json(200, [EV, SOLAR] satisfies CardDto[]),
     'POST /cards/:id/examples/batch': () => json(200, cardResult(FORK, { from: '31', to: '35' })),
     'POST /cards/:id/examples': () => json(200, cardResult(FORK, { from: '31', to: '35' })),
@@ -88,6 +92,7 @@ const buttons = (toast: HTMLElement) =>
     .filter((name) => name !== 'Dismiss');
 
 const OFFER: Pattern = {
+  kind: 'card',
   cardId: '31',
   lowered: true,
   offer: ['201', '202'],
@@ -201,8 +206,56 @@ describe('the dislike pattern in the undo toast', () => {
     expect(later).toBeVisible();
   });
 
+  it.each(['on', 'off'] as const)(
+    'DPF-8 opens Never with three examples (estimates %s)',
+    async (estimates) => {
+      holdExits();
+      const item = makeItem();
+      const me = makeMe();
+      const ids = ['101', '201', '202'];
+      const app = renderReader(<Row item={item} />, {
+        me: { ...me, preferences: { ...me.preferences, estimates } },
+        routes: {
+          ...server(item, null),
+          ...cardDraftRoutes(),
+          'GET /topics': () => json(200, []),
+          'GET /articles/:id': (_request, params) =>
+            json(200, makeDetail(makeItem({ id: params['id']!, title: `Parts ${params['id']}` }))),
+          'POST /articles/:id/rating': () =>
+            actionResponse(acked(item, { rating: -1, readAt: READ_AT }), {
+              exampleSuggestion: null,
+              pattern: { kind: 'feed', feedId: '9', offer: ids, offerId: OFFER.offerId },
+            }),
+        },
+      });
+      apps.push(app);
+      await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
+      await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+      const button = await screen.findByRole('button', { name: 'Make a Never card from these' });
+      expect(
+        screen.queryByText('Similar unread articles in this feed will be ranked lower.', {
+          exact: false,
+        }) !== null,
+      ).toBe(estimates === 'on');
+      await app.user.click(button);
+      const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
+      expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
+      await waitFor(() =>
+        expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([
+          { articleIds: ids, kind: 'never' },
+        ]),
+      );
+    },
+  );
+
   it('T3 says the ranking was lowered, with only Undo, when there is no offer', async () => {
-    const app = await dislike({ cardId: '31', lowered: true, offer: null, offerId: null });
+    const app = await dislike({
+      kind: 'card',
+      cardId: '31',
+      lowered: true,
+      offer: null,
+      offerId: null,
+    });
 
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
 
@@ -214,7 +267,7 @@ describe('the dislike pattern in the undo toast', () => {
     ['no pattern', null],
     [
       'a pattern that lowered nothing',
-      { cardId: '31', lowered: false, offer: null, offerId: null },
+      { kind: 'card' as const, cardId: '31', lowered: false, offer: null, offerId: null },
     ],
   ])("T4 keeps today's toast for %s", async (_name, pattern) => {
     const app = await dislike(pattern);
