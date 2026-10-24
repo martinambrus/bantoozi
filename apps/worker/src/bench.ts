@@ -219,6 +219,7 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
       ratingSha: inputs.ratingSha,
       familySha: inputs.familySha,
       families: inputs.families,
+      strict: inputs.strict,
       consent: inputs.consent,
       seedMaterial: `learn:${userId}:${inputs.eligibleSetSha}`,
       feedbackCutoffEventId: inputs.cutoffEventId,
