@@ -37,6 +37,7 @@ export async function rankCovered(tx: TenantTx): Promise<boolean> {
 
 /**
  * A delayed worker intent: identical undelivered work keeps its earliest due time and its lease.
+ * Worker-role only: requires SELECT and UPDATE on job_outbox; the API role has INSERT only.
  * Returns true when work was inserted or brought forward; false when already due no later.
  */
 export async function enqueueDelayedWorkerIntent(
