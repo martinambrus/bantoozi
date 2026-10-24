@@ -169,7 +169,7 @@ describe('health (spec 08 §10)', () => {
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({
         status: 'not_ready',
-        checks: { database: 'unreachable', migrations: 'pending', queues: 'pending' },
+        checks: { database: 'unreachable', migrations: 'pending', queues: 'unknown' },
         missingQueues: [],
       });
       expect(res.body).not.toContain('bantoozi_app');

@@ -80,7 +80,8 @@
                           "enum": [
                             "ok",
                             "pending",
-                            "unreachable"
+                            "unreachable",
+                            "unknown"
                           ]
                         },
                         "migrations": {
@@ -88,7 +89,8 @@
                           "enum": [
                             "ok",
                             "pending",
-                            "unreachable"
+                            "unreachable",
+                            "unknown"
                           ]
                         },
                         "queues": {
@@ -96,7 +98,8 @@
                           "enum": [
                             "ok",
                             "pending",
-                            "unreachable"
+                            "unreachable",
+                            "unknown"
                           ]
                         }
                       },
@@ -146,7 +149,8 @@
                           "enum": [
                             "ok",
                             "pending",
-                            "unreachable"
+                            "unreachable",
+                            "unknown"
                           ]
                         },
                         "migrations": {
@@ -154,7 +158,8 @@
                           "enum": [
                             "ok",
                             "pending",
-                            "unreachable"
+                            "unreachable",
+                            "unknown"
                           ]
                         },
                         "queues": {
@@ -162,7 +167,8 @@
                           "enum": [
                             "ok",
                             "pending",
-                            "unreachable"
+                            "unreachable",
+                            "unknown"
                           ]
                         }
                       },

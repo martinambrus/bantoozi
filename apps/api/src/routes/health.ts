@@ -12,11 +12,11 @@ export interface HealthRoutesOptions {
   journal: MigrationJournal;
 }
 
-type ReadyCheck = 'ok' | 'pending' | 'unreachable';
+type ReadyCheck = 'ok' | 'pending' | 'unreachable' | 'unknown';
 
 const TAGS = ['health'];
 const HealthResponseSchema = z.object({ status: z.literal('ok') });
-const ReadyCheckSchema = z.enum(['ok', 'pending', 'unreachable']);
+const ReadyCheckSchema = z.enum(['ok', 'pending', 'unreachable', 'unknown']);
 const ReadyResponseSchema = z.object({
   status: z.enum(['ready', 'not_ready']),
   checks: z.object({
@@ -76,7 +76,7 @@ export async function healthRoutes(
     async (request, reply) => {
       let database: ReadyCheck = 'ok';
       let migrations: ReadyCheck = 'pending';
-      let queues: ReadyCheck = 'pending';
+      let queues: ReadyCheck = 'unknown';
       let missingQueues: string[] = [];
       try {
         const status = await migrationStatus(options.db, options.journal);

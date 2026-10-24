@@ -77,3 +77,15 @@ describe('readiness queue query cache', () => {
     expect(queries.queues).toHaveBeenCalledTimes(3);
   });
 });
+
+it('reports queue readiness as unknown when the database cannot be reached', async () => {
+  queries.migrations.mockRejectedValue(new Error('connection refused'));
+  const response = await probe();
+  expect(response.statusCode).toBe(503);
+  expect(response.json()).toEqual({
+    status: 'not_ready',
+    checks: { database: 'unreachable', migrations: 'pending', queues: 'unknown' },
+    missingQueues: [],
+  });
+  expect(queries.queues).not.toHaveBeenCalled();
+});
