@@ -159,6 +159,48 @@ describe('the dislike pattern in the undo toast', () => {
     ]);
   });
 
+  it('DPF-7 a later rating keeps the sticky offer visible and its undo separate', async () => {
+    holdExits();
+    const first = makeItem();
+    const second = makeItem({ id: '102' });
+    const legacyOffer = OFFER;
+    const app = renderReader(
+      <>
+        <Row item={first} />
+        <Row item={second} />
+      </>,
+      {
+        routes: {
+          ...server(first, legacyOffer),
+          'POST /articles/:id/rating': (_request, params) =>
+            params['id'] === first.id
+              ? actionResponse(acked(first, { rating: -1, readAt: READ_AT }), {
+                  exampleSuggestion: null,
+                  pattern: legacyOffer,
+                })
+              : actionResponse(acked(second, { rating: 1, readAt: READ_AT }), {
+                  exampleSuggestion: null,
+                  pattern: null,
+                }),
+        },
+      },
+    );
+    apps.push(app);
+    await app.user.click(screen.getAllByRole('button', { name: 'Dislike' })[0]!);
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+    const offer = await findToast(`${DISLIKED} ${LOWERED}`);
+    await app.user.click(screen.getAllByRole('button', { name: 'Like' })[1]!);
+    const later = await findToast('Marked as liked');
+    expect(offer).toBeVisible();
+    expect(within(offer).getByRole('button', { name: SHOW_FEWER })).toBeVisible();
+    expect(offer.dataset['toastId']).not.toBe(later.dataset['toastId']);
+    expect(
+      app.toasts.getSnapshot().find((t) => t.id === offer.dataset['toastId'])?.durationMs,
+    ).toBeNull();
+    await app.user.click(within(offer).getByRole('button', { name: NOT_NOW }));
+    expect(later).toBeVisible();
+  });
+
   it('T3 says the ranking was lowered, with only Undo, when there is no offer', async () => {
     const app = await dislike({ cardId: '31', lowered: true, offer: null, offerId: null });
 
