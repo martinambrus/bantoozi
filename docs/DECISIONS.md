@@ -3368,3 +3368,13 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   runs even if an earlier one fails, and every shutdown path ends within 115 s (compose grace 120 s). A hard kill still
   relies on lease expiry. `article.enrich.laya` leaves the stale-guarded set until M9 implements it (its queue options
   are unchanged).
+- D-328: 2026-10-24 (FNF-VL-17, task #39; D-302/D-318 leftovers) — Call-kind invariants and the Admin spend tile. Tests now
+  fail when the settlement path writes a budget alert for an exempt (eval) settle or misses a production settle
+  crossing 80 %, when the routes literal does not cover exactly `CALL_KINDS`, and when a `budgetExempt` kind has no
+  own authorization. The Admin overview's "spend today" counts only budgeted kinds (credential and model probes stay
+  budgeted, as in the spend guard) and shows the exempt spend separately when positive (`exemptSpendTodayUsd`,
+  defaulting to 0 so a newer web parses an older API; an older cached bundle rejects the new key until the D-163 reload
+  bar). Both are settled totals from `usage_daily`; the guard also counts reserved and uncertain amounts. `spendSince`
+  (no production caller) is gone, probes are recorded with their own kind through `EngineAdapterRequest`, router and
+  test exclusions derive from the table and are readonly. `engine_reservations.kind` still has no CHECK (needs a
+  migration, task #46).
