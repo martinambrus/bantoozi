@@ -1593,7 +1593,8 @@
         "reserved_calls > 0",
         "status IN ('reserved','settled','uncertain')",
         "actual_usd >= 0",
-        "(status = 'settled') = (settled_at IS NOT NULL)"
+        "(status = 'settled') = (settled_at IS NOT NULL)",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
       ],
       "foreignKeys": [
         {
@@ -1613,10 +1614,7 @@
           "definition": "(expires_at) WHERE status = 'reserved'"
         }
       },
-      "rls": false,
-      "notValidChecks": [
-        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
-      ]
+      "rls": false
     },
     "engine_calls": {
       "columns": {
@@ -2543,13 +2541,16 @@
       },
       "primaryKey": ["day", "user_id", "engine", "kind"],
       "unique": [],
-      "checks": ["calls >= 0", "input_tokens >= 0", "output_tokens >= 0", "cost_usd >= 0"],
+      "checks": [
+        "calls >= 0",
+        "input_tokens >= 0",
+        "output_tokens >= 0",
+        "cost_usd >= 0",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+      ],
       "foreignKeys": [],
       "indexes": {},
-      "rls": false,
-      "notValidChecks": [
-        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
-      ]
+      "rls": false
     },
     "job_outbox": {
       "columns": {

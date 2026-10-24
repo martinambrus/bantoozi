@@ -1,8 +1,12 @@
--- These ledgers previously accepted arbitrary kinds, including legacy values.
--- Preserve historical rows; enforce the current CALL_KINDS list on new/updated rows.
--- NOT VALID avoids scanning either ledger under the ADD CONSTRAINT lock.
+-- Application writers have only used current CALL_KINDS; audit both ledgers before deploy.
+-- Add then validate so unexpected historical kinds abort this migration, before they can
+-- break settlement or account erasure. The ADD locks remain held during validation.
 ALTER TABLE "engine_reservations" ADD CONSTRAINT "engine_reservations_kind_check" CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')) NOT VALID;--> statement-breakpoint
 ALTER TABLE "usage_daily" ADD CONSTRAINT "usage_daily_kind_check" CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "engine_reservations" VALIDATE CONSTRAINT "engine_reservations_kind_check";
+--> statement-breakpoint
+ALTER TABLE "usage_daily" VALIDATE CONSTRAINT "usage_daily_kind_check";
 
 --> statement-breakpoint
 -- The API has no direct reservation grant. Expose only the same aggregate used by

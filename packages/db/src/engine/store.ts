@@ -134,7 +134,7 @@ function assertDay(day: string): void {
   }
 }
 
-function assertKind(kind: string): asserts kind is CallKind {
+export function assertKind(kind: string): asserts kind is CallKind {
   if (!(CALL_KINDS as readonly string[]).includes(kind)) throw new RangeError('unknown call kind');
 }
 
