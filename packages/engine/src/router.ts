@@ -1,5 +1,6 @@
 import {
   ASK_KINDS,
+  BUDGET_EXEMPT_KINDS,
   conservativeRequestTokens,
   demandBasisOf,
   isAppError,
@@ -1204,7 +1205,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         metadata('typesafe'),
         metadata('ollama'),
         breaker.states(),
-        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: ['eval'] }),
+        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: [...BUDGET_EXEMPT_KINDS] }),
         budgetUsd(),
       ]);
       return {
@@ -1221,7 +1222,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       if (!Number.isFinite(estimateUsd) || estimateUsd < 0) return false;
       if (evalBudget !== undefined) return estimateUsd <= evalBudget.remainingUsd + USD_EPSILON;
       const [snapshot, budget] = await Promise.all([
-        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: ['eval'] }),
+        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: [...BUDGET_EXEMPT_KINDS] }),
         budgetUsd(),
       ]);
       return admitsSpend({

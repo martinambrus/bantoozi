@@ -512,6 +512,21 @@ describe('reserveSpend and settleReservation (spec 04 §6)', () => {
 });
 
 describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
+  it('charges non-live model probes to the production budget', async () => {
+    const day = freshDay();
+    const s = store(0.5);
+    const authorization: InferenceAuthorization = { type: 'model_probe', model: 'jev-latest' };
+    expect(
+      await s.reserveSpend(
+        reserveInput(day, authorization, { kind: 'model_probe', estimateUsd: 0.5 }),
+      ),
+    ).not.toBeNull();
+    expect(
+      await s.reserveSpend(
+        reserveInput(day, authorization, { kind: 'model_probe', estimateUsd: 0.01 }),
+      ),
+    ).toBeNull();
+  });
   it('lets concurrent reservations of two connections never exceed the budget', async () => {
     const demand = await automaticDemand();
     const day = freshDay();

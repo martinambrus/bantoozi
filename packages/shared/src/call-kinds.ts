@@ -11,6 +11,8 @@ import type { CallKind, InferenceAuthorization } from './ports.js';
 export interface CallKindProfile {
   /** API entry points. Eval is accepted by both, under an eval router's invocation cap. */
   route: 'ask' | 'external' | 'both';
+  /** Production-budget exemption (D-64). Non-live synthetic probes still pay, so live is separate. */
+  budgetExempt: boolean;
   /**
    * Classification work. These kinds share an engine's daily call cap (spec 04 §6) and are the only
    * calls the engine alerts count (spec 11 §6.1, D-272).
@@ -31,25 +33,38 @@ export interface CallKindProfile {
 }
 
 export const CALL_KIND_PROFILES = {
-  enrich: { route: 'ask', decision: true, live: true },
-  match: { route: 'ask', decision: true, live: true },
-  cluster: { route: 'ask', decision: true, live: true },
-  suggest: { route: 'ask', decision: true, live: true },
+  enrich: { route: 'ask', budgetExempt: false, decision: true, live: true },
+  match: { route: 'ask', budgetExempt: false, decision: true, live: true },
+  cluster: { route: 'ask', budgetExempt: false, decision: true, live: true },
+  suggest: { route: 'ask', budgetExempt: false, decision: true, live: true },
   /** Tier-2 (LLM) translation. LibreTranslate calls are `translate` too, and not live by engine. */
-  translate: { route: 'external', decision: false, live: true },
+  translate: { route: 'external', budgetExempt: false, decision: false, live: true },
   /** Evaluation spend: exempt from the production budget, admitted only by an eval router (D-64). */
-  eval: { route: 'both', decision: false, live: false, authorization: 'eval' },
+  eval: { route: 'both', budgetExempt: true, decision: false, live: false, authorization: 'eval' },
   /** Key validation: synthetic, fails on purpose, bound to its validation lease (D-63, D-90). */
   credential_probe: {
     route: 'external',
+    budgetExempt: false,
     decision: false,
     live: false,
     authorization: 'credential_probe',
   },
   /** A person's own request for a card draft, billed under the daily budget; the pending draft is its demand (D-240). */
-  card_draft: { route: 'external', decision: false, live: true, authorization: 'card_draft' },
+  card_draft: {
+    route: 'external',
+    budgetExempt: false,
+    decision: false,
+    live: true,
+    authorization: 'card_draft',
+  },
   /** One synthetic request about a model id: no reader data and no demand (D-273). */
-  model_probe: { route: 'external', decision: false, live: false, authorization: 'model_probe' },
+  model_probe: {
+    route: 'external',
+    budgetExempt: false,
+    decision: false,
+    live: false,
+    authorization: 'model_probe',
+  },
 } as const satisfies Readonly<Record<CallKind, CallKindProfile>>;
 
 /** Every call kind, in table order. */
@@ -72,6 +87,11 @@ export type ExternalCallKind = KindsForRoute<'external'>;
 /** The runtime ask guard uses the same classification as EngineRequest.kind. */
 export const ASK_KINDS: readonly AskCallKind[] = CALL_KINDS.filter(
   (kind): kind is AskCallKind => CALL_KIND_PROFILES[kind].route !== 'external',
+);
+
+/** Kinds omitted from production-budget admission, status and alert crossings. */
+export const BUDGET_EXEMPT_KINDS: readonly CallKind[] = kindsWhere(
+  (profile) => profile.budgetExempt,
 );
 
 /** The classification kinds: enrich, match, cluster and suggest. */
