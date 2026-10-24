@@ -828,6 +828,8 @@ describe('the feed settings', () => {
 
       const enable = within(sheet).getByRole('button', { name: 'Enable automatic classification' });
       await app.user.click(enable);
+      await waitFor(() => expect(app.calls(SET_INFERENCE)).toHaveLength(1));
+      expect(enable).toHaveAttribute('aria-disabled', 'true');
       await app.user.click(enable);
 
       expect(app.calls(SET_INFERENCE)).toHaveLength(1);
