@@ -124,6 +124,7 @@ beforeEach(() => {
     statusOverride: undefined,
     latencyMs: 0,
     apiKey: KEY,
+    models: undefined,
   });
 });
 
@@ -715,6 +716,20 @@ describe('spec 04 §8 post-processing', () => {
   });
 
   describe('HTTP statuses (spec 04 §3 table)', () => {
+    it('maps a model missing from the fake models table to model_unavailable', async () => {
+      fake.setOptions({ models: { 'glm-5.3': 'glm-5.3' } });
+      expect(await ask(llm())).toEqual({
+        ok: false,
+        status: 'error',
+        retryable: false,
+        detail: 'model_unavailable:http_404',
+        billing: 'known',
+      });
+      expect(fake.requests).toHaveLength(1);
+      fake.setOptions({ models: { [MODEL]: MODEL } });
+      expect(await ask(llm())).toMatchObject({ ok: true });
+    });
+
     it('401: auth_error', async () => {
       fake.setOptions({ apiKey: 'another-key' });
       expect(await ask(llm())).toEqual({
