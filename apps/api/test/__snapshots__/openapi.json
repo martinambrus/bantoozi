@@ -19554,7 +19554,8 @@
                         },
                         "spendTodayUsd": {
                           "type": "number",
-                          "minimum": 0
+                          "minimum": 0,
+                          "description": "Committed production spend for the UTC budget day: settled actual costs plus reserved and uncertain amounts, excluding budget-exempt kinds. Matches the engine budget guard."
                         },
                         "exemptSpendTodayUsd": {
                           "default": 0,

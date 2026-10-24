@@ -1,9 +1,9 @@
-import { PLATFORM_USER_ID, type CallKind } from '@bantoozi/shared';
+import { PLATFORM_USER_ID } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
 import { cancelRetentionExpired } from '../classify/analysis.js';
-import { upsertUsageRow } from '../engine/store.js';
+import { assertKind, upsertUsageRow } from '../engine/store.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { purgeDeliveredOutbox } from '../outbox.js';
 import { daysBefore } from './snapshots.js';
@@ -69,6 +69,7 @@ export async function settleUncertainReservations(
      ORDER BY r.day, r.id LIMIT ${input.limit} FOR UPDATE OF r SKIP LOCKED`);
   let settled = 0;
   for (const row of found.rows) {
+    assertKind(row.kind);
     const updated = await tx.execute(sql`
       UPDATE engine_reservations
          SET status = 'settled', actual_usd = reserved_usd, settled_at = ${input.now.toISOString()}::timestamptz
@@ -78,7 +79,7 @@ export async function settleUncertainReservations(
       day: row.day,
       userId: row.reservation_user ?? row.call_user ?? PLATFORM_USER_ID,
       engine: row.engine,
-      kind: row.kind as CallKind,
+      kind: row.kind,
       calls: row.has_call ? 0 : row.reserved_calls,
       inputTokens: 0,
       outputTokens: 0,

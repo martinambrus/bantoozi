@@ -75,10 +75,11 @@ export const AdminOverviewSchema = z
     engine: z
       .object({
         breakers: z.object({ typesafe: AdminBreakerSchema, llm: AdminBreakerSchema }).strict(),
-        /** Settled spend for kinds charged to the production budget, including synthetic probes. */
-        spendTodayUsd: Usd,
+        spendTodayUsd: Usd.describe(
+          'Committed production spend for the UTC budget day: settled actual costs plus reserved and uncertain amounts, excluding budget-exempt kinds. Matches the engine budget guard.',
+        ),
         /**
-         * Settled spend for kinds exempt from the production budget (currently evaluation). Defaults
+         * Settled-only spend for kinds exempt from the production budget (currently evaluation). Defaults
          * to 0 so a newer web client still parses an older API's response (D-272 precedent).
          */
         exemptSpendTodayUsd: Usd.default(0),

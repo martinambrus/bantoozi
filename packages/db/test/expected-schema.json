@@ -1593,7 +1593,8 @@
         "reserved_calls > 0",
         "status IN ('reserved','settled','uncertain')",
         "actual_usd >= 0",
-        "(status = 'settled') = (settled_at IS NOT NULL)"
+        "(status = 'settled') = (settled_at IS NOT NULL)",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
       ],
       "foreignKeys": [
         {
@@ -2540,7 +2541,13 @@
       },
       "primaryKey": ["day", "user_id", "engine", "kind"],
       "unique": [],
-      "checks": ["calls >= 0", "input_tokens >= 0", "output_tokens >= 0", "cost_usd >= 0"],
+      "checks": [
+        "calls >= 0",
+        "input_tokens >= 0",
+        "output_tokens >= 0",
+        "cost_usd >= 0",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+      ],
       "foreignKeys": [],
       "indexes": {},
       "rls": false
@@ -5091,6 +5098,15 @@
       "securityDefiner": false,
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": []
+    },
+    "admin_committed_spend": {
+      "args": "p_day date, p_exclude_kinds text[]",
+      "result": "numeric",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
     }
   },
   "triggers": {

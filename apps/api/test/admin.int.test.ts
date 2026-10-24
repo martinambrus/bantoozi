@@ -562,6 +562,10 @@ describe('engine operations (spec 08 §9)', () => {
               ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'typesafe', 'eval', 1, 1.5)
        ON CONFLICT DO NOTHING`,
     );
+    await h.owner.query(`INSERT INTO engine_reservations
+      (id, day, engine, kind, reserved_usd, status, actual_usd, settled_at, expires_at)
+      SELECT gen_random_uuid(), day, engine, kind, cost_usd, 'settled', cost_usd, now(), now()
+        FROM usage_daily WHERE day = (now() AT TIME ZONE 'UTC')::date AND cost_usd > 0`);
     const res = await apiClient(h.server, admin).get('/admin/overview');
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -578,11 +582,43 @@ describe('engine operations (spec 08 §9)', () => {
     );
   });
 
+  it('overview counts committed production spend on its UTC budget day', async () => {
+    await h.owner.query(`DELETE FROM engine_reservations; DELETE FROM usage_daily`);
+    // Settled actual, in-flight and uncertain billing all consume the guard's budget.
+    // created_at deliberately differs from day; eval and yesterday never consume today's cap.
+    await h.owner.query(`
+      INSERT INTO engine_reservations
+        (id, day, engine, kind, reserved_usd, status, actual_usd, settled_at, expires_at, created_at)
+      SELECT gen_random_uuid(), (now() AT TIME ZONE 'UTC')::date + x.day_offset,
+             'llm', x.kind, x.reserve, x.status, x.actual,
+             CASE WHEN x.status = 'settled' THEN now() END, now() + interval '10 minutes',
+             now() - interval '1 day'
+        FROM (VALUES
+          (0, 'enrich', 0.8, 'settled', 0.25),
+          (0, 'card_draft', 0.4, 'reserved', NULL),
+          (0, 'credential_probe', 0.3, 'uncertain', NULL),
+          (0, 'model_probe', 0.1, 'reserved', NULL),
+          (0, 'eval', 9.0, 'settled', 8.0),
+          (0, 'eval', 7.0, 'reserved', NULL),
+          (-1, 'match', 6.0, 'uncertain', NULL)
+        ) AS x(day_offset, kind, reserve, status, actual)`);
+    await h.owner.query(`
+      INSERT INTO usage_daily (day, user_id, engine, kind, calls, cost_usd)
+      VALUES ((now() AT TIME ZONE 'UTC')::date,
+              '00000000-0000-0000-0000-000000000000', 'llm', 'enrich', 1, 0.25),
+             ((now() AT TIME ZONE 'UTC')::date,
+              '00000000-0000-0000-0000-000000000000', 'llm', 'eval', 1, 8)`);
+    const res = await apiClient(h.server, admin).get('/admin/overview');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().engine.spendTodayUsd).toBeCloseTo(1.05, 8);
+    expect(res.json().engine.exemptSpendTodayUsd).toBeCloseTo(8, 8);
+  });
+
   it('usage uses admin_usage_attribution and validates days 1..90', async () => {
     const spender = await createUser(h.owner);
     await h.owner.query(
       `INSERT INTO usage_daily (day, user_id, engine, kind, calls, cost_usd)
-       VALUES ((now() AT TIME ZONE 'UTC')::date - 1, $1, 'typesafe', 'backfill', 5, 1.5)`,
+       VALUES ((now() AT TIME ZONE 'UTC')::date - 1, $1, 'typesafe', 'match', 5, 1.5)`,
       [spender.id],
     );
     const res = await apiClient(h.server, admin).get('/admin/usage', { query: { days: '7' } });
@@ -597,7 +633,7 @@ describe('engine operations (spec 08 §9)', () => {
       totalUsd: 1.5,
     });
     expect(body.daily).toContainEqual(
-      expect.objectContaining({ engine: 'typesafe', kind: 'backfill', calls: 5, costUsd: 1.5 }),
+      expect.objectContaining({ engine: 'typesafe', kind: 'match', calls: 5, costUsd: 1.5 }),
     );
     for (const days of ['0', '91', 'x']) {
       const bad = await apiClient(h.server, admin).get('/admin/usage', { query: { days } });

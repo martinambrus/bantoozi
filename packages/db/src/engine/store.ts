@@ -134,7 +134,7 @@ function assertDay(day: string): void {
   }
 }
 
-function assertKind(kind: string): asserts kind is CallKind {
+export function assertKind(kind: string): asserts kind is CallKind {
   if (!(CALL_KINDS as readonly string[]).includes(kind)) throw new RangeError('unknown call kind');
 }
 
@@ -178,9 +178,7 @@ async function dailyBudgetUsd(db: Executor, fallbackUsd: number): Promise<number
 /** Committed production spend of a UTC day: settled actual plus reserved/uncertain reserves. */
 async function committedProductionUsd(db: Executor, day: string): Promise<number> {
   const result = await db.execute<{ usd: string }>(sql`
-    SELECT coalesce(sum(CASE WHEN r.status = 'settled' THEN r.actual_usd ELSE r.reserved_usd END), 0)::text AS usd
-      FROM engine_reservations r
-     WHERE r.day = ${day}::date AND NOT (r.kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[]))`);
+    SELECT admin_committed_spend(${day}::date, ${sql.param([...BUDGET_EXEMPT_KINDS])}::text[])::text AS usd`);
   return Number(result.rows[0]?.usd ?? '0');
 }
 

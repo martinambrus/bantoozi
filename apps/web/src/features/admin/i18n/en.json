@@ -29,8 +29,9 @@
         "paused": "Paused: {{value}}"
       },
       "articles": "Articles today",
+      "committedSpend": "Includes settled costs, in-flight reservations and uncertain billing; excludes evaluation spend.",
       "spend": "Spend today",
-      "exemptSpend": "plus {{value}} evaluation spend",
+      "exemptSpend": "plus {{value}} evaluation spend (settled costs only)",
       "llm": "LLM calls today",
       "tier2": "Tier-2 translations today",
       "ofCap": "{{used}} of {{cap}}"

@@ -20,14 +20,51 @@ afterAll(async () => {
 });
 
 describe('call kinds in the database', () => {
-  it('engine_calls_kind_check lists exactly the kinds of the table', async () => {
-    const { rows } = await ctx.owner.query<{ def: string }>(
-      `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'engine_calls_kind_check'`,
-    );
-    expect(rows).toHaveLength(1);
-    const literals = [...rows[0]!.def.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!);
-    expect([...new Set(literals)].sort()).toEqual([...CALL_KINDS].sort());
-  });
+  it.each(['engine_calls', 'engine_reservations', 'usage_daily'])(
+    '%s kind CHECK lists exactly the kinds of the table',
+    async (table) => {
+      const { rows } = await ctx.owner.query<{ def: string }>(
+        `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+        WHERE conrelid = $1::regclass AND conname = $2`,
+        [table, `${table}_kind_check`],
+      );
+      expect(rows).toHaveLength(1);
+      const literals = [...rows[0]!.def.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!);
+      expect([...new Set(literals)].sort()).toEqual([...CALL_KINDS].sort());
+    },
+  );
+
+  it.each(['engine_calls', 'engine_reservations', 'usage_daily'])(
+    '%s rejects unknown kinds and admits every current kind',
+    async (table) => {
+      const insert = (kind: string) => {
+        if (table === 'engine_reservations') {
+          return ctx.workerPool.query(
+            `INSERT INTO engine_reservations (id, day, engine, kind, reserved_usd, status, expires_at)
+             VALUES ($1, '2035-01-01', 'llm', $2, 0, 'reserved', now() + interval '1 minute')`,
+            [randomUUID(), kind],
+          );
+        }
+        if (table === 'usage_daily') {
+          return ctx.workerPool.query(
+            `INSERT INTO usage_daily (day, user_id, engine, kind)
+             VALUES ('2035-01-01', $1, 'llm', $2)`,
+            [randomUUID(), kind],
+          );
+        }
+        return ctx.workerPool.query(
+          `INSERT INTO engine_calls (engine, kind, logical_request_id, status)
+           VALUES ('llm', $1, $2, 'ok')`,
+          [kind, randomUUID()],
+        );
+      };
+      await expect(insert('unknown_kind')).rejects.toMatchObject({
+        code: '23514',
+        constraint: `${table}_kind_check`,
+      });
+      for (const kind of CALL_KINDS) await insert(kind);
+    },
+  );
 
   it('admits a card draft only under its own authorization, with a pending draft', async () => {
     const store = createPgEngineStore(ctx.worker, { dailyBudgetUsd: 2 });

@@ -29,8 +29,9 @@
         "paused": "Pozastavené: {{value}}"
       },
       "articles": "Články dnes",
+      "committedSpend": "Zahŕňa vyúčtované náklady, prebiehajúce rezervácie a neisté účtovanie; nezahŕňa výdavky na vyhodnocovanie.",
       "spend": "Výdavky dnes",
-      "exemptSpend": "navyše {{value}} za vyhodnocovanie",
+      "exemptSpend": "navyše {{value}} za vyhodnocovanie (iba vyúčtované náklady)",
       "llm": "Volania LLM dnes",
       "tier2": "Preklady 2. úrovne dnes",
       "ofCap": "{{used}} z {{cap}}"

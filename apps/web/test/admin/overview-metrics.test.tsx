@@ -119,8 +119,8 @@ describe('overview metrics (spec 10 §7, M8-T4)', () => {
 
 describe('overview budgeted spend', () => {
   it.each([
-    ['en', 'Spend today', /plus .*1[.,]50.* evaluation spend/i],
-    ['sk', 'Výdavky dnes', /navyše .*1[.,]50.* vyhodnocovanie/i],
+    ['en', 'Spend today', /plus .*1[.,]50.* evaluation spend \(settled costs only\)/i],
+    ['sk', 'Výdavky dnes', /navyše .*1[.,]50.* vyhodnocovanie \(iba vyúčtované náklady\)/i],
   ] as const)('separates exempt spend from the budget (%s)', async (language, label, words) => {
     const overview = makeOverview();
     await guard(
@@ -148,6 +148,6 @@ describe('overview budgeted spend', () => {
   it('omits the exempt spend note when it is zero', async () => {
     await open('en', null);
     await screen.findByRole('group', { name: 'Spend today' });
-    expect(screen.queryByText(/evaluation spend/i)).toBeNull();
+    expect(screen.queryByText(/plus .*evaluation spend/i)).toBeNull();
   });
 });

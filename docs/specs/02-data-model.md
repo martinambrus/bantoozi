@@ -641,7 +641,7 @@ CREATE TABLE engine_reservations (
   id              uuid PRIMARY KEY,              -- one reservation per outbound wire attempt
   day             date NOT NULL,                 -- UTC budget day
   engine          text NOT NULL,
-  kind            text NOT NULL,
+  kind            text NOT NULL,                 -- CHECK: CALL_KINDS (0038, D-333)
   user_id         uuid NULL REFERENCES users(id) ON DELETE SET NULL,
   reserved_usd    numeric(14,8) NOT NULL CHECK (reserved_usd >= 0),
   reserved_calls  int NOT NULL DEFAULT 1 CHECK (reserved_calls > 0),
@@ -806,7 +806,7 @@ CREATE TABLE usage_daily (                        -- cost attribution rollup (sp
   day            date NOT NULL,
   user_id        uuid NOT NULL,                   -- '00000000-0000-0000-0000-000000000000' = platform
   engine         text NOT NULL,
-  kind           text NOT NULL,
+  kind           text NOT NULL,                   -- CHECK: CALL_KINDS (0038, D-333)
   calls          int NOT NULL DEFAULT 0 CHECK (calls >= 0),
   input_tokens   bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
   output_tokens  bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),

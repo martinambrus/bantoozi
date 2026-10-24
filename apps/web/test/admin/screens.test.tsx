@@ -82,8 +82,29 @@ describe('overview (spec 09 §8)', () => {
     }
     expect(inGroup('Articles today').getByText('57')).toBeVisible();
     expect(inGroup('Spend today').getByText('$1.20 of $5.00')).toBeVisible();
+    expect(
+      inGroup('Spend today').getByText(
+        'Includes settled costs, in-flight reservations and uncertain billing; excludes evaluation spend.',
+      ),
+    ).toBeVisible();
     expect(inGroup('LLM calls today').getByText('12 of 200')).toBeVisible();
     expect(inGroup('Tier-2 translations today').getByText('40 of 300')).toBeVisible();
+  });
+
+  it('explains committed spend in Slovak', async () => {
+    guard(
+      await renderApp({
+        path: '/admin',
+        language: 'sk',
+        server: { me: adminMe(), routes: adminRoutes() },
+      }),
+    );
+    const spend = within(await screen.findByRole('group', { name: 'Výdavky dnes' }));
+    expect(
+      spend.getByText(
+        'Zahŕňa vyúčtované náklady, prebiehajúce rezervácie a neisté účtovanie; nezahŕňa výdavky na vyhodnocovanie.',
+      ),
+    ).toBeVisible();
   });
 
   it('lists the queue depths and the translations of the last 24 hours', async () => {

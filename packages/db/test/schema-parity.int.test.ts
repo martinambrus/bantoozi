@@ -30,6 +30,7 @@ interface ExpectedTable {
   primaryKey: string[];
   unique: string[][];
   checks: string[];
+  notValidChecks?: string[];
   foreignKeys: {
     columns: string[];
     references: string;
@@ -129,6 +130,9 @@ function expectedDdl(schema: string): string[] {
     statements.push(`CREATE TABLE ${schema}.${name} (${parts.join(', ')})`);
   }
   for (const [name, table] of Object.entries(expected.tables)) {
+    for (const check of table.notValidChecks ?? []) {
+      statements.push(`ALTER TABLE ${schema}.${name} ADD CHECK (${check}) NOT VALID`);
+    }
     for (const fk of table.foreignKeys) {
       const target = /^(\w+)\((.+)\)$/.exec(fk.references);
       if (target === null) throw new Error(`bad FK target ${fk.references}`);
