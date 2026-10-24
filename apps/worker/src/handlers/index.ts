@@ -247,6 +247,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
               logger: deps.logger,
               ...(deps.now === undefined ? {} : { now: deps.now }),
               ...providerValidation,
+              ...(deps.leases === undefined ? {} : { leases: deps.leases }),
             }),
           ),
           'engine.model-probe': implemented(

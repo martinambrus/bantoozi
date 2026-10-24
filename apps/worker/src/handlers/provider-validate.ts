@@ -1,6 +1,7 @@
 import {
   claimCredentialValidation,
   completeCredentialValidation,
+  releaseCredentialValidation,
   type Database,
   type ValidationResult,
 } from '@bantoozi/db';
@@ -33,6 +34,7 @@ import {
 } from '@bantoozi/shared';
 import { sha256Hex, type Config, type CredentialResolver } from '@bantoozi/shared/server';
 
+import { acquireProcessLease, type ProcessLeases } from '../process-leases.js';
 import { providerConfigFingerprint } from '../credentials/fingerprint.js';
 import type { CredentialProvider } from '../credentials/resolver.js';
 import type { HandlerLogger } from './deps.js';
@@ -113,6 +115,7 @@ export type ProviderProbeConfig = Pick<
 
 export interface ProviderValidateDeps {
   db: Database;
+  leases?: ProcessLeases;
   /** The worker's router: reserves and records every probe attempt (spend guard, audit). */
   router: EngineRouter;
   /** The worker's credential resolver (`useCandidate`). */
@@ -482,7 +485,19 @@ export function createProviderValidateHandler(
 
   return async (payload) => {
     const { provider, candidateVersion } = payload;
-    const claim = await claimCredentialValidation(db, { provider, candidateVersion, leaseMs });
+    const claim = await acquireProcessLease(
+      deps.leases,
+      () => claimCredentialValidation(db, { provider, candidateVersion, leaseMs }),
+      (value) =>
+        value === null
+          ? undefined
+          : () =>
+              releaseCredentialValidation(db, {
+                provider,
+                candidateVersion,
+                validationToken: value.validationToken,
+              }),
+    );
     if (claim === null) {
       logger.info(
         { provider, candidateVersion },
@@ -490,40 +505,44 @@ export function createProviderValidateHandler(
       );
       return;
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), abortAfterMs);
-    let outcome: ValidationResult | null;
     try {
-      outcome = await probe(provider, candidateVersion, claim.validationToken, controller.signal);
-    } finally {
-      clearTimeout(timer);
-    }
-    if (outcome === null) {
-      logger.info(
-        { provider, candidateVersion },
-        'provider validation stopped: the lease was lost',
-      );
-      return;
-    }
-    const recorded = await completeCredentialValidation(db, {
-      provider,
-      candidateVersion,
-      validationToken: claim.validationToken,
-      result: outcome,
-    });
-    logger.info(
-      {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), abortAfterMs);
+      let outcome: ValidationResult | null;
+      try {
+        outcome = await probe(provider, candidateVersion, claim.validationToken, controller.signal);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (outcome === null) {
+        logger.info(
+          { provider, candidateVersion },
+          'provider validation stopped: the lease was lost',
+        );
+        return;
+      }
+      const recorded = await completeCredentialValidation(db, {
         provider,
         candidateVersion,
-        status: outcome.status,
-        errorCode: outcome.errorCode ?? null,
-        attempts: outcome.validation.attempts ?? 0,
-        recorded,
-      },
-      recorded
-        ? 'provider credential validation recorded'
-        : 'provider validation result discarded: the lease was lost',
-    );
+        validationToken: claim.validationToken,
+        result: outcome,
+      });
+      logger.info(
+        {
+          provider,
+          candidateVersion,
+          status: outcome.status,
+          errorCode: outcome.errorCode ?? null,
+          attempts: outcome.validation.attempts ?? 0,
+          recorded,
+        },
+        recorded
+          ? 'provider credential validation recorded'
+          : 'provider validation result discarded: the lease was lost',
+      );
+    } finally {
+      deps.leases?.forget(claim);
+    }
   };
 }
 

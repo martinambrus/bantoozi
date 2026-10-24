@@ -33,6 +33,7 @@ import {
   type TestDatabase,
 } from '@bantoozi/testing';
 import pg from 'pg';
+import { ProcessLeases } from '../src/process-leases.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -159,6 +160,7 @@ function handler(
     credentials?: WorkerCredentialResolver;
     engines?: ProviderValidateDeps['engines'];
     leaseMs?: number;
+    leases?: ProcessLeases;
   } = {},
 ) {
   const config = testConfig(options.config);
@@ -166,6 +168,7 @@ function handler(
   const router = createWorkerEngineRouter({ db, config, credentials, logger, random: () => 0 });
   const handle = createProviderValidateHandler({
     db,
+    ...(options.leases === undefined ? {} : { leases: options.leases }),
     router,
     credentials,
     config: testConfig({ ...options.config, ...options.probeConfig }),
@@ -905,3 +908,56 @@ describe('Ollama model availability', () => {
     expect(await calls()).toMatchObject([{ status: 'error', billing: 'known' }]);
   });
 });
+
+it.each([false, true])(
+  'drain token-fences provider validation releases (reclaimed=%s) and late results',
+  async (reclaimed) => {
+    const version = await stage('typesafe', JEV_KEY);
+    const leases = new ProcessLeases();
+    const real = realJev();
+    let resume!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    let answered = false;
+    const engine: DecisionEngine = {
+      name: 'typesafe',
+      async ask(request, signal, auth) {
+        const attempt = await real.ask(request, signal, auth);
+        answered = true;
+        await blocked;
+        return attempt;
+      },
+    };
+    const job = handler({ leases, engines: { typesafe: engine } }).validate('typesafe', version);
+    try {
+      await vi.waitFor(() => expect(answered).toBe(true));
+      if (reclaimed)
+        await owner.query(
+          "UPDATE provider_credentials SET validation_token=gen_random_uuid() WHERE provider='typesafe'",
+        );
+      const before = (
+        await owner.query(
+          "SELECT validation_token FROM provider_credentials WHERE provider='typesafe'",
+        )
+      ).rows[0];
+      await leases.drain();
+      expect(await metadata('typesafe')).toMatchObject({
+        candidateStatus: reclaimed ? 'validating' : 'pending',
+      });
+      expect(
+        (
+          await owner.query(
+            "SELECT validation_token FROM provider_credentials WHERE provider='typesafe'",
+          )
+        ).rows[0]?.validation_token,
+      ).toBe(reclaimed ? before?.validation_token : null);
+    } finally {
+      resume();
+      await job;
+    }
+    expect(await metadata('typesafe')).toMatchObject({
+      candidateStatus: reclaimed ? 'validating' : 'pending',
+    });
+  },
+);

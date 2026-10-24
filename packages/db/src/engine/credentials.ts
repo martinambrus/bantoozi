@@ -249,6 +249,22 @@ export async function claimCredentialValidation(
     : { validationToken: row.validation_token, revision: row.revision };
 }
 
+/** Return only this process's validation lease to pending; a reclaimed token is untouched. */
+export async function releaseCredentialValidation(
+  db: Executor,
+  input: { provider: CredentialProviderName; candidateVersion: string; validationToken: string },
+): Promise<void> {
+  assertProvider(input.provider);
+  if (!isBigIntString(input.candidateVersion) || !isUuid(input.validationToken)) return;
+  await db.execute(sql`
+    UPDATE provider_credentials
+       SET candidate_status = 'pending', validation_token = NULL, validation_until = NULL
+     WHERE provider = ${input.provider}
+       AND candidate_version = ${input.candidateVersion}::bigint
+       AND candidate_status = 'validating'
+       AND validation_token = ${input.validationToken}::uuid`);
+}
+
 export interface ValidationResult {
   /** `pending`: inconclusive (budget, provider unavailable); the admin may request it again. */
   status: 'valid' | 'invalid' | 'pending';
