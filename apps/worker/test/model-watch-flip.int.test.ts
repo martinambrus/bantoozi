@@ -177,7 +177,12 @@ async function adoptByHand(latest: string, at: Date): Promise<void> {
     { settingsEnv: h.settingsEnv, primaryModel: OLD_MODEL },
     at,
   );
-  await recordModelResolution(h.db, { alias: ALIAS, model: latest, now: at });
+  await recordModelResolution(h.db, {
+    alias: ALIAS,
+    model: latest,
+    now: at,
+    expectedModel: (await resolutionRow(h.owner))?.model ?? null,
+  });
 }
 
 const DRIVERS = [
