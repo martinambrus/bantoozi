@@ -3394,6 +3394,110 @@
         }
       }
     },
+    "/api/v1/me/learning/estimates": {
+      "get": {
+        "summary": "Word estimate progress",
+        "tags": [
+          "me"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "estimates": {
+                      "default": null,
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "n": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "auc": {
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "trainedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        "lastRun": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            },
+                            "movedUp": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "movedDown": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "fromRatings": {
+                              "default": false,
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "movedUp",
+                            "movedDown",
+                            "fromRatings"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "n",
+                        "auc",
+                        "trainedAt",
+                        "lastRun"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "estimateGate": {
+                      "default": {
+                        "needed": 0
+                      },
+                      "type": "object",
+                      "properties": {
+                        "needed": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "needed"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "estimates",
+                    "estimateGate"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/learning/history": {
       "get": {
         "summary": "Personal learning history",

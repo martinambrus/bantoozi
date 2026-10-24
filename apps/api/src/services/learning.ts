@@ -32,6 +32,7 @@ import {
   EngineCircuitSchema,
   EngineModelPinSchema,
   HouseProgressSchema,
+  type LearningEstimates,
   type LearningHistory,
   type LearningStatus,
 } from '@bantoozi/shared';
@@ -232,6 +233,41 @@ export async function loadLearningStatus(
       pin: EngineModelPinSchema.safeParse(stored.get('engine.model_pin')).data,
       progress: HouseProgressSchema.safeParse(stored.get('house.progress')).data,
     }),
+    estimates:
+      current === null
+        ? null
+        : {
+            n: current.n,
+            auc: num(current.metrics['auc']),
+            trainedAt: current.trainedAt.toISOString(),
+            lastRun: parsedLastRun(current.metrics),
+          },
+    estimateGate: { needed },
+  };
+}
+
+/** Estimate progress without loading training samples or computing feed agreement. */
+export async function loadLearningEstimates(tx: TenantTx, now: Date): Promise<LearningEstimates> {
+  const userId = tenantUserId(tx);
+  const stored = await readStoredSettings(tx, ['ranker.thresholds', 'ranker.settings_version']);
+  const { config } = resolveRankerSettings({
+    thresholds: stored.get('ranker.thresholds'),
+    settingsVersion: stored.get('ranker.settings_version'),
+  });
+  const estimate = await loadEstimateState(tx, userId);
+  const current = estimate !== null && estimate.spec === ESTIMATE_SPEC ? estimate : null;
+  const needed =
+    current === null
+      ? estimateGate(
+          await countEstimateRatings(
+            tx,
+            userId,
+            new Date(now.getTime() - config.model.historyDays * 86_400_000),
+          ),
+          config.estimate,
+        ).needed
+      : 0;
+  return {
     estimates:
       current === null
         ? null

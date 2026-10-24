@@ -130,6 +130,13 @@ export const LearningStatusSchema = z
   .strict();
 export type LearningStatus = z.infer<typeof LearningStatusSchema>;
 
+/** The cheap estimate status (`GET /me/learning/estimates`). */
+export const LearningEstimatesSchema = LearningStatusSchema.pick({
+  estimates: true,
+  estimateGate: true,
+});
+export type LearningEstimates = z.infer<typeof LearningEstimatesSchema>;
+
 export const LearningHistoryItemSchema = z
   .object({
     at: IsoTimestampSchema,
