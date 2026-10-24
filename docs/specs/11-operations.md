@@ -411,7 +411,7 @@ separate local queue and remains available when all inference modes are off.
 
 Recipients are the emails of all active admin users (`role='admin'`, not soft-deleted), ordered; `ADMIN_EMAILS` is the fallback only while there is none or the lookup fails, and with neither the run logs that alerts cannot be sent (M8b, D-215).
 
-The engine alerts count only classification calls (`enrich`, `match`, `cluster`, `suggest`); credential checks, evaluations and model probes never feed them (D-272).
+The engine alerts count only classification calls (`enrich`, `match`, `cluster`, `suggest`); translation, card drafts, credential checks, evaluations and model probes never feed them (D-272, D-302).
 
 `house.alerts` also records resolved transitions and sends one recovery notification per active
 incident. Mail transport failure leaves the notification pending; mark `lastSentAt` only after SMTP

@@ -3099,3 +3099,29 @@ D-300, last sentence of its first paragraph: replace "Known, not changed: every 
 by "Retrains used to move most scores because `fitLogistic` reshuffled by sample count; fixed by D-301;" (the rest of the sentence, from "the admin PATCH of `ranker.thresholds`", stays).
 
 D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample and the kept weights are ranked by contribution; the equivalence check passes unchanged.)"
+- D-302: 2026-10-24 (FNF-VL-6; found-not-fixed items 10 and 11 of the JEV-1/2 driver) — Engine call kinds are
+  classified once, and the `credential_probe` pairing is symmetric. No migration.
+  1. **One table.** `packages/shared/src/call-kinds.ts` classifies every `CallKind` (the table is typed over all of
+     them, so a new kind does not compile until it is classified): `decision` (`enrich`, `match`, `cluster`,
+     `suggest`: they share an engine's daily call cap, D-64, and are the only calls the engine alerts count, D-272),
+     `live` (counted by the Engine metrics, spec 10 §7; false for `eval`, `credential_probe`, `model_probe`) and an
+     optional `authorization` type of the kind's own (`eval`, `credential_probe`, `card_draft`, `model_probe`). The
+     store's kind check, call-cap group and authorization pairing, the engine spend guard, the three alert queries,
+     the admin overview's LLM-fallback count and the live-metrics filter derive from it; their hand-written copies are
+     gone (`@bantoozi/engine` no longer exports `DECISION_KINDS`; nothing imported it). `engine_calls_kind_check` stays
+     a hand-written migration list; an integration test compares it with the table. Still hand-listed, left for after
+     FNF-VL-5 (which edits `router.ts`): `ASK_KINDS` (`packages/engine/src/router.ts`), the `EngineRequest.kind` /
+     `ExternalCall.kind` types, and the `'eval'` literal of the budget exemption.
+  2. **`card_draft` is live.** A card draft is a person's own request, billed under the daily budget (D-240; the guard
+     counts every kind but `eval`), so the Engine metrics count its calls, errors, latency and cost (under `usd.other`:
+     like a suggestion it has no article demand; `offFeedCalls` counts only calls with an article). Nothing had
+     decided this: migration 0025 did not touch the filter, and `model_probe` reached it only through a cross-task note.
+     Leaving drafts out would make billed $/day lower than the budget guard's count. The alerts are unaffected (they
+     count decision kinds on the typesafe engine only). To exclude drafts, set `live: false` for `card_draft` in the
+     table; the tests follow the table.
+  3. **Symmetric pairing.** `reserveSpend` admitted a live `credential_probe` authorization for any kind (only the kind
+     required the authorization, unlike `eval`, `card_draft` and `model_probe`): a probe authorization is bound to one
+     validation lease (D-90) and could have reserved production spend of `enrich`, `match`, `cluster`, `suggest` or
+     `translate`. Every kind with an authorization type of its own is now admitted only under it, and that type admits
+     no other kind (`kindMatchesAuthorization`). Nothing relied on it: the only caller, `provider.validate`, reserves
+     `credential_probe`. Spec 02 §3.1, spec 04 §1, §1.1, §1.2, §6, spec 10 §7, spec 11 §6.1.

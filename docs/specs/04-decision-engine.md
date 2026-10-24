@@ -12,7 +12,7 @@ instead of failing the pipeline.
 ```ts
 // ── packages/shared/src/ports.ts  (shared, because packages/db implements EngineStore; engine re-exports) ──
 export type EngineName = 'typesafe' | 'llm' | 'laya';
-export type CallKind = 'enrich' | 'match' | 'cluster' | 'suggest' | 'translate' | 'eval' | 'credential_probe' | 'card_draft';
+export type CallKind = 'enrich' | 'match' | 'cluster' | 'suggest' | 'translate' | 'eval' | 'credential_probe' | 'card_draft' | 'model_probe';
 export type InferenceAuthorization =
   | { type: 'article'; articleId: string; articleRevision: string;
       witnesses: Array<{kind:'automatic'; userId:string; feedId:string; inferenceVersion:string}
@@ -21,7 +21,8 @@ export type InferenceAuthorization =
   | { type: 'credential_probe'; provider:'typesafe'|'ollama'; candidateVersion:string;
       validationToken:string } // the probe's own validation lease (D-90)
   | { type: 'eval'; runId:string } // separately authorized eval; never inferred from a feed fetch
-  | { type: 'card_draft'; userId:string; draftId:string }; // the user's pending draft under 30 min (D-240)
+  | { type: 'card_draft'; userId:string; draftId:string } // the user's pending draft under 30 min (D-240)
+  | { type: 'model_probe'; model:string }; // one synthetic request about a model id; stateless (D-273)
 export type CallStatus = 'ok' | 'error' | 'timeout' | 'rate_limited' | 'invalid_request' | 'invalid_response' | 'auth_error';
 
 export interface EngineCallRow {               // mirrors engine_calls (spec 02 §3.1)
@@ -40,7 +41,7 @@ export interface UsageRow {                    // mirrors usage_daily
   engine: string; kind: CallKind; calls: number; inputTokens: number; outputTokens: number; costUsd: number;
 }
 export interface ExternalCall {                // non-engine calls logged through the router (translation, spec 07 §2)
-  engine: 'libretranslate' | 'llm' | 'typesafe'; kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft'; model?: string; articleId?: string;
+  engine: 'libretranslate' | 'llm' | 'typesafe'; kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft' | 'model_probe'; model?: string; articleId?: string;
   inputTokens: number; outputTokens: number; costUsd: number; latencyMs: number;
   status: CallStatus; error?: string; billing: 'known'|'uncertain';
   logicalRequestId: string; attempt: number; articleRevision?: string; stateSha256?: string;
@@ -84,7 +85,7 @@ export type ScoreAnswer  = { type: 'score';  score: number; probabilities: numbe
 export type Answer = NoulAnswer | ChoiceAnswer | ScoreAnswer;
 
 export interface EngineRequest {
-  kind: Exclude<CallKind, 'translate'|'credential_probe'|'card_draft'>; // translation/probes/drafts use ExternalCall
+  kind: Exclude<CallKind, 'translate'|'credential_probe'|'card_draft'|'model_probe'>; // translation/probes/drafts use ExternalCall
   state: JsonValue;
   questions: Record<string, Question>;     // keys: [a-zA-Z0-9_.-]{1,64}
   questionSetId?: string;                  // for logging
@@ -563,7 +564,8 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
   per-invocation cap (§1), including uncertainty and all concurrent attempts. Eval spend needs an
   `eval` authorization and an eval router; a production router refuses it (D-64).
 - **Cap groups:** the decision kinds (`enrich`, `match`, `cluster`, `suggest`) share an engine's daily
-  call cap; `translate` and `credential_probe` count separately (D-64).
+  call cap; every other kind (`translate`, `credential_probe`, `card_draft`, `model_probe`) counts
+  separately (D-64, D-302).
 
 ### 6.1 Token and output estimation
 
