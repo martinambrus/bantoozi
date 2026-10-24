@@ -66,11 +66,11 @@ export function HistoryTable({ items }: { items: readonly LearningHistoryItem[] 
                       : item.reason
                           .split(',')
                           .map((reason) =>
-                            t(`learning.history.reasons.${reason}`, {
-                              defaultValue: t('learning.history.reasons.unknown'),
+                            t(`learning.reasons.${reason}`, {
+                              defaultValue: t('learning.reasons.unknown'),
                             }),
                           )
-                          .join('; ')}
+                          .join(' ')}
                   </td>
                 </tr>
               );
