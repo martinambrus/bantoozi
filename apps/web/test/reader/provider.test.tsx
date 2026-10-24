@@ -473,6 +473,7 @@ describe('reader action toasts', () => {
     ['disliked', -1, 'Marked as disliked'],
     ['un-rated', null, 'Rating removed'],
   ] as const)('says what a rating that %s did', async (_name, rating, message) => {
+    vi.useFakeTimers();
     const item = makeItem({ rating: rating === null ? 1 : null });
     const { user } = renderReader(<Row item={item} />, {
       routes: {
@@ -485,6 +486,7 @@ describe('reader action toasts', () => {
   });
 
   it('keeps the undo of each rating on screen, stacked', async () => {
+    vi.useFakeTimers();
     const first = makeItem();
     const second = makeItem({ id: '102', title: 'Another article' });
     const { user, toasts } = renderReader(
