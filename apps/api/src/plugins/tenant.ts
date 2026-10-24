@@ -9,7 +9,6 @@ import {
   withTenant,
   bindReaderClock,
   type TenantTx,
-  type TenantTxOptions,
 } from '@bantoozi/db';
 import { AppError, canonicalJson, isUuid } from '@bantoozi/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -19,7 +18,7 @@ import type { MutationContext, MutationOutcome } from '../types.js';
 /**
  * Tenancy and idempotent mutations (spec 08 §1 "Tenancy", §1.1).
  *
- * `req.withTx(fn)` opens nothing until it is called, then runs `fn` in a transaction (READ COMMITTED by default)
+ * `req.withTx(fn)` opens nothing until it is called, then runs `fn` in a READ COMMITTED transaction
  * whose first statement sets `app.user_id` to the verified session's user, so RLS applies to every
  * per-user table. A request that never touches per-user data opens no transaction.
  *
@@ -88,18 +87,13 @@ function replayed<T>(
 export function registerTenant(app: FastifyInstance): void {
   app.decorateRequest('withTx', function withTx<
     T,
-  >(this: FastifyRequest, fn: (tx: TenantTx) => Promise<T>, options?: Pick<TenantTxOptions, 'isolation'>): Promise<T> {
+  >(this: FastifyRequest, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
     const auth = this.auth;
     if (auth === null) return Promise.reject(unauthenticated());
-    return withTenant(
-      app.services.db,
-      auth.userId,
-      (tx) => {
-        bindReaderClock(tx, app.services.clock.now());
-        return fn(tx);
-      },
-      options,
-    );
+    return withTenant(app.services.db, auth.userId, (tx) => {
+      bindReaderClock(tx, app.services.clock.now());
+      return fn(tx);
+    });
   });
 
   app.decorateRequest('savedOutcome', async function savedOutcome<
@@ -158,39 +152,29 @@ export function registerTenant(app: FastifyInstance): void {
     const { config, clock } = app.services;
     const digest = requestDigest(this, config.sessionPepper);
     const route = canonicalRoute(this);
-    const isolation = this.routeOptions.config.mutationIsolation;
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await this.withTx(
-          async (tx) => {
-            await lockMutationKey(tx, key);
-            const saved = replayed<T>(await readMutation(tx, key), digest);
-            if (saved !== null) return saved;
-            const outcome = await fn(tx, {
-              mutationId: key,
-              outbox: tenantOutbox(tx),
-              now: clock.now(),
-            });
-            await saveMutation(tx, {
-              key,
-              requestHash: digest,
-              route,
-              status: outcome.status,
-              response: outcome.body ?? null,
-              ...(outcome.undo === undefined ? {} : { undo: outcome.undo }),
-            });
-            if (outcome.afterSave !== undefined) await outcome.afterSave(tx);
-            return outcome;
-          },
-          isolation === undefined ? undefined : { isolation },
-        );
-      } catch (error) {
-        if (isolation !== undefined) {
-          // The snapshot may predate a concurrent holder's receipt. Check it in READ COMMITTED
-          // after rollback before replaying an error or retrying the snapshot transaction.
-          const saved = await this.savedOutcome<T>();
+        return await this.withTx(async (tx) => {
+          await lockMutationKey(tx, key);
+          const saved = replayed<T>(await readMutation(tx, key), digest);
           if (saved !== null) return saved;
-        }
+          const outcome = await fn(tx, {
+            mutationId: key,
+            outbox: tenantOutbox(tx),
+            now: clock.now(),
+          });
+          await saveMutation(tx, {
+            key,
+            requestHash: digest,
+            route,
+            status: outcome.status,
+            response: outcome.body ?? null,
+            ...(outcome.undo === undefined ? {} : { undo: outcome.undo }),
+          });
+          if (outcome.afterSave !== undefined) await outcome.afterSave(tx);
+          return outcome;
+        });
+      } catch (error) {
         const state = sqlState(error);
         if (attempt >= MUTATION_ATTEMPTS || state === undefined || !RETRYABLE.has(state)) {
           throw error;

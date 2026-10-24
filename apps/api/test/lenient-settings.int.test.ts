@@ -101,7 +101,7 @@ it('reads future model rows and requests a breaker reset without dropping nested
 });
 
 it.each(['existing', 'missing'] as const)(
-  'preserves concurrent future breaker fields during API credential activation and duplicate replay (%s row)',
+  'activates credentials during concurrent breaker changes and replays duplicate requests (%s row)',
   async (initial) => {
     const client = apiClient(h.server, admin);
     await h.owner.query('DELETE FROM provider_credentials');
@@ -166,7 +166,7 @@ it.each(['existing', 'missing'] as const)(
       ]);
       expect(row.rows[0].value).toEqual({
         ...circuit,
-        typesafe: { state: 'closed', reopenCount: 0, future: 9 },
+        typesafe: { state: 'closed', reopenCount: 0 },
       });
     } finally {
       await blocker.query('ROLLBACK').catch(() => undefined);

@@ -484,11 +484,7 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
     '/engine/credentials/:provider/activate',
     {
-      config: {
-        auth: 'admin',
-        rateLimits: CREDENTIAL_LIMITS,
-        mutationIsolation: 'repeatable read',
-      },
+      config: { auth: 'admin', rateLimits: CREDENTIAL_LIMITS },
       schema: {
         tags: ['admin'],
         summary: 'Activate the validated candidate',
