@@ -160,6 +160,7 @@ let heartbeat: Heartbeat | undefined;
 let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
 let health: HealthServer | undefined;
+let consumingQueues: readonly string[] = [];
 const processId = `${hostname()}:${process.pid}`;
 let schedules: Awaited<ReturnType<typeof startWorkerSchedules>> | undefined;
 let stopped: Promise<void> | undefined;
@@ -231,6 +232,7 @@ try {
       port: config.workerMetricsPort,
       token: config.metricsToken,
       queues: workerQueues,
+      consumingQueues: () => consumingQueues,
       missingQueues: () => queueReadiness.missing(),
       readHeartbeatAt: async () => {
         const result = await pool.query<{ at: string | null }>(
@@ -244,7 +246,9 @@ try {
     boss = createBoss(config.databaseUrlWorker);
     boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
     await boss.start();
+    consumingQueues = [PG_BOSS_CRON_QUEUE];
     const registration = await registerHandlers(boss, handlers, workerQueues, logger);
+    consumingQueues = [...registration.consuming, PG_BOSS_CRON_QUEUE];
     schedules = await startWorkerSchedules(
       boss,
       registration.consuming,
