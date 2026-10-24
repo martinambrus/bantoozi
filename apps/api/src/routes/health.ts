@@ -36,6 +36,22 @@ export async function healthRoutes(
   app: FastifyInstance,
   options: HealthRoutesOptions,
 ): Promise<void> {
+  // The aggregate scans job rows. Share in-flight work and retain only healthy results.
+  let queuesHealthyUntil = 0;
+  let queueCheck: Promise<string[]> | undefined;
+  const checkQueues = (): Promise<string[]> => {
+    if (Date.now() < queuesHealthyUntil) return Promise.resolve([]);
+    queueCheck ??= missingReadinessQueues(options.db)
+      .then((missing) => {
+        if (missing.length === 0) queuesHealthyUntil = Date.now() + 60_000;
+        return missing;
+      })
+      .finally(() => {
+        queueCheck = undefined;
+      });
+    return queueCheck;
+  };
+
   app.get(
     '/healthz',
     {
@@ -71,7 +87,7 @@ export async function healthRoutes(
       }
       if (database === 'ok') {
         try {
-          missingQueues = await missingReadinessQueues(options.db);
+          missingQueues = await checkQueues();
           queues = missingQueues.length === 0 ? 'ok' : 'pending';
         } catch (error) {
           request.log.warn({ err: error }, 'readiness: queue check failed');

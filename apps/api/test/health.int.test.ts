@@ -8,7 +8,7 @@ import {
 } from '@bantoozi/db';
 import { dropCreatedTestDatabases, setupTestDatabase, type TestDatabase } from '@bantoozi/testing';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildServer } from '../src/server.js';
 import { testConfig } from './support/harness.js';
@@ -29,6 +29,10 @@ beforeAll(async () => {
   });
   appPool = createPool({ connectionString: testDb.urls.app, max: 2 });
   ownerPool = createPool({ connectionString: testDb.urls.owner, max: 1 });
+});
+
+beforeEach(async () => {
+  await server?.close();
   server = await buildServer({
     db: createDatabase(appPool),
     config: testConfig({}, testDb.urls.app),
