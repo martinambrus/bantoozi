@@ -1,6 +1,6 @@
 import type { EngineModelProbe } from '@bantoozi/shared';
 import { createUser } from '@bantoozi/testing';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dispatch } from '../src/handlers/index.js';
 import { createModelProbeHandler } from '../src/handlers/model-probe.js';
@@ -46,10 +46,15 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2031, 5, 2));
   await h.owner.query(`DELETE FROM user_models`);
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     ['engine.model_probe', 'engine.model_impact', 'engine.model_watch', 'house.progress'],
   ]);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 const user = async (deletedAt?: Date): Promise<string> =>
@@ -207,6 +212,41 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
       'invalid stored model probes; resetting the record',
     );
     expect(await probeOf(h.owner)).toEqual(okAt(B));
+  });
+
+  it('keeps a newer successful probe when an older failure commits later', async () => {
+    await recordModelProbe(h.db, okAt(B));
+    await recordModelProbe(h.db, { requested: ALIAS, at: A, ok: false, error: 'timeout' });
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+  });
+
+  it('adds an older probe for a different model while preserving the newer entry', async () => {
+    await recordModelProbe(h.db, okAt(B));
+    await recordModelProbe(h.db, okAt(A, V114, V114));
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+    expect(await probeOf(h.owner, V114)).toEqual(okAt(A, V114, V114));
+  });
+
+  it('replaces a probe with an equal timestamp', async () => {
+    await recordModelProbe(h.db, okAt(B));
+    const failed = { requested: ALIAS, at: B, ok: false, error: 'timeout' };
+    await recordModelProbe(h.db, failed);
+    expect(await probeOf(h.owner)).toEqual(failed);
+  });
+
+  it('replaces a stored probe two minutes ahead of the writer clock', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse(B));
+    await recordModelProbe(h.db, okAt(iso(new Date(Date.parse(B) + 120_000))));
+    await recordModelProbe(h.db, okAt(B));
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+  });
+
+  it('keeps a newer stored probe exactly 60 seconds ahead of the writer clock', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse(B));
+    const newer = okAt(iso(new Date(Date.parse(B) + 60_000)));
+    await recordModelProbe(h.db, newer);
+    await recordModelProbe(h.db, okAt(B));
+    expect(await probeOf(h.owner)).toEqual(newer);
   });
 
   it('an older recorder preserves the newer impact timestamp and count', async () => {

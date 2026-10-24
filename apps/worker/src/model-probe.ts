@@ -28,6 +28,7 @@ import {
   isModelAlias,
   isModelUnavailableDetail,
   MODEL_ID_PATTERN,
+  MODEL_PROBE_MAX_SKEW_MS,
   newUuid,
   type EngineModelImpact,
   type EngineModelProbe,
@@ -351,9 +352,14 @@ export async function recordModelProbe(
     await updateSettingLocked(tx, 'engine.model_probe', {}, (current) => {
       const stored = EngineModelProbesSchema.safeParse(current);
       resetInvalid = !stored.success;
+      const previous = stored.success ? stored.data[checked.requested] : undefined;
+      const keepPrevious =
+        previous !== undefined &&
+        Date.parse(previous.at) > Date.parse(checked.at) &&
+        Date.parse(previous.at) <= Date.now() + MODEL_PROBE_MAX_SKEW_MS;
       const merged: Record<string, EngineModelProbe> = {
         ...(stored.success ? stored.data : {}),
-        [checked.requested]: checked,
+        [checked.requested]: keepPrevious ? previous : checked,
       };
       const newest = Object.entries(merged)
         .sort(([, a], [, b]) => Date.parse(b.at) - Date.parse(a.at))
