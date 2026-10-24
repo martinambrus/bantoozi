@@ -22,6 +22,7 @@ const responses = [
     unavailable: true,
   },
   { status: 413, body: { error: { code: 'model_not_found' } }, unavailable: false },
+  { status: 413, body: { error: { code: 'model_unavailable' } }, unavailable: false },
 ];
 
 describe('D-273 engine and prober agreement', () => {

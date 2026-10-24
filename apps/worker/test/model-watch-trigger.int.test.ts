@@ -375,6 +375,16 @@ describe('T4: negative controls (pass before and after the implementation)', () 
     expect(await watchSetting()).toBeUndefined();
   }, 120_000);
 
+  it('HTTP 413 with a model_unavailable provider code queues no model watch', async () => {
+    const w = await world();
+    fake.setOptions({
+      statusOverride: () => ({ status: 413, body: { error: { code: 'model_unavailable' } } }),
+    });
+    expect(await askFails(w)).toBe('http_413:model_unavailable');
+    expect(await watchRows()).toHaveLength(0);
+    expect(await watchSetting()).toBeUndefined();
+  });
+
   it('T4c a model_mismatch (the server answers another release) queues nothing', async () => {
     const w = await world({ table: { [OLD_MODEL]: 'jev-1.12.0' } });
     const error = await askFails(w);

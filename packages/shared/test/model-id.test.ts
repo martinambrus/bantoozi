@@ -62,6 +62,12 @@ describe('Jev model ids', () => {
     expect(isModelUnavailableDetail('typesafe:error:model_unavailable:http_404')).toBe(true);
     expect(isModelUnavailableDetail('http_404')).toBe(false);
     expect(isModelUnavailableDetail('model_unavailable_x')).toBe(false);
+    expect(isModelUnavailableDetail('http_413:model_unavailable')).toBe(false);
+    expect(isModelUnavailableDetail('typesafe:invalid_request:http_413:model_unavailable')).toBe(
+      false,
+    );
+    expect(isModelUnavailableDetail('http_400:model_unavailable:http_404')).toBe(false);
+    expect(isModelUnavailableDetail('llm:error:model_unavailable:http_404')).toBe(true);
     expect(isModelUnavailableDetail(undefined)).toBe(false);
   });
 
