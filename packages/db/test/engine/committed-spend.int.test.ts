@@ -82,3 +82,33 @@ it('requires an active admin context and keeps raw ledger access forbidden', asy
     asTenant(ctx.appPool, admin.id, (client) => client.query('SELECT * FROM engine_reservations')),
   ).rejects.toMatchObject({ code: '42501' });
 });
+
+it('rejects a NULL day and treats NULL exclusions as an empty list', async () => {
+  const admin = await createUser(ctx.owner, { role: 'admin' });
+  const day = '2036-02-01';
+  await ctx.owner.query(
+    `INSERT INTO engine_reservations
+    (id, day, engine, kind, reserved_usd, status, expires_at)
+    VALUES (gen_random_uuid(), $1, 'llm', 'match', 0.25, 'reserved', now()),
+           (gen_random_uuid(), $1, 'llm', 'eval', 0.50, 'uncertain', now())`,
+    [day],
+  );
+  for (const pool of [ctx.workerPool, ctx.appPool]) {
+    const read = (date: string | null, exclusions: string[] | null) =>
+      asTenant(pool, admin.id, (client) =>
+        client.query<{ usd: string }>(
+          'SELECT admin_committed_spend($1::date, $2::text[])::text AS usd',
+          [date, exclusions],
+        ),
+      );
+    for (const exclusions of [null, [], ['eval']]) {
+      await expect(read(null, exclusions)).rejects.toMatchObject({
+        code: '22004',
+        message: 'p_day must not be NULL',
+      });
+    }
+    expect((await read(day, null)).rows).toEqual([{ usd: '0.75000000' }]);
+    expect((await read(day, [])).rows).toEqual([{ usd: '0.75000000' }]);
+    expect((await read(day, ['eval'])).rows).toEqual([{ usd: '0.25000000' }]);
+  }
+});

@@ -18,10 +18,13 @@ BEGIN
   IF NOT admin_context_allowed() THEN
     RAISE EXCEPTION 'administrator session required' USING ERRCODE = '42501';
   END IF;
+  IF p_day IS NULL THEN
+    RAISE EXCEPTION 'p_day must not be NULL' USING ERRCODE = '22004';
+  END IF;
   RETURN (
     SELECT coalesce(sum(CASE WHEN r.status = 'settled' THEN r.actual_usd ELSE r.reserved_usd END), 0)
       FROM engine_reservations r
-     WHERE r.day = p_day AND NOT (r.kind = ANY(p_exclude_kinds))
+     WHERE r.day = p_day AND NOT (r.kind = ANY(coalesce(p_exclude_kinds, '{}'::text[])))
   );
 END;
 $$;
