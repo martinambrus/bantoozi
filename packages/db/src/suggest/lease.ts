@@ -61,13 +61,15 @@ export async function renewSuggestLease(
   return (result.rowCount ?? 0) > 0;
 }
 
-/** Release the lease only while it is still ours; never stamps `last_suggested_at`. */
+/** Release only our lease; a stale discarded answer also returns its daily opportunity. */
 export async function releaseSuggestLease(
   db: Executor,
   userId: string,
   leaseToken: string,
+  options: { resetDailyGate?: boolean } = {},
 ): Promise<void> {
   await db.execute(sql`
     UPDATE users SET suggest_lease_token = NULL, suggest_lease_until = NULL
+      ${options.resetDailyGate ? sql`, last_suggested_at = NULL` : sql.empty()}
      WHERE id = ${userId}::uuid AND suggest_lease_token = ${leaseToken}::uuid`);
 }

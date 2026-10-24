@@ -832,35 +832,69 @@ describe('user.suggest during a rolling deployment and with stale facets (PR #25
     },
   );
 
-  it('defers an unsuccessful suggestion call when the pin moved while it was in flight', async () => {
-    const userId = await reader({ likes: 4 });
-    await seedSuggestion(userId, otherCardId, { score: 0.4 });
-    const before = await suggestions(userId);
-    routerWrap = (inner) => ({
-      ...inner,
-      ask: async () => {
+  it.each(['post-call', 'completion'] as const)(
+    'clears the daily gate and recovers a reserved suggestion discarded at the %s fence',
+    async (fence) => {
+      const userId = await reader({ likes: 4 });
+      await seedSuggestion(userId, otherCardId, { score: 0.4 });
+      const before = await suggestions(userId);
+      const from = fake.requestCount();
+      const flip = async () => {
+        expect(await reservations(userId)).toBe(1);
+        expect((await userState(userId)).last_suggested_at).not.toBeNull();
         await setSetting('engine.model_pin', { model: 'jev-next' });
-        return { ok: false, reason: 'no_key' };
-      },
-    });
-    try {
-      await expect(runSuggest(userId)).rejects.toMatchObject({ name: 'StaleWorkerError' });
-      expect(await suggestions(userId)).toEqual(before);
-      expect(await userState(userId)).toMatchObject({
-        last_suggested_at: null,
-        suggest_lease_token: null,
-        suggest_lease_until: null,
-      });
-      const replacement = await owner.query(
-        `SELECT 1 FROM job_outbox
-        WHERE queue = 'user.suggest' AND payload->>'userId' = $1 AND delivered_at IS NULL`,
-        [userId],
-      );
-      expect(replacement.rows).toHaveLength(1);
-    } finally {
-      await setSetting('engine.model_pin', PIN);
-    }
-  });
+      };
+      if (fence === 'post-call') {
+        routerWrap = (inner) => ({
+          ...inner,
+          ask: async (request, signal) => {
+            const answer = await inner.ask(request, signal);
+            expect(answer.ok).toBe(true);
+            await flip();
+            return answer;
+          },
+        });
+      }
+      const finish = suggestDb.finishSuggestRun;
+      const completion = vi.spyOn(suggestDb, 'finishSuggestRun');
+      if (fence === 'completion') {
+        completion.mockImplementationOnce(async (...args) => {
+          await flip();
+          return finish(...args);
+        });
+      }
+      try {
+        await expect(runSuggest(userId)).rejects.toMatchObject({ name: 'StaleWorkerError' });
+        expect(fake.requestCount()).toBe(from + 1);
+        expect(await suggestions(userId)).toEqual(before);
+        expect(await userState(userId)).toMatchObject({
+          last_suggested_at: null,
+          suggest_lease_token: null,
+          suggest_lease_until: null,
+        });
+        const replacement = await owner.query(
+          `SELECT payload FROM job_outbox
+           WHERE queue = 'user.suggest' AND payload->>'userId' = $1 AND delivered_at IS NULL`,
+          [userId],
+        );
+        expect(replacement.rows).toHaveLength(1);
+        // A current worker consumes the D-319 intent today, with no manual daily-gate reset.
+        routerWrap = null;
+        await setSetting('engine.model_pin', PIN);
+        await dispatch(handlers, 'user.suggest', replacement.rows[0]!.payload, {
+          queue: 'user.suggest',
+          jobId: 'suggest-recovery',
+        });
+        expect(fake.requestCount()).toBe(from + 2);
+        expect(await reservations(userId)).toBe(2);
+        expect((await suggestions(userId)).map((row) => row.card_id)).toEqual([libraryCardId]);
+        expect((await userState(userId)).last_suggested_at).not.toBeNull();
+      } finally {
+        completion.mockRestore();
+        await setSetting('engine.model_pin', PIN);
+      }
+    },
+  );
 
   it('a worker whose model differs from the stored pin sends nothing and keeps the suggestions', async () => {
     const userId = await reader({ likes: 4 });

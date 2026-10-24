@@ -15,6 +15,7 @@ import {
   readSuggestPin,
   releaseSuggestLease,
   renewSuggestLease,
+  retryTransaction,
   type SuggestAnswerRow,
 } from '@bantoozi/db';
 import {
@@ -40,7 +41,7 @@ import { cardInputHashes } from '../rank/items.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 import { recoverStaleJob } from './stale-job-recovery.js';
-import { assertWorkerCurrent, lockWorkerCurrent } from '../stale-worker.js';
+import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 
 const T1_PREFIX = 't1.';
 
@@ -73,18 +74,23 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
     const claim = await claimSuggestLease(deps.db, userId, { leaseMs: classification.leaseMs });
     if (claim.status !== 'claimed') return;
     const { leaseToken } = claim;
-    const finish = (results: { cardId: string; score: number }[] | null) =>
-      finishSuggestRun(deps.db, {
+    const finish = async (results: { cardId: string; score: number }[] | null) => {
+      let stale: StaleWorkerError | null = null;
+      await finishSuggestRun(deps.db, {
         userId,
         leaseToken,
         results,
         asked: { questionSetId: suggestSet.id, pin },
         fallbackModel: classification.primaryModel,
         beforeWrite: async (tx) => {
-          const stale = await lockWorkerCurrent(tx, classification);
-          if (stale !== null) throw stale;
+          stale = await lockWorkerCurrent(tx, classification);
+          if (stale === null) return;
+          await releaseSuggestLease(tx, userId, leaseToken, { resetDailyGate: true });
+          return false;
         },
       });
+      if (stale !== null) throw stale;
+    };
     try {
       const demand = await hasSuggestDemand(deps.db, userId, now);
       const plan = demand
@@ -114,7 +120,14 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
         },
         deadlineMs: now.getTime() + classification.callDeadlineMs,
       });
-      await assertWorkerCurrent(deps.db, classification);
+      const stale = await retryTransaction(deps.db, async (tx) => {
+        const error = await lockWorkerCurrent(tx, classification);
+        if (error !== null) {
+          await releaseSuggestLease(tx, userId, leaseToken, { resetDailyGate: true });
+        }
+        return error;
+      });
+      if (stale !== null) throw stale;
       const answer = outcome.ok ? outcome.answers[SUGGEST_QUESTION_KEY] : undefined;
       if (
         !outcome.ok ||
