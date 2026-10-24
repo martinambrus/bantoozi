@@ -1,6 +1,8 @@
 import {
   canonicalJson,
+  enqueueEstimate,
   enqueueLearn,
+  estimateSettingsChanged,
   enqueueRank,
   enqueueReenrich,
   enqueueRematch,
@@ -150,7 +152,8 @@ async function upsertSetting(tx: Executor, key: string, value: unknown): Promise
  * registry; a key is written only when its effective value changes (a missing row counts as its
  * default). Side effects follow the admin settings flow: `ranker.thresholds` bumps
  * `ranker.settings_version` and enqueues a full `user.rank` for users active in the last 7 days
- * (plus `user.learn` for users with an active model when `strengthWeights` or `model` changed); a
+ * (plus `user.learn` for users with an active model when `strengthWeights` or `model` changed,
+ * and `user.estimate` for active users when `estimate` or `model.historyDays` changed); a
  * `card_text_mode` change enqueues `house.rematch` (and `house.translate-cards` for `english`); each
  * language whose mode changed enqueues `house.reenrich {lang}`.
  */
@@ -209,6 +212,12 @@ export async function applyG1Settings(
     }
     const before = current('ranker.thresholds') ?? {};
     const after = next['ranker.thresholds'];
+    if (estimateSettingsChanged(before, after)) {
+      for (const { id: userId } of active.rows) {
+        await enqueueEstimate(outbox, { userId });
+        count('user.estimate');
+      }
+    }
     if (!same(before.strengthWeights, after.strengthWeights) || !same(before.model, after.model)) {
       const models = await tx.execute<{ user_id: string }>(sql`
         SELECT DISTINCT m.user_id::text AS user_id FROM user_models m
