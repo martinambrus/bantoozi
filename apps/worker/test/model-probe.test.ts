@@ -1,9 +1,27 @@
 import { createTypeSafeEngine, type EngineRouter } from '@bantoozi/engine';
+import type * as EngineModule from '@bantoozi/engine';
 import type { CredentialResolver } from '@bantoozi/shared/server';
 import { startFakeTypeSafe } from '@bantoozi/testing';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createModelProber, MODEL_PROBE_QUESTIONS, MODEL_PROBE_STATE } from '../src/model-probe.js';
+
+const { adapterKinds } = vi.hoisted(() => ({ adapterKinds: [] as string[] }));
+vi.mock('@bantoozi/engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof EngineModule>();
+  return {
+    ...actual,
+    createTypeSafeEngine: (...args: Parameters<typeof actual.createTypeSafeEngine>) => {
+      const engine = actual.createTypeSafeEngine(...args);
+      const ask = engine.ask.bind(engine);
+      engine.ask = (request, ...rest) => {
+        adapterKinds.push(request.kind);
+        return ask(request, ...rest);
+      };
+      return engine;
+    },
+  };
+});
 
 // Both consumers receive these exact fake responses (D-273).
 const responses = [
@@ -29,6 +47,7 @@ describe('D-273 engine and prober agreement', () => {
   it.each(responses)(
     'HTTP $status: model unavailable = $unavailable ($body)',
     async ({ status, body, unavailable }) => {
+      adapterKinds.length = 0;
       const fake = await startFakeTypeSafe({ statusOverride: () => ({ status, body }) });
       try {
         const auth = { apiKey: 'test-key', source: 'env' as const };
@@ -51,7 +70,7 @@ describe('D-273 engine and prober agreement', () => {
         });
         const attempt = await engine.ask(
           {
-            kind: 'eval',
+            kind: 'model_probe',
             state: MODEL_PROBE_STATE,
             questions: MODEL_PROBE_QUESTIONS,
             questionSetSha: 'test',
@@ -79,6 +98,7 @@ describe('D-273 engine and prober agreement', () => {
           ok: false,
           error: unavailable ? 'model_unavailable' : 'request_rejected',
         });
+        expect(adapterKinds).toEqual(['model_probe', 'model_probe']);
         expect(fake.requests).toHaveLength(2);
         expect(ledger.recordExternalCall).toHaveBeenCalledTimes(1);
       } finally {

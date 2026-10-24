@@ -164,7 +164,8 @@ const capKinds = (kind: CallKind): readonly CallKind[] =>
   DECISION_KINDS.includes(kind) ? DECISION_KINDS : [kind];
 
 /** `excludeKinds` as a text array (`'none'` excludes nothing). */
-const excluded = (kinds: CallKind[] | 'none'): string[] => (kinds === 'none' ? [] : [...kinds]);
+const excluded = (kinds: readonly CallKind[] | 'none'): string[] =>
+  kinds === 'none' ? [] : [...kinds];
 
 /** UTC midnight of `day` as a timestamptz expression, independent of the session time zone. */
 const utcMidnight = (day: string) => sql`(${day}::date::timestamp AT TIME ZONE 'UTC')`;
@@ -494,15 +495,6 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
     async upsertUsage(row) {
       assertUsage(row);
       await upsertUsageRow(db, row);
-    },
-
-    async spendSince(fromUtc, opts) {
-      const result = await db.execute<{ usd: string }>(sql`
-        SELECT coalesce(sum(CASE WHEN r.status = 'settled' THEN r.actual_usd ELSE r.reserved_usd END), 0)::text AS usd
-          FROM engine_reservations r
-         WHERE r.created_at >= ${fromUtc.toISOString()}::timestamptz
-           AND NOT (r.kind = ANY(${sql.param(excluded(opts.excludeKinds))}::text[]))`);
-      return Number(result.rows[0]?.usd ?? '0');
     },
 
     async getBudgetSnapshot(dayUtc, opts): Promise<BudgetSnapshot> {

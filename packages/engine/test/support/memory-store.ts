@@ -204,13 +204,6 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
       addUsage(row);
     },
 
-    async spendSince(from, opts) {
-      const excluded = opts.excludeKinds === 'none' ? [] : opts.excludeKinds;
-      return reservations
-        .filter((r) => !excluded.includes(r.kind))
-        .reduce((sum, r) => sum + (r.status === 'settled' ? (r.actualUsd ?? 0) : r.reservedUsd), 0);
-    },
-
     async getBudgetSnapshot(day, opts): Promise<BudgetSnapshot> {
       const excluded = opts.excludeKinds === 'none' ? [] : opts.excludeKinds;
       const snapshot: BudgetSnapshot = {

@@ -2,6 +2,7 @@ import type { Question, Answer } from '@bantoozi/questions';
 import type {
   BreakerState,
   AskCallKind,
+  CallKind,
   CallStatus,
   Clock,
   EngineName,
@@ -103,11 +104,14 @@ export type EngineAttempt =
       billing: 'known' | 'uncertain';
     };
 
+/** Adapter input retains the actual call kind, including synthetic probes sent outside router.ask. */
+export type EngineAdapterRequest = Omit<EngineRequest, 'kind'> & { kind: CallKind };
+
 /** Adapters perform exactly ONE wire attempt; the router owns retries (spec 04 §4). */
 export interface DecisionEngine {
   readonly name: EngineName;
   /** Router calls remote adapters inside `useActive`; local Laya has no auth object. */
-  ask(req: EngineRequest, signal: AbortSignal, auth?: ProviderAuth): Promise<EngineAttempt>;
+  ask(req: EngineAdapterRequest, signal: AbortSignal, auth?: ProviderAuth): Promise<EngineAttempt>;
 }
 
 export interface RouterStatus {

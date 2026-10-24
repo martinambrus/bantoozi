@@ -12,7 +12,7 @@ import {
   typesafeCostUsd,
   type DecisionEngine,
   type EngineAttempt,
-  type EngineRequest,
+  type EngineAdapterRequest,
   type EngineRouter,
   type ExternalCall,
   type Question,
@@ -137,8 +137,8 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
       price,
     );
     const authorization: InferenceAuthorization = { type: 'model_probe', model: requested };
-    const request: EngineRequest = {
-      kind: 'eval',
+    const request: EngineAdapterRequest = {
+      kind: 'model_probe',
       state: MODEL_PROBE_STATE,
       questions: MODEL_PROBE_QUESTIONS,
       questionSetSha: sha256Hex(canonicalJson(MODEL_PROBE_QUESTIONS)),

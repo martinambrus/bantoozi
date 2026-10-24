@@ -1,4 +1,10 @@
-import { AppError, conservativeRequestTokens, isUuid, PLATFORM_USER_ID } from '@bantoozi/shared';
+import {
+  AppError,
+  BUDGET_EXEMPT_KINDS,
+  conservativeRequestTokens,
+  isUuid,
+  PLATFORM_USER_ID,
+} from '@bantoozi/shared';
 import { startFakeTypeSafe } from '@bantoozi/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,7 +16,7 @@ import {
 } from '../src/llm-fallback-engine.js';
 import { splitQuestionsForLlm } from '../src/router.js';
 import { typesafeCostUsd } from '../src/typesafe-engine.js';
-import type { EngineRequest } from '../src/types.js';
+import type { EngineAdapterRequest, EngineRequest } from '../src/types.js';
 import { createMemoryEngineStore, type MemoryEngineStore } from './support/memory-store.js';
 import {
   drive,
@@ -47,10 +53,10 @@ function abortingStore(controller: AbortController): MemoryEngineStore {
 }
 
 /** The reserve of one Jev attempt of `req` (conservative §6.1 tokens at the Jev price). */
-const jevEstimate = (req: EngineRequest = request()) =>
+const jevEstimate = (req: EngineAdapterRequest = request()) =>
   typesafeCostUsd(conservativeRequestTokens(req.state, req.questions), 0.042);
 /** The reserve of one LLM attempt: input plus the full default output cap at LLM prices. */
-const llmEstimate = (req: EngineRequest = request(), maxOutput = 2048) =>
+const llmEstimate = (req: EngineAdapterRequest = request(), maxOutput = 2048) =>
   estimateLlmCostUsd(estimateLlmInputTokens(req.state, req.questions), maxOutput, LLM_MODEL);
 
 beforeEach(() => {
@@ -460,7 +466,7 @@ describe('EngineRouter.ask: spend guard (spec 04 §6)', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const held = async (req: EngineRequest) => {
+    const held = async (req: EngineAdapterRequest) => {
       await gate;
       return success('typesafe', req);
     };
@@ -512,7 +518,9 @@ describe('EngineRouter.ask: spend guard (spec 04 §6)', () => {
     await drive(router.ask(request()), advance);
     expect(store.calls[0]).toMatchObject({ status: 'timeout', billing: 'uncertain', costUsd: 0 });
     expect(store.reservations[0]!.status).toBe('uncertain');
-    const snapshot = await store.getBudgetSnapshot('2026-09-26', { excludeKinds: ['eval'] });
+    const snapshot = await store.getBudgetSnapshot('2026-09-26', {
+      excludeKinds: BUDGET_EXEMPT_KINDS,
+    });
     expect(snapshot.uncertainUsd).toBeCloseTo(jevEstimate(), 12);
   });
 
