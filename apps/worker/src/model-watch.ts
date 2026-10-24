@@ -17,6 +17,8 @@ import {
 export const MODEL_CANDIDATE_KEY = 'engine.model_candidate';
 export const MODEL_WATCH_KEY = 'engine.model_watch';
 export const MODEL_WATCH_CONFIRM_MS = 10 * 60_000;
+const MODEL_WATCH_MAX_RETRIES = 3;
+const MODEL_WATCH_RETRY_MS = 60_000;
 export const MODEL_WATCH_TRIGGER_GAP_MS = 10 * 60_000;
 
 type Notice = NonNullable<EngineModelWatch['notice']>;
@@ -85,13 +87,40 @@ export async function observeModelCandidate(
         return candidate;
       },
     );
-    if (started) {
-      await enqueueModelWatch(
-        workerOutbox(tx, { availableAt: new Date(now.getTime() + MODEL_WATCH_CONFIRM_MS) }),
-        { revision: `confirm:${model}:${candidate!.firstSeenAt}` },
-      );
+    if (candidate !== null && !confirmed) {
+      await enqueueCandidateConfirmation(tx, candidate, now, started);
     }
     return confirmed;
+  });
+}
+
+/** The caller holds the watch lock before taking the candidate lock, in this transaction. */
+export async function retryModelCandidate(tx: Transaction, now: Date): Promise<void> {
+  const candidate = await updateSettingLocked<EngineModelCandidate | null>(
+    tx,
+    MODEL_CANDIDATE_KEY,
+    null,
+    (current) => {
+      const parsed = EngineModelCandidateSchema.safeParse(current);
+      return parsed.success
+        ? { ...parsed.data, count: Math.min(Number.MAX_SAFE_INTEGER, parsed.data.count + 1) }
+        : null;
+    },
+  );
+  if (candidate !== null) await enqueueCandidateConfirmation(tx, candidate, now, false);
+}
+
+async function enqueueCandidateConfirmation(
+  tx: Transaction,
+  candidate: EngineModelCandidate,
+  now: Date,
+  started: boolean,
+): Promise<void> {
+  if (!started && candidate.count > 1 + MODEL_WATCH_MAX_RETRIES) return;
+  const due = Date.parse(candidate.firstSeenAt) + MODEL_WATCH_CONFIRM_MS;
+  const availableAt = new Date(started ? due : Math.max(due, now.getTime() + MODEL_WATCH_RETRY_MS));
+  await enqueueModelWatch(workerOutbox(tx, { availableAt }), {
+    revision: `confirm:${candidate.model}:${candidate.firstSeenAt}:${candidate.count}`,
   });
 }
 
