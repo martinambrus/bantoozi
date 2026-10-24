@@ -128,10 +128,6 @@ export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
  */
 export const EngineModelWatchSchema = z
   .object({
-    candidate: z
-      .object({ model: concreteJevModel, firstSeenAt: iso, count: z.number().int().min(1) })
-      .strict()
-      .optional(),
     triggeredAt: iso.optional(),
     lastCheck: z
       .object({ at: iso, ok: z.boolean(), error: z.string().min(1).max(200).optional() })
@@ -150,6 +146,12 @@ export const EngineModelWatchSchema = z
   })
   .strict();
 export type EngineModelWatch = z.infer<typeof EngineModelWatchSchema>;
+
+/** The pending alias release; null means no candidate. Kept separate for older strict workers. */
+export const EngineModelCandidateSchema = z
+  .object({ model: concreteJevModel, firstSeenAt: iso, count: z.number().int().min(1) })
+  .strict();
+export type EngineModelCandidate = z.infer<typeof EngineModelCandidateSchema>;
 
 /**
  * `settings['engine.model_impact']`, written only by the worker together with every model probe
@@ -341,6 +343,11 @@ export const SETTINGS = {
   }),
   'engine.model_watch': def({
     schema: EngineModelWatchSchema,
+    defaultValue: () => undefined,
+    writers: ['worker'],
+  }),
+  'engine.model_candidate': def({
+    schema: EngineModelCandidateSchema.nullable(),
     defaultValue: () => undefined,
     writers: ['worker'],
   }),

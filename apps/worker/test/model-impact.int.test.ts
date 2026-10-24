@@ -49,7 +49,13 @@ beforeEach(async () => {
   vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2031, 5, 2));
   await h.owner.query(`DELETE FROM user_models`);
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-    ['engine.model_probe', 'engine.model_impact', 'engine.model_watch', 'house.progress'],
+    [
+      'engine.model_probe',
+      'engine.model_impact',
+      'engine.model_watch',
+      'engine.model_candidate',
+      'house.progress',
+    ],
   ]);
 });
 
@@ -186,13 +192,25 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     expect(await impactOf(h.owner)).toEqual({ at: iso(NOW), activeModels: 1 });
 
     await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-      ['engine.model_probe', 'engine.model_impact', 'engine.model_watch', 'house.progress'],
+      [
+        'engine.model_probe',
+        'engine.model_impact',
+        'engine.model_watch',
+        'engine.model_candidate',
+        'house.progress',
+      ],
     ]);
     await runWatch(h, { prober: scriptedProber(okProbe(V113)) });
     expect(await impactOf(h.owner)).toEqual({ at: iso(NOW), activeModels: 1 });
 
     await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-      ['engine.model_probe', 'engine.model_impact', 'engine.model_watch', 'house.progress'],
+      [
+        'engine.model_probe',
+        'engine.model_impact',
+        'engine.model_watch',
+        'engine.model_candidate',
+        'house.progress',
+      ],
     ]);
     await runWatch(h, { prober: scriptedProber(okProbe(V114)), configured: V113 });
     expect(await impactOf(h.owner)).toBeUndefined();

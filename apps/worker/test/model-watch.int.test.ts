@@ -74,6 +74,7 @@ beforeEach(async () => {
     [
       'engine.model_resolution',
       'engine.model_watch',
+      'engine.model_candidate',
       'engine.model_probe',
       'engine.model_impact',
       'house.progress',
@@ -120,9 +121,10 @@ async function twoAdmins(): Promise<void> {
 
 /** Adoption-specific controls start with a prior observation; lifecycle probes live in the candidate suite. */
 async function confirmNext(model: string, at: Date = NOW): Promise<void> {
-  await setSetting(h.owner, 'engine.model_watch', {
-    ...(await watchRow(h.owner)),
-    candidate: { model, firstSeenAt: iso(new Date(at.getTime() - 10 * 60_000)), count: 1 },
+  await setSetting(h.owner, 'engine.model_candidate', {
+    model,
+    firstSeenAt: iso(new Date(at.getTime() - 10 * 60_000)),
+    count: 1,
   });
 }
 

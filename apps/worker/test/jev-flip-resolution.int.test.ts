@@ -63,7 +63,12 @@ afterAll(async () => {
 beforeEach(async () => {
   await resetWorld(h, { model: OLD_MODEL });
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-    ['engine.model_watch', 'engine.rating_fingerprints', 'house.progress'],
+    [
+      'engine.model_watch',
+      'engine.model_candidate',
+      'engine.rating_fingerprints',
+      'house.progress',
+    ],
   ]);
   fake.setOptions({ apiKey: API_KEY, models: fakeTable(NEW_MODEL) });
   fake.requests.splice(0);

@@ -75,7 +75,7 @@ async function scenario(mutate: () => Promise<void>): Promise<string> {
   await w.baseline(NOW);
   await h.owner.query('DELETE FROM engine_calls');
   await h.owner.query(
-    `DELETE FROM settings WHERE key IN ('engine.typesafe_model', 'engine.model_pin', 'engine.model_resolution', 'engine.model_watch')`,
+    `DELETE FROM settings WHERE key IN ('engine.typesafe_model', 'engine.model_pin', 'engine.model_resolution', 'engine.model_watch', 'engine.model_candidate')`,
   );
   await mutate();
   const mailer = new RecordingMailer();

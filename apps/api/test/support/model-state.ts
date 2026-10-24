@@ -28,6 +28,7 @@ export const MODEL_STATE_KEYS = [
   'engine.model_resolution',
   'engine.model_pin',
   'engine.model_watch',
+  'engine.model_candidate',
   'engine.model_impact',
 ] as const;
 
