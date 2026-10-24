@@ -251,7 +251,7 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   async function recordProbe(probe: EngineModelProbe): Promise<void> {
     if (options.recordPin === false) return;
     try {
-      await recordModelProbe(db, probe);
+      await recordModelProbe(db, probe, logger);
     } catch (error) {
       logger.warn(
         { err: error, model: probe.requested },

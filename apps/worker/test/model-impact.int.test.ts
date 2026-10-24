@@ -1,6 +1,6 @@
 import type { EngineModelProbe } from '@bantoozi/shared';
 import { createUser } from '@bantoozi/testing';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dispatch } from '../src/handlers/index.js';
 import { createModelProbeHandler } from '../src/handlers/model-probe.js';
@@ -192,6 +192,21 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     await runWatch(h, { prober: scriptedProber(okProbe(V114)), configured: V113 });
     expect(await impactOf(h.owner)).toBeUndefined();
     expect(await settingValue(h.owner, 'engine.model_probe')).toBeUndefined();
+  });
+
+  it('warns once when corrupt probe state is replaced, without logging its contents', async () => {
+    const warn = vi.fn();
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('engine.model_probe', $1::jsonb)`,
+      [JSON.stringify({ unexpected: 'private payload' })],
+    );
+    await recordModelProbe(h.db, okAt(A), { warn });
+    await recordModelProbe(h.db, okAt(B), { warn });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      { key: 'engine.model_probe' },
+      'invalid stored model probes; resetting the record',
+    );
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
   });
 
   it('I9 concurrent recorders: no deadlock, at most 10 probe keys, one impact row', async () => {

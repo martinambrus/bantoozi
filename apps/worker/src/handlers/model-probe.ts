@@ -35,6 +35,6 @@ export function createModelProbeHandler(
         error: 'internal_error',
       };
     }
-    await recordModelProbe(db, result);
+    await recordModelProbe(db, result, logger);
   };
 }

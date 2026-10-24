@@ -340,11 +340,17 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
  * and records in the same transaction how many live users hold an active personal model
  * (`settings['engine.model_impact']`): the API cannot count other users' models under row-level security.
  */
-export async function recordModelProbe(db: Database, probe: EngineModelProbe): Promise<void> {
+export async function recordModelProbe(
+  db: Database,
+  probe: EngineModelProbe,
+  logger?: Pick<HandlerLogger, 'warn'>,
+): Promise<void> {
   const checked = EngineModelProbeSchema.parse(probe);
+  let resetInvalid = false;
   await retryTransaction(db, async (tx) => {
     await updateSettingLocked(tx, 'engine.model_probe', {}, (current) => {
       const stored = EngineModelProbesSchema.safeParse(current);
+      resetInvalid = !stored.success;
       const merged: Record<string, EngineModelProbe> = {
         ...(stored.success ? stored.data : {}),
         [checked.requested]: checked,
@@ -360,4 +366,11 @@ export async function recordModelProbe(db: Database, probe: EngineModelProbe): P
       EngineModelImpactSchema.parse({ at: checked.at, activeModels }),
     );
   });
+  // A retried transaction reports the reset once, after it commits, without any stored payload.
+  if (resetInvalid) {
+    logger?.warn(
+      { key: 'engine.model_probe' },
+      'invalid stored model probes; resetting the record',
+    );
+  }
 }
