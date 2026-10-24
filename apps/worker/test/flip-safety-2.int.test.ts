@@ -2,8 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import * as db from '@bantoozi/db';
 import { parseJobPayload } from '@bantoozi/shared';
+import { startFakeOllama, type FakeOllamaServer } from '@bantoozi/testing';
+import { createOllamaTranslator, type OllamaTranslator } from '@bantoozi/translate';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 
+import { createWorkerCredentialResolver } from '../src/credentials/index.js';
 import { dispatch } from '../src/handlers/index.js';
 import {
   ClassifyHarness,
@@ -19,17 +22,27 @@ import {
 } from './support/m8b-t5-world.js';
 
 let h: ClassifyHarness;
+let ollama: FakeOllamaServer;
+let translator: OllamaTranslator;
 const runtimes: WorkerRuntimeLike[] = [];
 beforeAll(async () => {
   h = await ClassifyHarness.start();
+  ollama = await startFakeOllama({ apiKey: 'draft-test-key' });
+  translator = createOllamaTranslator({ baseUrl: ollama.url });
 }, 240_000);
 afterAll(async () => {
   for (const runtime of runtimes) await runtime.close();
+  await translator?.close();
+  await ollama?.close();
   await h?.close();
 });
 beforeEach(async () => {
   vi.restoreAllMocks();
   await resetWorld(h);
+  ollama.setOptions({
+    reply: () =>
+      JSON.stringify({ name: 'Space launches', interest: 'Rocket launches and crewed missions.' }),
+  });
 });
 
 async function boot(model = OLD_MODEL) {
@@ -211,3 +224,70 @@ it('releases the suggestion lease and defers if settings move before no-demand c
   ).toEqual([{ suggest_lease_token: null, last_suggested_at: null }]);
   expect(await h.intents('user.suggest', { pending: true })).toHaveLength(1);
 });
+
+it.each(['repair', 'completion'] as const)(
+  'discards an LLM draft after its Ollama pin moves during the %s call',
+  async (phase) => {
+    const old = await boot();
+    const userId = await h.user();
+    const articleId = await h.article({ feedIds: [] });
+    const draftId = randomUUID();
+    await h.owner.query(
+      'INSERT INTO card_drafts (id, user_id, article_ids, locale) VALUES ($1, $2, $3::bigint[], $4)',
+      [draftId, userId, [articleId], 'en'],
+    );
+    if (phase === 'repair') ollama.setOptions({ reply: () => 'invalid draft' });
+    const call = translator.draftCardOnce.bind(translator);
+    const sent = vi.spyOn(translator, 'draftCardOnce').mockImplementationOnce(async (input) => {
+      const result = await call(input);
+      expect(result.ok).toBe(phase === 'completion');
+      await setSetting(h.owner, 'engine.ollama_models', {
+        fast: 'glm-5.4-flash',
+        strong: 'glm-5.4',
+      });
+      await setSetting(h.owner, 'engine.model_pin', {
+        model: OLD_MODEL,
+        llm: { fast: 'glm-5.4-flash', strong: 'glm-5.4' },
+      });
+      return result;
+    });
+    const router = new ScriptedRouter(h.db, old.processModel);
+    await h.clearOutbox();
+    await expect(
+      dispatch(
+        h.handlersWith({
+          classification: {
+            ...old.models.classification,
+            router,
+            translation: {
+              libretranslate: undefined as never,
+              ollama: translator,
+              credentials: createWorkerCredentialResolver({
+                db: h.db,
+                masterKeyId: undefined,
+                masterKeys: undefined,
+                envKeys: { ollama: 'draft-test-key' },
+              }),
+              modelFast: 'glm-5.3-flash',
+              modelStrong: 'glm-5.3',
+            },
+          },
+        }),
+        'card.draft',
+        { draftId },
+        { queue: 'card.draft', jobId: `draft-${phase}`, retry: { count: 1, limit: 1 } },
+      ),
+    ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(router.reservations).toHaveLength(1);
+    expect(router.external).toHaveLength(1);
+    expect(
+      (
+        await h.owner.query('SELECT status, source, completed_at FROM card_drafts WHERE id = $1', [
+          draftId,
+        ])
+      ).rows,
+    ).toEqual([{ status: 'pending', source: null, completed_at: null }]);
+    expect(await h.intents('card.draft', { pending: true })).toHaveLength(1);
+  },
+);
