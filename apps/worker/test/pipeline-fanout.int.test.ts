@@ -2,8 +2,11 @@ import { workerOutbox } from '@bantoozi/db';
 import { buildJobIntent } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 
+import { enqueueStaleEstimates } from '../src/estimate/sweep.js';
 import { after, afterNewCarrier, type PipelineGate } from '../src/pipeline.js';
+import { loadRankerSettings } from '../src/rank/settings.js';
 import { ClassifyHarness } from './support/classify.js';
+import { EstimateWorld } from './support/estimate-world.js';
 
 let h: ClassifyHarness;
 let users: string[];
@@ -83,3 +86,38 @@ it.each(['enrich', 'match', 'cluster', 'carry'] as const)(
     expect(statements.rows).toEqual([{ queues: ['user.rank'] }]);
   },
 );
+
+it('sweeps N due readers with one estimate INSERT per page in user order', async () => {
+  const w = await EstimateWorld.create(h);
+  try {
+    for (const userId of users) {
+      await h.subscribe(userId, w.feedId, 'active');
+      await w.rateClasses(userId, 6, 6);
+    }
+    const { config } = await loadRankerSettings(h.db);
+    const result = await enqueueStaleEstimates(h.deps, {
+      now: new Date(),
+      config,
+      pageSize: 2,
+    });
+    expect(result).toMatchObject({ examined: 3, enqueued: 3, failed: 0 });
+    const rows = await h.owner.query(
+      'SELECT queue, payload, dedupe_key, user_id FROM job_outbox WHERE delivered_at IS NULL ORDER BY id',
+    );
+    expect(rows.rows).toEqual(
+      [...users].sort().map((userId) => {
+        const intent = buildJobIntent('user.estimate', { userId });
+        return {
+          queue: intent.queue,
+          payload: intent.payload,
+          dedupe_key: intent.dedupeKey,
+          user_id: null,
+        };
+      }),
+    );
+    const statements = await h.owner.query('SELECT queues FROM test_outbox_statements ORDER BY id');
+    expect(statements.rows).toEqual([{ queues: ['user.estimate'] }, { queues: ['user.estimate'] }]);
+  } finally {
+    await w.close();
+  }
+});

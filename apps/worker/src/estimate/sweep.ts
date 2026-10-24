@@ -1,6 +1,6 @@
 import { listEstimateSweepUsers, retryTransaction, workerOutbox } from '@bantoozi/db';
 import type { RankerSettings } from '@bantoozi/ranker';
-import { enqueueEstimate } from '@bantoozi/shared';
+import { enqueueEstimateMany } from '@bantoozi/shared';
 
 import type { WorkerDeps } from '../handlers/deps.js';
 import { estimateAction, loadEstimateInputs } from './inputs.js';
@@ -50,7 +50,7 @@ export async function enqueueStaleEstimates(
     if (due.length > 0) {
       await retryTransaction(deps.db, async (tx) => {
         const sender = workerOutbox(tx);
-        for (const userId of due) await enqueueEstimate(sender, { userId });
+        await enqueueEstimateMany(sender, due);
       });
     }
     examined += page.length;
