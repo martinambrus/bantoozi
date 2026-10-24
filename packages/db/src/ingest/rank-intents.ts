@@ -1,4 +1,4 @@
-import { enqueueRank, type JobSender } from '@bantoozi/shared';
+import { enqueueRankMany, type JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
@@ -26,11 +26,12 @@ export async function recordRankIntents(
                ORDER BY id FOR NO KEY UPDATE) l
        WHERE u.id = l.id AND u.deleted_at IS NULL`);
   }
-  for (const userId of users) {
-    await enqueueRank(sender, {
+  await enqueueRankMany(
+    sender,
+    users.map((userId) => ({
       userId,
       reason: options.reason,
       ...(options.full === true ? { full: true } : {}),
-    });
-  }
+    })),
+  );
 }

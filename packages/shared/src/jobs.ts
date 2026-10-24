@@ -397,6 +397,8 @@ export interface JobIntent<Q extends QueueName = QueueName> {
 /** Durable sink for job intents: the outbox writer (db) or, in the relay, pg-boss. */
 export interface JobSender {
   enqueue(intent: JobIntent): Promise<void>;
+  /** Persist a fan-out in one statement when the sink supports it. */
+  enqueueMany?(intents: readonly JobIntent[]): Promise<void>;
 }
 
 export interface EnqueueOptions {
@@ -584,6 +586,34 @@ export const enqueueLearn = (s: JobSender, p: JobPayloadInput<'user.learn'>) =>
   enqueue(s, 'user.learn', p);
 export const enqueueEstimate = (s: JobSender, p: JobPayloadInput<'user.estimate'>) =>
   enqueue(s, 'user.estimate', p);
+
+async function enqueueMany(sender: JobSender, intents: readonly JobIntent[]): Promise<void> {
+  if (intents.length === 0) return;
+  if (sender.enqueueMany !== undefined) await sender.enqueueMany(intents);
+  else for (const intent of intents) await sender.enqueue(intent);
+}
+
+/** The same validated intents as the single-user helpers, with an optional batch sink. */
+export const enqueueRankMany = async (
+  sender: JobSender,
+  payloads: readonly JobPayloadInput<'user.rank'>[],
+  opts?: EnqueueOptions,
+) =>
+  enqueueMany(
+    sender,
+    payloads.map((payload) => buildJobIntent('user.rank', payload, opts)),
+  );
+export const enqueueLearnMany = async (sender: JobSender, userIds: readonly string[]) =>
+  enqueueMany(
+    sender,
+    userIds.map((userId) => buildJobIntent('user.learn', { userId })),
+  );
+export const enqueueEstimateMany = async (sender: JobSender, userIds: readonly string[]) =>
+  enqueueMany(
+    sender,
+    userIds.map((userId) => buildJobIntent('user.estimate', { userId })),
+  );
+
 export const enqueueSuggest = (s: JobSender, p: JobPayloadInput<'user.suggest'>) =>
   enqueue(s, 'user.suggest', p);
 export const enqueueCardDraft = (s: JobSender, p: JobPayloadInput<'card.draft'>) =>

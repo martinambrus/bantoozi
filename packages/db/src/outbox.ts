@@ -23,6 +23,57 @@ async function insertIntent(tx: Executor, intent: JobIntent, requester: string |
     ON CONFLICT DO NOTHING`);
 }
 
+/** One parameter keeps fan-outs independent of PostgreSQL's bind-parameter limit. */
+function intentRows(intents: readonly JobIntent[]) {
+  return sql`SELECT item->>'queue' AS queue, item->'payload' AS payload,
+                   item->>'dedupeKey' AS dedupe_key
+    FROM jsonb_array_elements(${JSON.stringify(
+      intents.map(({ queue, payload, dedupeKey }) => ({ queue, payload, dedupeKey })),
+    )}::jsonb) WITH ORDINALITY AS batch(item, position)
+    ORDER BY position`;
+}
+
+async function insertIntents(
+  tx: Executor,
+  intents: readonly JobIntent[],
+  requester: string | null,
+) {
+  if (intents.length === 0) return;
+  // Like insertIntent: INSERT only, no RETURNING or conflict target requiring SELECT privileges.
+  await tx.execute(sql`
+    INSERT INTO job_outbox (queue, payload, dedupe_key, user_id)
+    SELECT queue, payload, dedupe_key, ${requester}::uuid FROM (${intentRows(intents)}) batch
+    ON CONFLICT DO NOTHING`);
+}
+
+async function insertDelayedWorkerIntents(
+  tx: Executor,
+  intents: readonly JobIntent[],
+  availableAt: Date,
+) {
+  if (intents.length === 0) return;
+  // A single upsert cannot affect the same row twice. Match sequential inserts by keeping the
+  // first occurrence of each non-null key; null keys never coalesce.
+  const seen = new Set<string>();
+  const distinct = intents.filter((intent) => {
+    if (intent.dedupeKey === null) return true;
+    const key = JSON.stringify([intent.queue, intent.dedupeKey]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  await tx.execute(sql`
+    INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
+    SELECT queue, payload, dedupe_key, NULL,
+           greatest(now(), ${availableAt.toISOString()}::timestamptz)
+      FROM (${intentRows(distinct)}) batch
+    ON CONFLICT (queue, dedupe_key)
+      WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
+    DO UPDATE SET available_at = least(job_outbox.available_at, excluded.available_at)
+      WHERE job_outbox.delivered_at IS NULL
+        AND excluded.available_at < job_outbox.available_at`);
+}
+
 /**
  * Whether a rank of the caller is already on its way: an undelivered `user.rank` intent without a
  * cursor (full or not), or a created/retry `rank:<user>` or `rank-full:<user>` job (migration 0021;
@@ -61,7 +112,10 @@ export async function enqueueDelayedWorkerIntent(
 /** The API's outbox writer: the requester is the transaction's tenant (RLS `job_outbox_requester`). */
 export function tenantOutbox(tx: TenantTx): JobSender {
   const requester = tenantUserId(tx);
-  return { enqueue: (intent) => insertIntent(tx, intent, requester) };
+  return {
+    enqueue: (intent) => insertIntent(tx, intent, requester),
+    enqueueMany: (intents) => insertIntents(tx, intents, requester),
+  };
 }
 
 /**
@@ -77,6 +131,10 @@ export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = 
       if (availableAt === undefined) await insertIntent(tx, intent, null);
       else await enqueueDelayedWorkerIntent(tx, intent, availableAt);
     },
+    enqueueMany: (intents) =>
+      availableAt === undefined
+        ? insertIntents(tx, intents, null)
+        : insertDelayedWorkerIntents(tx, intents, availableAt),
   };
 }
 

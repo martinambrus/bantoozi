@@ -4,7 +4,7 @@ import {
   updateSettingLocked,
   workerOutbox,
 } from '@bantoozi/db';
-import { buildJobIntent, parseSetting } from '@bantoozi/shared';
+import { buildJobIntent, parseSetting, type JobIntent } from '@bantoozi/shared';
 
 import { enqueueStaleEstimates } from '../estimate/sweep.js';
 import { ensureFingerprintRegistered, guardedRegistration } from '../learn/fingerprints.js';
@@ -75,15 +75,17 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
       }
       await retryTransaction(deps.db, async (tx) => {
         const sender = workerOutbox(tx);
+        const learnIntents: JobIntent[] = [];
+        const suggestIntents: JobIntent[] = [];
         for (const user of page) {
           const inputSha = changed.get(user.userId);
           if (inputSha !== undefined) {
-            await sender.enqueue(
+            learnIntents.push(
               buildJobIntent('user.learn', { userId: user.userId }, { revision: inputSha }),
             );
           }
           if (user.recentlyActive) {
-            await sender.enqueue(
+            suggestIntents.push(
               buildJobIntent(
                 'user.suggest',
                 { userId: user.userId },
@@ -92,6 +94,8 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
             );
           }
         }
+        await sender.enqueueMany!(learnIntents);
+        await sender.enqueueMany!(suggestIntents);
       });
       examined += page.length;
       learn += changed.size;

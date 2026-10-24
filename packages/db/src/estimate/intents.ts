@@ -1,4 +1,4 @@
-import { enqueueEstimate, type JobSender } from '@bantoozi/shared';
+import { enqueueEstimate, enqueueEstimateMany, type JobSender } from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
@@ -61,5 +61,8 @@ async function recordRaterEstimateIntents(
       JOIN users u ON u.id = ua.user_id AND u.deleted_at IS NULL
      WHERE ua.rating IN (1, -1) AND ${affected}
      ORDER BY user_id`);
-  for (const row of result.rows) await enqueueEstimate(outbox, { userId: row.user_id });
+  await enqueueEstimateMany(
+    outbox,
+    result.rows.map((row) => row.user_id),
+  );
 }

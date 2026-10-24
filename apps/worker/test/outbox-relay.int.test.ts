@@ -8,7 +8,14 @@ import {
   workerOutbox,
   type Database,
 } from '@bantoozi/db';
-import { buildJobIntent, type JobPayloadInput, type QueueName } from '@bantoozi/shared';
+import {
+  buildJobIntent,
+  enqueueRankMany,
+  enqueueLearnMany,
+  enqueueEstimateMany,
+  type JobPayloadInput,
+  type QueueName,
+} from '@bantoozi/shared';
 import { dropCreatedTestDatabases, setupTestDatabase, type TestDatabase } from '@bantoozi/testing';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -117,6 +124,50 @@ beforeEach(async () => {
 });
 
 describe('outbox relay', () => {
+  it('drains a fan-out across bounded relay batches with the existing per-user queue keys', async () => {
+    const users = Array.from({ length: 50 }, () => crypto.randomUUID());
+    await db.transaction(async (tx) => {
+      const sender = workerOutbox(tx);
+      await enqueueRankMany(
+        sender,
+        users.map((userId) => ({ userId, reason: 'settings', full: true })),
+      );
+      await enqueueLearnMany(sender, users);
+      await enqueueEstimateMany(sender, users);
+    });
+    const handlers = implementing('user.rank', 'user.learn', 'user.estimate');
+    expect(await relayOnce(db, broker, { handlers })).toEqual({
+      claimed: 100,
+      delivered: 100,
+      retained: 0,
+      failed: 0,
+      lost: 0,
+    });
+    expect(await relayOnce(db, broker, { handlers })).toEqual({
+      claimed: 50,
+      delivered: 50,
+      retained: 0,
+      failed: 0,
+      lost: 0,
+    });
+    expect((await relayOnce(db, broker, { handlers })).claimed).toBe(0);
+    const delivered = await outbox();
+    expect(delivered).toHaveLength(150);
+    expect(delivered.every((row) => row.delivered && row.attempts === 1 && !row.leased)).toBe(true);
+    const queued = await owner.query<{
+      name: string;
+      data: { userId: string };
+      singleton_key: string;
+    }>(`SELECT name, data, singleton_key FROM pgboss.job`);
+    expect(queued.rows).toHaveLength(150);
+    for (const queue of ['user.rank', 'user.learn', 'user.estimate']) {
+      const rows = queued.rows.filter((row) => row.name === queue);
+      expect(rows.map((row) => row.data.userId).sort()).toEqual([...users].sort());
+      const prefix = queue === 'user.rank' ? 'rank-full' : queue.slice(5);
+      expect(rows.every((row) => row.singleton_key === `${prefix}:${row.data.userId}`)).toBe(true);
+    }
+  });
+
   it('keeps intents of unavailable stages (stage_unavailable) and delivers them once implemented', async () => {
     await enqueue('article.extract', { articleId: '1' }, '1');
     const report = await relayOnce(db, broker, { handlers: HANDLERS, logger: silent });

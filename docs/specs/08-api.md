@@ -838,7 +838,8 @@ bounded integer. Prevent accidental removal of the last active admin; revoke aff
 role downgrade, recompute feed intervals on plan changes, and record actor/target/changed keys in
 the audit log without secrets. Card promotion cannot bypass the sharing/consent policy (PLAN §17).
 Settings patches validate the **merged** configuration, lock/version the settings rows and commit
-all side effects through the outbox. Setting unchanged values is a no-op. Activating question sets
+all side effects through the outbox; a per-user fan-out (rank, learn, estimate) is one set-based
+outbox INSERT per queue whatever the number of users, with the same rows as one insert each. Setting unchanged values is a no-op. Activating question sets
 must validate existence/kind and apply spec 05's cache-invalidation/backfill policy for every changed
 kind; the abbreviated table is not permission to activate a set without its lifecycle effects.
 Admin queries default to 30 rows, limit at 100, validate `days` 1..90 and search `q` length ≤200.
