@@ -28,7 +28,7 @@ import {
 import type {
   DecisionEngine,
   EngineAttempt,
-  EngineRequest,
+  EngineAdapterRequest,
   ProviderAuth,
   Question,
 } from './types.js';
@@ -81,8 +81,8 @@ export interface TypeSafeEngineOptions {
 /** The exact request body of spec 04 §3: `{model, state, questions}` and nothing else. */
 export function typesafeRequestBody(
   model: string,
-  req: Pick<EngineRequest, 'state' | 'questions'>,
-): { model: string; state: EngineRequest['state']; questions: Record<string, Question> } {
+  req: Pick<EngineAdapterRequest, 'state' | 'questions'>,
+): { model: string; state: EngineAdapterRequest['state']; questions: Record<string, Question> } {
   return { model, state: req.state, questions: req.questions };
 }
 
@@ -205,7 +205,7 @@ export function createTypeSafeEngine(options: TypeSafeEngineOptions): DecisionEn
   return {
     name: 'typesafe',
     async ask(
-      req: EngineRequest,
+      req: EngineAdapterRequest,
       signal: AbortSignal,
       auth?: ProviderAuth,
     ): Promise<EngineAttempt> {

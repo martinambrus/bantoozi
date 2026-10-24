@@ -289,7 +289,14 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
     ]);
     const circuitBefore = await circuitText();
     const version = await stage('typesafe', JEV_KEY);
-    await handler().validate('typesafe', version);
+    const adapter = realJev();
+    const ask = vi.spyOn(adapter, 'ask');
+    await handler({ engines: { typesafe: adapter } }).validate('typesafe', version);
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'credential_probe' }),
+      expect.anything(),
+      expect.anything(),
+    );
 
     const record = await metadata('typesafe');
     expect(record).toMatchObject({

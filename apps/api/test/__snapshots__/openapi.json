@@ -19556,6 +19556,11 @@
                           "type": "number",
                           "minimum": 0
                         },
+                        "exemptSpendTodayUsd": {
+                          "default": 0,
+                          "type": "number",
+                          "minimum": 0
+                        },
                         "dailyBudgetUsd": {
                           "type": "number",
                           "minimum": 0
@@ -19574,6 +19579,7 @@
                       "required": [
                         "breakers",
                         "spendTodayUsd",
+                        "exemptSpendTodayUsd",
                         "dailyBudgetUsd",
                         "llmCallsToday",
                         "llmDailyCap"

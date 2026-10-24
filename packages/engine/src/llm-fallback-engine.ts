@@ -29,7 +29,7 @@ import {
 import type {
   DecisionEngine,
   EngineAttempt,
-  EngineRequest,
+  EngineAdapterRequest,
   ProviderAuth,
   Question,
 } from './types.js';
@@ -195,7 +195,7 @@ export function llmSystemContent(questions: Record<string, Question>): string {
 }
 
 /** The user message: the untrusted data, `JSON.stringify({state, questions})`. */
-export function llmUserContent(req: Pick<EngineRequest, 'state' | 'questions'>): string {
+export function llmUserContent(req: Pick<EngineAdapterRequest, 'state' | 'questions'>): string {
   return JSON.stringify({ state: req.state, questions: req.questions });
 }
 
@@ -206,7 +206,7 @@ export function llmUserContent(req: Pick<EngineRequest, 'state' | 'questions'>):
  */
 export function llmRequestBody(
   model: string,
-  req: Pick<EngineRequest, 'state' | 'questions'>,
+  req: Pick<EngineAdapterRequest, 'state' | 'questions'>,
   options: { maxOutputTokens: number; structuredOutputs?: boolean },
 ): JsonObject {
   return {
@@ -243,7 +243,7 @@ function textTokens(text: string): number {
  * §6.1: "include the schema/system prompt in input estimates").
  */
 export function estimateLlmInputTokens(
-  state: EngineRequest['state'],
+  state: EngineAdapterRequest['state'],
   questions: Record<string, Question>,
 ): number {
   return (
@@ -357,7 +357,7 @@ export function createLlmFallbackEngine(options: LlmFallbackEngineOptions): Deci
   return {
     name: 'llm',
     async ask(
-      req: EngineRequest,
+      req: EngineAdapterRequest,
       signal: AbortSignal,
       auth?: ProviderAuth,
     ): Promise<EngineAttempt> {

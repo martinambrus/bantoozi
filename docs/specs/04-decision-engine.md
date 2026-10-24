@@ -41,7 +41,7 @@ export interface UsageRow {                    // mirrors usage_daily
   engine: string; kind: CallKind; calls: number; inputTokens: number; outputTokens: number; costUsd: number;
 }
 export interface ExternalCall {                // non-engine calls logged through the router (translation, spec 07 §2)
-  engine: 'libretranslate' | 'llm' | 'typesafe'; kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft' | 'model_probe'; model?: string; articleId?: string;
+  engine: 'libretranslate' | 'llm' | 'typesafe'; kind: ExternalCallKind; model?: string; articleId?: string;
   inputTokens: number; outputTokens: number; costUsd: number; latencyMs: number;
   status: CallStatus; error?: string; billing: 'known'|'uncertain';
   logicalRequestId: string; attempt: number; articleRevision?: string; stateSha256?: string;
@@ -57,14 +57,13 @@ export interface EngineStore {                 // implemented in packages/db
   releaseReservation(id: string): Promise<void>; // an admitted attempt never sent: no call row, no spend (D-95)
   insertCall(row: EngineCallRow): Promise<void>; // zero-cost calls only; idempotent
   upsertUsage(row: UsageRow): Promise<void>;      // used inside settlement, never independently for paid calls
-  spendSince(fromUtc: Date, opts: { excludeKinds: CallKind[] | 'none' }): Promise<number>;
-  getBudgetSnapshot(dayUtc: string, opts: { excludeKinds: CallKind[] | 'none' }): Promise<{
+  getBudgetSnapshot(dayUtc: string, opts: { excludeKinds: readonly CallKind[] | 'none' }): Promise<{
     settledUsd: number; reservedUsd: number; uncertainUsd: number;
     callsByEngineKind: Record<string, number>; // keys `${engine}:${kind}`; each attempt once
   }>;
   // Snapshot reads actual settled cost plus separate outstanding/uncertain reservation amounts;
   // never count one reservation and its audit row twice. Counts include admitted in-flight
-  // attempts. Production status/caps exclude eval; admission still locks/reserves atomically.
+  // attempts. Production status/caps exclude the budget-exempt kinds of the call-kinds table (D-302); admission still locks/reserves atomically.
   getSetting<T>(key: string): Promise<T | undefined>;
   setSetting<T>(key: string, value: T): Promise<void>;
 }
@@ -85,7 +84,7 @@ export type ScoreAnswer  = { type: 'score';  score: number; probabilities: numbe
 export type Answer = NoulAnswer | ChoiceAnswer | ScoreAnswer;
 
 export interface EngineRequest {
-  kind: Exclude<CallKind, 'translate'|'credential_probe'|'card_draft'|'model_probe'>; // translation/probes/drafts use ExternalCall
+  kind: AskCallKind; // translation/probes/drafts use ExternalCall; CALL_KINDS, ASK_KINDS and the budget-exempt kinds derive from CALL_KIND_PROFILES (D-302, D-318)
   state: JsonValue;
   questions: Record<string, Question>;     // keys: [a-zA-Z0-9_.-]{1,64}
   questionSetId?: string;                  // for logging

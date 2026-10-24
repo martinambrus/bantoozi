@@ -8,6 +8,7 @@ import type {
   Answer,
   DecisionEngine,
   EngineAttempt,
+  EngineAdapterRequest,
   EngineConfig,
   EngineLogger,
   EngineRequest,
@@ -98,7 +99,7 @@ export function answersFor(questions: Record<string, Question>): Record<string, 
 
 export const USAGE = { inputTokens: 100, outputTokens: 10 };
 
-export function success(engine: EngineName, req: EngineRequest): EngineAttempt {
+export function success(engine: EngineName, req: EngineAdapterRequest): EngineAttempt {
   return {
     ok: true,
     engine,
@@ -130,13 +131,13 @@ export type Step =
   | 'ok'
   | EngineAttempt
   | ((
-      req: EngineRequest,
+      req: EngineAdapterRequest,
       auth: ProviderAuth | undefined,
       signal: AbortSignal,
     ) => Promise<EngineAttempt> | EngineAttempt);
 
 export interface ScriptedEngine extends DecisionEngine {
-  calls: Array<{ req: EngineRequest; auth: ProviderAuth | undefined; at: number }>;
+  calls: Array<{ req: EngineAdapterRequest; auth: ProviderAuth | undefined; at: number }>;
   script: Step[];
   /** The step used once the script is exhausted. */
   otherwise: Step;

@@ -15,7 +15,7 @@ import type { Priority } from './types.js';
  * requests stop at 100 %. Admission itself is atomic in the store (`reserveSpend` under the UTC-day
  * lock, spec 02 §3.3); these pure helpers give the router its advisory checks (`canSpend`,
  * `status()`), the deferral time and the eval router's own synchronized per-invocation cap.
- * `kind = 'eval'` never counts against the production budget.
+ * The router and store exclude BUDGET_EXEMPT_KINDS, derived from the call-kind table.
  */
 
 /** Interactive requests may exceed the daily budget by this share. */

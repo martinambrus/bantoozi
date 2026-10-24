@@ -3,10 +3,12 @@ import type { CallKind, InferenceAuthorization } from './ports.js';
 /**
  * How each `engine_calls.kind` is treated (spec 02 §3.1, spec 04 §1.1 and §6, spec 10 §7, spec 11
  * §6.1). This table is the one place that classifies call kinds: the engine store (kind check,
- * call-cap groups, authorization pairing), the engine's spend guard, the alert queries, the admin
- * overview and the live engine metrics all derive from it. It is typed over every {@link CallKind},
- * so a new kind does not compile until it is classified here. The one list kept by hand is
- * `engine_calls_kind_check` (a migration owns it); a test compares it with {@link CALL_KINDS}.
+ * call-cap groups, authorization pairing), API routes and kind types, production-budget guards
+ * and crossings, alert queries, admin overview and live engine metrics all derive from it. It is
+ * typed over every {@link CallKind}, so a new kind must be routed and classified here. Budget-exempt
+ * kinds need their own authorization; non-live probes still consume the production budget.
+ * `engine_calls_kind_check` stays a migration-owned list tested against {@link CALL_KINDS};
+ * `engine_reservations.kind` has no database CHECK yet (adding one needs a migration).
  */
 export interface CallKindProfile {
   /** API entry points. Eval is accepted by both, under an eval router's invocation cap. */

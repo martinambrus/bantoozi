@@ -168,15 +168,14 @@ export interface EngineStore {
   insertCall(row: EngineCallRow): Promise<void>;
   /** Used inside settlement, never independently for paid calls. */
   upsertUsage(row: UsageRow): Promise<void>;
-  spendSince(fromUtc: Date, opts: { excludeKinds: CallKind[] | 'none' }): Promise<number>;
   /**
    * Actual settled cost plus separate outstanding/uncertain reservation amounts; never count one
    * reservation and its audit row twice. Counts include admitted in-flight attempts. Production
-   * status/caps exclude eval; admission still locks/reserves atomically.
+   * status/caps exclude the table-defined budget-exempt kinds; admission still locks/reserves atomically.
    */
   getBudgetSnapshot(
     dayUtc: string,
-    opts: { excludeKinds: CallKind[] | 'none' },
+    opts: { excludeKinds: readonly CallKind[] | 'none' },
   ): Promise<BudgetSnapshot>;
   getSetting<T>(key: string): Promise<T | undefined>;
   setSetting<T>(key: string, value: T): Promise<void>;

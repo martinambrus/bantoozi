@@ -16,8 +16,8 @@ import { capKinds, INTERACTIVE_ALLOWANCE, USD_EPSILON } from '../../src/spend-gu
 
 /**
  * An in-memory {@link EngineStore} with the semantics of the PostgreSQL store (packages/db): a
- * reservation ledger counted once per reservation, call caps, the interactive allowance, eval
- * excluded from the production budget, idempotent settlement on the reservation id and uncertain
+ * reservation ledger counted once per reservation, call caps, the interactive allowance, table-defined
+ * production-budget exemptions, idempotent settlement on the reservation id and uncertain
  * reconciliation. `reserveSpend` checks and inserts without awaiting in between, so concurrent
  * callers are serialized like the advisory lock serializes them.
  */
@@ -202,13 +202,6 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
 
     async upsertUsage(row) {
       addUsage(row);
-    },
-
-    async spendSince(from, opts) {
-      const excluded = opts.excludeKinds === 'none' ? [] : opts.excludeKinds;
-      return reservations
-        .filter((r) => !excluded.includes(r.kind))
-        .reduce((sum, r) => sum + (r.status === 'settled' ? (r.actualUsd ?? 0) : r.reservedUsd), 0);
     },
 
     async getBudgetSnapshot(day, opts): Promise<BudgetSnapshot> {

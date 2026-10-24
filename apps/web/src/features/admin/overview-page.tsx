@@ -103,6 +103,11 @@ function Tiles({ overview }: { overview: AdminOverview }) {
             cap: format.usd(engine.dailyBudgetUsd),
           })}
         </Value>
+        {engine.exemptSpendTodayUsd > 0 && (
+          <Hint>
+            {t('overview.tiles.exemptSpend', { value: format.usd(engine.exemptSpendTodayUsd) })}
+          </Hint>
+        )}
       </Tile>
       <Tile label={t('overview.tiles.llm')}>
         <Value>

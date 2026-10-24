@@ -1,6 +1,8 @@
 import {
   ASK_KINDS,
   BUDGET_EXEMPT_KINDS,
+  CALL_KIND_PROFILES,
+  KIND_AUTHORIZATIONS,
   conservativeRequestTokens,
   demandBasisOf,
   isAppError,
@@ -116,6 +118,8 @@ const MAX_DETAIL_LENGTH = 200;
 const MAX_CARD_IDS = 10_000;
 const DIGEST = /^[A-Za-z0-9+/=_-]{1,128}$/;
 const REASON = /^[a-z][a-z0-9_]{0,31}$/;
+/** The table's kind admitted by an eval authorization. */
+const EVAL_KIND = KIND_AUTHORIZATIONS.find(([, type]) => type === 'eval')![0];
 const ASK_KIND_SET: ReadonlySet<string> = new Set(ASK_KINDS);
 /** `settingDefault` of the cap keys does not depend on the environment. */
 const NO_ENV: SettingEnvDefaults = { dailyBudgetUsd: 0, languageModes: {}, signupMode: 'invite' };
@@ -451,7 +455,8 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
   function requestProblem(req: EngineRequest): string | undefined {
     if (typeof req !== 'object' || req === null) return 'request: not an object';
     if (!ASK_KIND_SET.has(req.kind)) return 'kind: unknown';
-    if (req.kind === 'eval' && !evalRouter) return 'kind: eval needs an eval router';
+    if (CALL_KIND_PROFILES[req.kind].budgetExempt && !evalRouter)
+      return 'kind: eval needs an eval router';
     if (req.priority !== 'interactive' && req.priority !== 'bulk') return 'priority: unknown';
     const authorization: unknown = req.authorization;
     if (typeof authorization !== 'object' || authorization === null)
@@ -1127,7 +1132,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       }
       const ctx: AskContext = {
         req,
-        kind: evalRouter ? 'eval' : req.kind,
+        kind: evalRouter ? EVAL_KIND : req.kind,
         signal: abort,
         logicalRequestId: newId(),
         ordinals: { typesafe: 0, llm: 0, laya: 0 },
@@ -1205,7 +1210,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         metadata('typesafe'),
         metadata('ollama'),
         breaker.states(),
-        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: [...BUDGET_EXEMPT_KINDS] }),
+        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: BUDGET_EXEMPT_KINDS }),
         budgetUsd(),
       ]);
       return {
@@ -1222,7 +1227,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       if (!Number.isFinite(estimateUsd) || estimateUsd < 0) return false;
       if (evalBudget !== undefined) return estimateUsd <= evalBudget.remainingUsd + USD_EPSILON;
       const [snapshot, budget] = await Promise.all([
-        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: [...BUDGET_EXEMPT_KINDS] }),
+        store.getBudgetSnapshot(utcDay(clock.now()), { excludeKinds: BUDGET_EXEMPT_KINDS }),
         budgetUsd(),
       ]);
       return admitsSpend({
@@ -1238,8 +1243,8 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         throw new RangeError('estimateUsd must be a finite non-negative amount');
       }
       // Eval spend is only admitted by an eval router, under its invocation cap.
-      if (!evalRouter && input.kind === 'eval') return null;
-      const kind: CallKind = evalRouter ? 'eval' : input.kind;
+      if (!evalRouter && CALL_KIND_PROFILES[input.kind]?.budgetExempt) return null;
+      const kind: CallKind = evalRouter ? EVAL_KIND : input.kind;
       if (evalBudget !== undefined && !evalBudget.tryReserve(input.estimateUsd)) return null;
       let id: string | null;
       try {
@@ -1279,7 +1284,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     },
 
     async recordExternalCall(call: ExternalCall, reservationId?: string) {
-      const kind: CallKind = evalRouter ? 'eval' : call.kind;
+      const kind: CallKind = evalRouter ? EVAL_KIND : call.kind;
       const known = call.billing === 'known';
       const tracked = reservationId === undefined ? undefined : external.get(reservationId);
       const userId = tracked?.userId;

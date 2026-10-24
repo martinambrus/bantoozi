@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  BUDGET_EXEMPT_KINDS,
   CALL_KINDS,
   newUuid,
   PLATFORM_USER_ID,
@@ -299,7 +300,7 @@ describe('reserveSpend and settleReservation (spec 04 §6)', () => {
       output_tokens: '50',
       cost_usd: '0.04000000',
     });
-    const snapshot = await s.getBudgetSnapshot(day, { excludeKinds: ['eval'] });
+    const snapshot = await s.getBudgetSnapshot(day, { excludeKinds: BUDGET_EXEMPT_KINDS });
     expect(snapshot).toEqual({
       settledUsd: 0.04,
       reservedUsd: 0,
@@ -404,7 +405,7 @@ describe('reserveSpend and settleReservation (spec 04 §6)', () => {
       { billing: 'uncertain', cost_usd: '0.00000000', status: 'timeout' },
     ]);
     // Still charged at the full reserve: 0.3 of 1.0 is committed.
-    expect(await s.getBudgetSnapshot(day, { excludeKinds: ['eval'] })).toMatchObject({
+    expect(await s.getBudgetSnapshot(day, { excludeKinds: BUDGET_EXEMPT_KINDS })).toMatchObject({
       uncertainUsd: 0.3,
       settledUsd: 0,
     });
@@ -453,8 +454,12 @@ describe('reserveSpend and settleReservation (spec 04 §6)', () => {
     );
     expect(await usage(day, PLATFORM_USER_ID)).toMatchObject({ calls: 1, cost_usd: '0.04000000' });
     expect(await usage(next, PLATFORM_USER_ID)).toBeUndefined();
-    expect((await s.getBudgetSnapshot(day, { excludeKinds: ['eval'] })).settledUsd).toBe(0.04);
-    expect((await s.getBudgetSnapshot(next, { excludeKinds: ['eval'] })).settledUsd).toBe(0);
+    expect((await s.getBudgetSnapshot(day, { excludeKinds: BUDGET_EXEMPT_KINDS })).settledUsd).toBe(
+      0.04,
+    );
+    expect(
+      (await s.getBudgetSnapshot(next, { excludeKinds: BUDGET_EXEMPT_KINDS })).settledUsd,
+    ).toBe(0);
   });
 
   it('rejects settlements that do not match their reservation', async () => {
@@ -540,10 +545,9 @@ describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
       ),
     );
     expect(results.filter((r) => r !== null)).toHaveLength(3);
-    expect((await a.getBudgetSnapshot(day, { excludeKinds: ['eval'] })).reservedUsd).toBeCloseTo(
-      0.9,
-      8,
-    );
+    expect(
+      (await a.getBudgetSnapshot(day, { excludeKinds: BUDGET_EXEMPT_KINDS })).reservedUsd,
+    ).toBeCloseTo(0.9, 8);
   });
 
   it('gives interactive requests a 10 % allowance and stops bulk at 100 %', async () => {
@@ -585,7 +589,6 @@ describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
     const day = freshDay();
     const s = store(0.5);
     const evalAuth: InferenceAuthorization = { type: 'eval', runId: 'run-2031' };
-    const since = new Date();
     const evalId = await s.reserveSpend(
       reserveInput(day, evalAuth, { kind: 'eval', estimateUsd: 3 }),
     );
@@ -594,7 +597,7 @@ describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
     expect(
       await s.reserveSpend(reserveInput(day, demand.authorization, { estimateUsd: 0.5 })),
     ).not.toBeNull();
-    expect(await s.getBudgetSnapshot(day, { excludeKinds: ['eval'] })).toMatchObject({
+    expect(await s.getBudgetSnapshot(day, { excludeKinds: BUDGET_EXEMPT_KINDS })).toMatchObject({
       reservedUsd: 0.5,
     });
     expect(
@@ -612,8 +615,7 @@ describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
     expect(
       await s.reserveSpend(reserveInput(day, { type: 'eval', runId: ' ' }, { kind: 'eval' })),
     ).toBeNull();
-    expect(await s.spendSince(since, { excludeKinds: ['eval'] })).toBe(0.5);
-    expect(await s.spendSince(since, { excludeKinds: 'none' })).toBe(4.5);
+    expect((await s.getBudgetSnapshot(day, { excludeKinds: 'none' })).reservedUsd).toBe(4.5);
   });
 
   it('counts one daily call cap across the decision kinds of an engine', async () => {
@@ -640,6 +642,63 @@ describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
 });
 
 describe('budget alert crossings (spec 04 §6, spec 11 §6)', () => {
+  it.each(['known', 'reconciled'] as const)(
+    'does not mark crossings on an eval settlement (%s)',
+    async (mode) => {
+      const demand = await automaticDemand();
+      const s = store(1);
+      const day = freshDay();
+      // Leave production above 80 % but remove its admission alert. An unconditional
+      // markBudgetCrossings on eval would now write it, even though eval is excluded in SQL.
+      await s.reserveSpend(reserveInput(day, demand.authorization, { estimateUsd: 0.85 }));
+      const id = (await s.reserveSpend(
+        reserveInput(
+          day,
+          { type: 'eval', runId: 'settlement-control' },
+          {
+            kind: 'eval',
+            estimateUsd: 2,
+          },
+        ),
+      ))!;
+      const call = callRow({ kind: 'eval', costUsd: 3 });
+      const usage = usageRow(day, { kind: 'eval', costUsd: 3 });
+      if (mode === 'reconciled') await s.settleReservation(id, call, usage, 'uncertain');
+      await ctx.owner.query("DELETE FROM settings WHERE key = 'engine.budget_alerts'");
+      await s.settleReservation(id, call, usage, 'known');
+      expect(await setting('engine.budget_alerts')).toBeUndefined();
+      expect(await reservation(id)).toMatchObject({ status: 'settled', actual_usd: '3.00000000' });
+    },
+  );
+
+  it.each(['known', 'reconciled'] as const)(
+    'marks exactly one 80 % crossing on production settlement (%s)',
+    async (mode) => {
+      const demand = await automaticDemand();
+      const s = store(1);
+      const day = freshDay();
+      const id = (await s.reserveSpend(
+        reserveInput(day, demand.authorization, { estimateUsd: 0.1 }),
+      ))!;
+      const call = callRow({ costUsd: 0.85 });
+      const usage = usageRow(day, { costUsd: 0.85 });
+      if (mode === 'reconciled') await s.settleReservation(id, call, usage, 'uncertain');
+      expect(await setting('engine.budget_alerts')).toBeUndefined();
+      await s.settleReservation(id, call, usage, 'known');
+      const alert = await setting('engine.budget_alerts');
+      expect(alert).toEqual({ day, p80At: expect.any(String) });
+      await s.settleReservation(id, call, usage, 'known');
+      expect(await setting('engine.budget_alerts')).toEqual(alert);
+      expect(
+        (
+          await ctx.owner.query(
+            "SELECT count(*)::int AS n FROM settings WHERE key = 'engine.budget_alerts'",
+          )
+        ).rows,
+      ).toEqual([{ n: 1 }]);
+    },
+  );
+
   it('records 80 % and 100 % once per UTC day in engine.budget_alerts, without email', async () => {
     const demand = await automaticDemand();
     const s = store(1);
@@ -932,7 +991,9 @@ describe('zero-cost calls, usage and settings', () => {
     expect(await usage(day, PLATFORM_USER_ID, 'libretranslate', 'translate')).toMatchObject({
       calls: 1,
     });
-    expect((await s.getBudgetSnapshot(day, { excludeKinds: ['eval'] })).callsByEngineKind).toEqual({
+    expect(
+      (await s.getBudgetSnapshot(day, { excludeKinds: BUDGET_EXEMPT_KINDS })).callsByEngineKind,
+    ).toEqual({
       'libretranslate:translate': 1,
     });
     await expect(s.insertCall({ ...row, costUsd: 0.01 })).rejects.toThrow(RangeError);

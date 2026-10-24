@@ -107,6 +107,7 @@ export function makeOverview(over: Partial<AdminOverview> = {}): AdminOverview {
     engine: {
       breakers: { typesafe: breaker(), llm: breaker() },
       spendTodayUsd: 1.2,
+      exemptSpendTodayUsd: 0,
       dailyBudgetUsd: 5,
       llmCallsToday: 12,
       llmDailyCap: 200,

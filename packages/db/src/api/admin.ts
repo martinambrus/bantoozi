@@ -1,5 +1,6 @@
 import {
   AppError,
+  BUDGET_EXEMPT_KINDS,
   CandidateValidationSchema,
   DECISION_KINDS,
   type CandidateStatus,
@@ -117,6 +118,7 @@ export interface AdminOverviewCounts {
   articlesToday: number;
   queues: { queue: string; created: number; retry: number; active: number; failed: number }[];
   spendTodayUsd: number;
+  exemptSpendTodayUsd: number;
   llmCallsToday: number;
   tier2CallsToday: number;
   translations24h: {
@@ -147,8 +149,9 @@ export async function adminOverviewCounts(tx: TenantTx): Promise<AdminOverviewCo
     active: string;
     failed: string;
   }>(sql`SELECT queue, created, retry, active, failed FROM queue_state_counts()`);
-  const usage = await tx.execute<{ spend: string; llm: number; tier2: number }>(sql`
-    SELECT coalesce(sum(cost_usd), 0)::text AS spend,
+  const usage = await tx.execute<{ spend: string; exempt: string; llm: number; tier2: number }>(sql`
+    SELECT coalesce(sum(cost_usd) FILTER (WHERE NOT (kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[]))), 0)::text AS spend,
+           coalesce(sum(cost_usd) FILTER (WHERE kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[])), 0)::text AS exempt,
            coalesce(sum(calls) FILTER (WHERE engine = 'llm'
                                        AND kind = ANY(${sql.param([...DECISION_KINDS])}::text[])), 0)::int AS llm,
            coalesce(sum(calls) FILTER (WHERE engine = 'llm' AND kind = 'translate'), 0)::int AS tier2
@@ -177,6 +180,7 @@ export async function adminOverviewCounts(tx: TenantTx): Promise<AdminOverviewCo
       failed: Number(row.failed),
     })),
     spendTodayUsd: Number(usageRow?.spend ?? 0),
+    exemptSpendTodayUsd: Number(usageRow?.exempt ?? 0),
     llmCallsToday: usageRow?.llm ?? 0,
     tier2CallsToday: usageRow?.tier2 ?? 0,
     translations24h: translations.rows.map((row) => ({

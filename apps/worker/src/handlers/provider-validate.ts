@@ -18,7 +18,7 @@ import {
   type Answer,
   type DecisionEngine,
   type EngineAttempt,
-  type EngineRequest,
+  type EngineAdapterRequest,
   type EngineRouter,
   type ExternalCall,
   type Question,
@@ -250,10 +250,9 @@ export function createProviderValidateHandler(
     candidateVersion: string,
     validationToken: string,
     questions: Record<string, Question>,
-  ): EngineRequest {
+  ): EngineAdapterRequest {
     return {
-      // Adapters ignore the kind; the attempt is recorded as `credential_probe` by the router.
-      kind: 'eval',
+      kind: 'credential_probe',
       state: PROBE_STATE,
       questions,
       questionSetSha: sha256Hex(canonicalJson(questions)),
@@ -269,7 +268,7 @@ export function createProviderValidateHandler(
     latencyMs: number,
     logicalRequestId: string,
     ordinal: number,
-    request: EngineRequest,
+    request: EngineAdapterRequest,
     candidateVersion: string,
   ): ExternalCall {
     const { usage } = attempt;
@@ -294,7 +293,7 @@ export function createProviderValidateHandler(
   /** One wire attempt with the candidate key: reserve, send, record (the router's order). */
   async function sendOnce(
     lane: ProbeLane,
-    request: EngineRequest,
+    request: EngineAdapterRequest,
     provider: CredentialProvider,
     candidateVersion: string,
     validationToken: string,

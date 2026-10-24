@@ -30,6 +30,7 @@
       },
       "articles": "Articles today",
       "spend": "Spend today",
+      "exemptSpend": "plus {{value}} evaluation spend",
       "llm": "LLM calls today",
       "tier2": "Tier-2 translations today",
       "ofCap": "{{used}} of {{cap}}"
