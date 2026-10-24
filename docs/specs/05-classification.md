@@ -155,10 +155,14 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   changes, and a model-pin change for both, apply prospectively as a versioned boundary: story
   memberships are deduplication decisions that `mute_story` rules point at, not a current-result
   cache, so each keeps its `articles.cluster_set_id` until its article ages out while new calls use
-  the new set and model. Suggestions carry `question_set_id` and `model_pin` (the Jev model, since
-  suggest calls never use the LLM fallback, §7); only rows from the active set and current pin are
-  listed, and `user.suggest` deletes the rest. Store exact set/model/input
-  provenance with golden runs; changing a set does not mutate frozen runs.
+  the new set and model. Suggestions carry `question_set_id` and `model_pin` (the exact Jev model
+  the run used, since suggest calls never use the LLM fallback, §7). Only rows from the active set
+  and the current model family are listed, and `user.suggest` deletes the undismissed rest: a
+  concrete Jev release (`jev-<major>.<minor>.<patch>[suffix]`) belongs to `jev-<major>`, any other
+  id (an alias, a bare `jev-1`, a non-Jev model) only to itself (`sameModelFamily`). So a release
+  of the same major keeps the suggestions and a major change hides them (D-324). The run itself
+  still checks its worker, answer and commit pin exactly (D-322) and records the exact pin. Store
+  exact set/model/input provenance with golden runs; changing a set does not mutate frozen runs.
 
 ---
 
@@ -820,7 +824,7 @@ throttling alone does not replace this durable claim.
    dismissal or one older than 90 days; recheck held state on commit. Choice probabilities are
    relative to this candidate list, not absolute relevance probabilities.
    Each run also deletes the user's undismissed `card_suggestions` rows for cards they now hold,
-   from an inactive suggest set or from an older model pin (the API already hides those, spec 08 §7),
+   from an inactive suggest set or from another model family (§2; the API already hides those, spec 08 §7),
    and their dismissals older than 90 days. A dismissal less than 90 days old stays whatever its set
    or pin, so step 3 keeps excluding that card. Each run's outcome also replaces the user's
    undismissed suggestions, so they always reflect the latest evidence: when its Choice completes

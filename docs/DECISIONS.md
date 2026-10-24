@@ -3305,3 +3305,10 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   that meets an identical undelivered, unleased one keeps the EARLIEST `available_at` (`enqueueDelayedWorkerIntent`,
   worker role only); no caller relies on the later time, and D-319's hop delays use distinct keys. The admin model editor
   hides an alias resolution checked before the setting was saved.
+- D-324: 2026-10-24 (task #44; owner decision; extends D-275 to card suggestions, applies to D-286 upgrades) — Card
+  suggestions survive a Jev release of the same major. `GET /cards/suggestions` and the cleanup in `finishSuggestRun`
+  compare `card_suggestions.model_pin` with the current pin by `sameModelFamily` (an inline SQL equivalent of
+  `modelFamily`, `packages/db/src/model-family.ts`, tested against the TypeScript rule; no SQL function, no migration).
+  Aliases, bare ids and non-Jev models match only themselves, so a major change still hides suggestions and the next run
+  deletes the undismissed ones. The run's own checks (worker vs pin, answer, commit-time pin, D-322) stay exact, and new
+  rows record the exact pin the run used.

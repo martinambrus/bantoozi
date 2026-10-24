@@ -338,8 +338,11 @@ describe('jev-latest: the suggestions fallback', () => {
     expect(await list(await build())).toEqual([]);
     await setRow('engine.model_resolution', resolution('jev-1.13.0'));
     expect((await list(await build())).map((s) => s.card.id)).toEqual([card.id]);
-    // negative control: another resolution hides the row stamped with 1.13.0
+    // The resolved release's family also applies when there is no stored pin.
     await setRow('engine.model_resolution', resolution('jev-1.14.0'));
+    expect((await list(await build())).map((s) => s.card.id)).toEqual([card.id]);
+    // A resolution in another major hides the row stamped with 1.13.0.
+    await setRow('engine.model_resolution', resolution('jev-2.0.0'));
     expect(await list(await build())).toEqual([]);
   });
 });

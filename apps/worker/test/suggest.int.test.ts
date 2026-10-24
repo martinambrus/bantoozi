@@ -896,6 +896,28 @@ describe('user.suggest during a rolling deployment and with stale facets (PR #25
     },
   );
 
+  it('a stale worker on an earlier release of the same major keeps suggestions without sending a call', async () => {
+    const userId = await reader({ likes: 4 });
+    await seedSuggestion(userId, otherCardId, { pin: 'jev-1.13.0', score: 0.4 });
+    const before = await suggestions(userId);
+    await setSetting('engine.model_pin', { model: 'jev-1.14.0' });
+    const from = fake.requestCount();
+    await expect(
+      runSuggest(userId, {
+        ...deps,
+        classification: { ...deps.classification!, primaryModel: 'jev-1.13.0' },
+      }),
+    ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+    expect(fake.requestCount()).toBe(from);
+    expect(await reservations(userId)).toBe(0);
+    expect(await suggestions(userId)).toEqual(before);
+    expect(await userState(userId)).toMatchObject({
+      last_suggested_at: null,
+      suggest_lease_token: null,
+      suggest_lease_until: null,
+    });
+  });
+
   it('a worker whose model differs from the stored pin sends nothing and keeps the suggestions', async () => {
     const userId = await reader({ likes: 4 });
     await seedSuggestion(userId, otherCardId, { score: 0.4 });

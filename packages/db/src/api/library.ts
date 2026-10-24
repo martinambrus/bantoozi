@@ -4,7 +4,9 @@ import { sql, type SQL } from 'drizzle-orm';
 import { parseCardBody } from '../cards/body.js';
 import type { CardKind } from '../cards/types.js';
 import type { Executor } from '../client.js';
+import { sameModelFamilySql } from '../model-family.js';
 import { readStoredSetting } from '../settings.js';
+import { readSuggestPin } from '../suggest/write.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
@@ -239,7 +241,7 @@ export interface CardSuggestionRow {
 
 /**
  * `GET /cards/suggestions` (spec 08 §7, spec 05 §7): the tenant's undismissed suggestions produced by
- * the active `suggest` set under the current Jev model pin (suggestion calls are bulk and never use
+ * the active `suggest` set within the current Jev model family (suggestion calls are bulk and never use
  * the LLM fallback, so the pin identifies them; without a stored pin, the configured `fallbackModel`
  * the suggest handler falls back to), of readable non-retired interest cards the user
  * holds neither directly, as a label, nor through a private fork of it. Best score first.
@@ -249,6 +251,7 @@ export async function listCardSuggestions(
   options: { fallbackModel: string },
 ): Promise<CardSuggestionRow[]> {
   const userId = tenantUserId(tx);
+  const pin = await readSuggestPin(tx, options.fallbackModel);
   const result = await tx.execute<LibrarySqlRow & { score: number }>(sql`
     SELECT ${libraryColumns(userId)}, s.score
       FROM card_suggestions s
@@ -257,8 +260,7 @@ export async function listCardSuggestions(
      WHERE s.user_id = ${userId}::uuid AND s.dismissed_at IS NULL
        AND s.question_set_id::text = (SELECT value->>'suggest' FROM settings
                                        WHERE key = 'question_sets.active')
-       AND s.model_pin = coalesce((SELECT value->>'model' FROM settings WHERE key = 'engine.model_pin'),
-                                  ${options.fallbackModel}::text)
+       AND ${sameModelFamilySql(sql`s.model_pin`, pin)}
        AND NOT EXISTS (SELECT 1 FROM user_cards uc JOIN interest_cards h ON h.id = uc.card_id
                         WHERE uc.user_id = ${userId}::uuid
                           AND (uc.card_id = s.card_id OR h.parent_card_id = s.card_id))

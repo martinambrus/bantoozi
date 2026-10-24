@@ -1,6 +1,9 @@
+import { modelFamily, sameModelFamily } from '@bantoozi/shared';
 import { createCard, createUser } from '@bantoozi/testing';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { modelFamilySql, sameModelFamilySql } from '../../src/model-family.js';
 import {
   claimSuggestLease,
   finishSuggestRun,
@@ -137,6 +140,66 @@ describe('finishSuggestRun', () => {
       ...extra,
     });
 
+  it.each([
+    ['jev-1.14.0', true],
+    ['jev-1.14.0-rc1', true],
+    ['jev-2.0.0', false],
+    ['jev-1', false],
+    ['jev-latest', false],
+    ['llama3:8b', false],
+  ] as const)('retains a jev-1.13.0 suggestion after a move to %s: %s', async (pin, kept) => {
+    const run = await claimed();
+    await ctx.owner.query(
+      `INSERT INTO card_suggestions (user_id, card_id, question_set_id, model_pin, score)
+       VALUES ($1, $2, $3, 'jev-1.13.0', 0.5)`,
+      [run.userId, cardA, setId],
+    );
+    await ctx.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('engine.model_pin', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify({ model: pin })],
+    );
+    try {
+      // A discarded in-flight run cleans stale rows without replacing valid prior evidence.
+      expect(await finish(run, { results: null })).toBe('discarded');
+      expect(await rows(run.userId)).toEqual(kept ? [{ card_id: cardA, dismissed: false }] : []);
+      if (kept) {
+        const stored = await ctx.owner.query(
+          `SELECT model_pin FROM card_suggestions WHERE user_id = $1`,
+          [run.userId],
+        );
+        expect(stored.rows[0].model_pin).toBe('jev-1.13.0');
+      }
+    } finally {
+      await ctx.owner.query(`DELETE FROM settings WHERE key = 'engine.model_pin'`);
+    }
+  });
+
+  it('records the exact current pin and rejects an in-flight result from an earlier same-major release', async () => {
+    const run = await claimed();
+    expect(
+      await finish(run, {
+        results: [{ cardId: cardA, score: 0.7 }],
+        asked: { questionSetId: setId, pin: 'jev-1.13.0' },
+        fallbackModel: 'jev-1.14.0',
+      }),
+    ).toBe('discarded');
+    expect(await rows(run.userId)).toEqual([]);
+    const current = await claimed();
+    expect(
+      await finish(current, {
+        results: [{ cardId: cardA, score: 0.7 }],
+        asked: { questionSetId: setId, pin: 'jev-1.14.0' },
+        fallbackModel: 'jev-1.14.0',
+      }),
+    ).toBe('written');
+    const stored = await ctx.owner.query(
+      `SELECT model_pin FROM card_suggestions WHERE user_id = $1`,
+      [current.userId],
+    );
+    expect(stored.rows[0].model_pin).toBe('jev-1.14.0');
+  });
+
   it('stores results, skips held cards, replaces other undismissed rows and releases the lease', async () => {
     const run = await claimed();
     await ctx.owner.query(
@@ -207,5 +270,46 @@ describe('finishSuggestRun', () => {
       (await ctx.owner.query(`SELECT suggest_lease_token FROM users WHERE id = $1`, [stale.userId]))
         .rows[0].suggest_lease_token,
     ).toBe(stale.leaseToken);
+  });
+});
+
+// The required family table plus grammar boundaries: suffixes, case, length and ASCII only.
+const modelIds = [
+  'jev-1.13.0',
+  'jev-1.14.0',
+  'jev-1.14.0-rc1',
+  'jev-2.0.0',
+  'jev-1',
+  'jev-latest',
+  'llama3:8b',
+  '',
+  'jev-01.2.3',
+  'jev-1.2',
+  'Jev-1.2.3',
+  'jev-1.2.3+build_1',
+  'jev-1.2.3.patch',
+  'jev-1.2.3-',
+  'jev-1.2.3-é',
+  'jev-١.2.3',
+  `jev-1.2.3-${'x'.repeat(54)}`,
+  `jev-1.2.3-${'x'.repeat(55)}`,
+  'jev-1.2.3\n',
+  'jev-1.2.3 rc1',
+];
+
+describe('SQL model family parity', () => {
+  it.each(modelIds)('modelFamily agrees for %j', async (id) => {
+    const result = await ctx.worker.execute<{ family: string }>(sql`
+      SELECT ${modelFamilySql(sql`${id}::text`)} AS family`);
+    expect(result.rows[0]!.family).toBe(modelFamily(id));
+  });
+
+  it.each(modelIds)('sameModelFamily agrees for every stored id against pin %j', async (pin) => {
+    const result = await ctx.worker.execute<{ id: string; same: boolean }>(sql`
+      SELECT id, ${sameModelFamilySql(sql`id`, pin)} AS same
+        FROM unnest(${sql.param(modelIds)}::text[]) AS ids(id)`);
+    expect(result.rows.map((row) => [row.id, row.same])).toEqual(
+      modelIds.map((id) => [id, sameModelFamily(id, pin)]),
+    );
   });
 });
