@@ -2,6 +2,7 @@ import type { ArticleDetail, ArticleListItem, LabelDto, Me } from '@bantoozi/sha
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { I18nextProvider } from 'react-i18next';
 
@@ -72,7 +73,11 @@ export function renderReader(ui: ReactNode, options: ReaderHarnessOptions = {}) 
       </I18nextProvider>
     );
   }
-  const user = userEvent.setup();
+  const user = userEvent.setup({
+    advanceTimers: (ms) => {
+      if (vi.isFakeTimers()) vi.advanceTimersByTime(ms);
+    },
+  });
   const view = render(ui, { wrapper: Wrapper });
   return {
     ...view,

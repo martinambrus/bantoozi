@@ -1,6 +1,6 @@
 import type { ArticleListItem, CardDto } from '@bantoozi/shared';
 import { screen, within, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { failure, json } from '../api/fake-fetch.js';
@@ -44,6 +44,10 @@ interface Pattern {
   offer: string[] | null;
   offerId: string | null;
 }
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
 
 const apps: { unhandled: string[] }[] = [];
 
@@ -164,6 +168,8 @@ describe('the dislike pattern in the undo toast', () => {
   });
 
   it('DPF-6 hidden time does not count and closing before one second records no seen event', async () => {
+    // Written against the real clock: it waits real time for the 1 s impression window.
+    vi.useRealTimers();
     setVisibility('hidden');
     const app = await dislike(OFFER);
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
@@ -220,6 +226,8 @@ describe('the dislike pattern in the undo toast', () => {
   });
 
   it('D2 two quick same-scope offers replace in place and keep each rating undo', async () => {
+    // Written against the real clock: it waits real time for the 1 s impression window.
+    vi.useRealTimers();
     holdExits();
     const items = [makeItem(), makeItem({ id: '102' })];
     const app = renderReader(

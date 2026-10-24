@@ -298,11 +298,7 @@ export async function startControlApi(options: ControlOptions): Promise<ControlA
         objectBody(body, []);
         for (const key of E2E_FEED_KEYS) feeds[key].reset();
         fakeCurrent = {
-          latencyMs: undefined,
-          failRate: undefined,
-          failStatus: undefined,
-          apiKey: undefined,
-          models: undefined,
+          ...Object.fromEntries(Object.keys(fakeCurrent).map((key) => [key, undefined])),
           ...options.fakeDefaults,
         };
         fake.setOptions(fakeCurrent);

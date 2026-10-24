@@ -120,6 +120,7 @@ describe('the offer in the undo toast', () => {
   });
 
   it('offers the side "not this" for a suggestion of side no, after a dislike with its reason', async () => {
+    vi.useFakeTimers();
     const item = makeItem();
     const app = renderRow(item, {
       ...server(item, NO),
@@ -213,6 +214,7 @@ describe('Teach', () => {
   });
 
   it('sends side no for a suggestion of side no and confirms it the way the drawer does', async () => {
+    vi.useFakeTimers();
     const item = makeItem();
     const app = renderRow(item, {
       ...server(item, NO),
@@ -528,6 +530,7 @@ describe('when there is no offer', () => {
   );
 
   it('drops a delayed batch teaching offer when the same article has been rated again', async () => {
+    vi.useFakeTimers();
     const item = makeItem();
     const list = deferred<Response>();
     function BatchRating() {
@@ -573,7 +576,7 @@ describe('when there is no offer', () => {
 
     list.resolve(json(200, CARDS));
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(20);
     });
 
     expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();

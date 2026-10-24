@@ -7,6 +7,7 @@ import { callJson } from '../support/api.js';
 import type { Control, NewFeedItem } from '../support/control.js';
 import type { FeedKey } from '../support/env.js';
 import { expect } from '../support/test.js';
+import { isExtracted } from '../support/pipeline.js';
 
 /**
  * Helpers of the word-estimates scenario (visible-learning §4.4): a Training feed, a batch of
@@ -140,10 +141,7 @@ export async function arriveAll(
     .poll(
       async () => {
         for (const state of await control.articleStates(feed.url)) {
-          if (
-            titles.has(state.title) &&
-            /^(extracted|translated|enriched|matched|degraded)$/.test(state.pipelineState)
-          ) {
+          if (titles.has(state.title) && isExtracted(state)) {
             ids.set(state.title, state.id);
           }
         }

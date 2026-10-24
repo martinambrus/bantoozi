@@ -4,6 +4,7 @@ import { json } from '../api/fake-fetch.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import {
   MODEL_NOW,
+  RUNTIME_DEFAULTS,
   SETTINGS_VALUES,
   T1,
   adminRoutes,
@@ -19,25 +20,11 @@ import {
  *   (the API filters by the 90 s rule), each `{processId, at, pendingRestart, problems:[{key,message}]}`.
  *   Until the DTO has the field the strict response schema refuses it; that is the implementer's
  *   change (`AdminSettingsSchema.workers`, default `[]`).
- * - `values[key]` of a live runtime key is the STORED value or `null`; `defaults[key]` is the
+ * - `values[key]` of a live runtime key is its effective value; `defaults[key]` is the
  *   environment default (null when no worker can tell); `sources[key]` is stored | env | last_good.
  */
 
-export const RUNTIME_DEFAULTS = {
-  'engine.typesafe_model': 'jev-1.13.0',
-  'engine.typesafe_base_url': 'https://jev.example.com',
-  'engine.typesafe_price_per_mtok_usd': 0.5,
-  'engine.concurrency': 8,
-  'engine.llm_fallback_enabled': false,
-  'engine.ollama_models': { fast: 'glm-5.3-flash', strong: 'glm-5.3' },
-  'engine.ollama_base_url': 'https://ollama.example.com',
-  'engine.ollama_max_concurrency': 4,
-  'engine.prefilter_min_cards': 60,
-  'ingest.max_age_days': 14,
-  'fetch.limits': { timeoutMs: 20_000, maxBytes: 10 * 1024 * 1024 },
-  'api.rate_limits_enabled': true,
-  'translate.libretranslate_url': 'http://libretranslate:5000',
-} as const;
+export { RUNTIME_DEFAULTS } from './support.js';
 
 export const RUNTIME_KEYS = Object.keys(RUNTIME_DEFAULTS) as (keyof typeof RUNTIME_DEFAULTS)[];
 
@@ -59,7 +46,7 @@ export function worker(over: Partial<WorkerStatus> = {}): WorkerStatus {
 }
 
 export interface RuntimeFixture {
-  /** Stored values by key; every other runtime key is null (reads its environment default). */
+  /** Stored values by key; every other runtime key reads its effective environment default. */
   stored?: Partial<Record<keyof typeof RUNTIME_DEFAULTS, unknown>>;
   /** Sources by key; defaults to stored for a stored key, env otherwise. */
   sources?: Record<string, 'stored' | 'env' | 'last_good'>;
@@ -74,7 +61,7 @@ export function runtimeSettings(fixture: RuntimeFixture = {}): AdminSettings & {
   const sources: Record<string, 'stored' | 'env' | 'last_good'> = {};
   for (const key of RUNTIME_KEYS) {
     const has = key in stored;
-    values[key] = has ? stored[key] : null;
+    values[key] = has ? stored[key] : RUNTIME_DEFAULTS[key];
     sources[key] = fixture.sources?.[key] ?? (has ? 'stored' : 'env');
   }
   const base = makeSettings({

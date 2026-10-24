@@ -1,9 +1,16 @@
 import type { ArticleListItem } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { Menu } from '../../src/components/menu.js';
 import { articleKeys } from '../../src/features/article/query-keys.js';
-import { RateVisibleDialog } from '../../src/features/reader/rate-visible.js';
+import {
+  RateVisibleItem,
+  useVisibleUnread,
+  type Asked,
+  RateVisibleDialog,
+} from '../../src/features/reader/rate-visible.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { deferred, findToast, renderReader } from '../article/harness.js';
 import { USER_A_ID, USER_B_ID, makeMe } from '../session/fixtures.js';
@@ -50,6 +57,22 @@ const targetsOf = (app: App) =>
   (bodyOf(app.calls(RATE_BULK)[0]!) as { targets: { id: string }[] }).targets;
 
 const numbered = (count: number) => Array.from({ length: count }, (_, index) => item(index + 1));
+
+/** The real counting hook, menu and dialog; boundary tests need no article-row presentation. */
+function BoundaryMenu({ rows }: { rows: readonly ArticleListItem[] }) {
+  const asked = useVisibleUnread(rows);
+  const [question, setQuestion] = useState<Asked | null>(null);
+  return (
+    <>
+      <Menu trigger={(props) => <button {...props}>More</button>}>
+        <RateVisibleItem asked={asked} onSelect={() => setQuestion(asked)} />
+      </Menu>
+      {question === null ? null : (
+        <RateVisibleDialog asked={question} name="Verge" onClose={() => setQuestion(null)} />
+      )}
+    </>
+  );
+}
 
 describe('the menu item', () => {
   it('is offered in a feed view and in no other view', async () => {
@@ -147,9 +170,9 @@ describe('the menu item', () => {
   );
 
   it('counts at most the first 200 rows', async () => {
-    const { app } = await feed(numbered(205));
+    const app = renderReader(<BoundaryMenu rows={numbered(201)} />);
 
-    await openMore(app, 'Verge');
+    await app.user.click(screen.getByRole('button', { name: 'More' }));
 
     expect(
       await screen.findByRole('menuitem', { name: 'Rate these 200 visible articles' }),
@@ -246,16 +269,21 @@ describe('the question', () => {
 
   it('says that only the first 200 are rated when the list shows more, and sends only those', async () => {
     const writes = writeRoutes();
-    const { app } = await feed(numbered(205), { routes: writes.routes });
-
-    const dialog = await ask(app, 200);
+    const app = renderReader(<BoundaryMenu rows={numbered(201)} />, { routes: writes.routes });
+    await app.user.click(screen.getByRole('button', { name: 'More' }));
+    await app.user.click(screen.getByRole('menuitem', { name: 'Rate these 200 visible articles' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Rate these 200 visible articles?' });
 
     expect(
-      within(dialog).getByText('The list shows 205 unread articles. Only the first 200 are rated.'),
+      within(dialog).getByText('The list shows 201 unread articles. Only the first 200 are rated.'),
     ).toBeVisible();
     await app.user.click(within(dialog).getByRole('button', { name: 'Like all' }));
-    await waitFor(() => expect(app.calls(RATE_BULK)).toHaveLength(1));
-    expect(targetsOf(app).map((target) => target.id)).toEqual(numbered(200).map((row) => row.id));
+    await waitFor(() => expect(app.calls('POST', '/articles/rate-bulk')).toHaveLength(1));
+    const body = bodyOf(app.calls('POST', '/articles/rate-bulk')[0]!) as {
+      targets: { id: string }[];
+    };
+    expect(body.targets.map((target) => target.id)).toEqual(numbered(200).map((row) => row.id));
+    expect(app.unhandled).toEqual([]);
   });
 
   it('sends nothing on Cancel and gives the focus back to the More button', async () => {

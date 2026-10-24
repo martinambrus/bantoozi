@@ -217,6 +217,7 @@ describe('the entries', () => {
   });
 
   it('name a dislike', async () => {
+    vi.useFakeTimers();
     const writes = writeRoutes();
     const { app } = await open({
       path: '/read/for_you',

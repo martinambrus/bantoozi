@@ -152,6 +152,23 @@ export function makeUsage(over: Partial<AdminUsage> = {}): AdminUsage {
   };
 }
 
+export const RUNTIME_DEFAULTS = {
+  'engine.typesafe_model': 'jev-1.13.0',
+  'engine.typesafe_base_url': 'https://jev.example.com',
+  'engine.typesafe_price_per_mtok_usd': 0.5,
+  'engine.concurrency': 8,
+  'engine.llm_fallback_enabled': false,
+  'engine.ollama_models': { fast: 'glm-5.3-flash', strong: 'glm-5.3' },
+  'engine.ollama_base_url': 'https://ollama.example.com',
+  'engine.ollama_max_concurrency': 4,
+  'engine.prefilter_min_cards': 60,
+  'engine.auto_analysis_daily_cap': 1000,
+  'ingest.max_age_days': 14,
+  'fetch.limits': { timeoutMs: 20_000, maxBytes: 10 * 1024 * 1024 },
+  'api.rate_limits_enabled': true,
+  'translate.libretranslate_url': 'http://libretranslate:5000',
+} as const;
+
 export const SETTINGS_VALUES: AdminSettings['values'] = {
   'engine.daily_budget_usd': 5,
   'engine.llm_daily_cap': 200,
@@ -163,20 +180,7 @@ export const SETTINGS_VALUES: AdminSettings['values'] = {
   'translate.tier2_daily_cap': 300,
   'question_sets.active': {},
   signup_mode: 'invite',
-  'engine.typesafe_model': 'jev-1.13.0',
-  'engine.typesafe_base_url': null,
-  'engine.typesafe_price_per_mtok_usd': null,
-  'engine.concurrency': null,
-  'engine.llm_fallback_enabled': null,
-  'engine.ollama_models': null,
-  'engine.ollama_base_url': null,
-  'engine.ollama_max_concurrency': null,
-  'engine.prefilter_min_cards': null,
-  'engine.auto_analysis_daily_cap': null,
-  'ingest.max_age_days': null,
-  'fetch.limits': null,
-  'api.rate_limits_enabled': null,
-  'translate.libretranslate_url': null,
+  ...RUNTIME_DEFAULTS,
 };
 
 export function makeSettings(over: Partial<AdminSettings> = {}): AdminSettings {
@@ -184,8 +188,8 @@ export function makeSettings(over: Partial<AdminSettings> = {}): AdminSettings {
     values: SETTINGS_VALUES,
     stored: [{ key: 'engine.daily_budget_usd', updatedAt: T1 }],
     rankerSettingsVersion: 3,
-    sources: {},
-    defaults: {},
+    sources: Object.fromEntries(Object.keys(RUNTIME_DEFAULTS).map((key) => [key, 'env'])),
+    defaults: { ...RUNTIME_DEFAULTS },
     workers: [],
     ...over,
   };

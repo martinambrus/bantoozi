@@ -1,6 +1,6 @@
 import type { ArticleListItem, Subscription } from '@bantoozi/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { failure, json } from '../api/fake-fetch.js';
@@ -318,17 +318,19 @@ describe('choosing articles', () => {
   });
 
   it('has no limit: 25 loaded rows can all be selected', async () => {
-    const { app } = await openFeed(numbered(25));
+    await openFeed(numbered(25));
     // Reuse the row controls: repeatedly resolving each article's accessible name across the
-    // whole list makes these 25 independent clicks exceed the CI timeout under coverage.
+    // whole list is expensive. Batch the changes; pointer and keyboard behavior have small tests.
     const checkboxes = screen.getAllByRole('checkbox', { name: /^Select Article \d+$/ });
     expect(checkboxes).toHaveLength(25);
-    for (const checkbox of checkboxes) await app.user.click(checkbox);
+    act(() => {
+      for (const checkbox of checkboxes) fireEvent.click(checkbox);
+    });
 
     for (const checkbox of checkboxes) expect(checkbox).toBeChecked();
     expect(screen.getByText('25 selected')).toBeVisible();
     expect(screen.queryByText(/at most/)).toBeNull();
-    // 25 real clicks take close to the 30 s default under CI coverage (30.7 s on PR #83).
+    // Rendering 25 rows still takes most of the 30 s default on a loaded CI runner (30.7 s on PR #83).
   }, 60_000);
 });
 
@@ -437,6 +439,7 @@ describe('an article the list no longer holds', () => {
     app.user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
 
   it('leaves the selection when the next load omits it (rated elsewhere), and a bulk Dislike sends nothing for it', async () => {
+    vi.useFakeTimers();
     const { app, served } = await openFeed(numbered(3), {
       routes: { [RATE]: () => json(200, { ok: true }) },
     });
@@ -1131,6 +1134,9 @@ describe('in Slovak', () => {
 });
 
 describe('the selection bar', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   const bulk = (name: RegExp) => within(panel()!).getByRole('button', { name });
 
   const ratedBodies = (app: App) =>

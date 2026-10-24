@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { authTiming } from '../src/services/auth.js';
 import { setupTokenDigest } from '../src/services/setup.js';
@@ -103,15 +103,25 @@ describe('setup lock before email lock', () => {
       await holder.query('BEGIN');
       await holder.query(`SELECT pg_advisory_xact_lock(hashtextextended('bantoozi:setup', 0))`);
       const verifying = apiClient(server).post('/auth/verify', { email, code });
-      // Wait until the login is blocked on an advisory lock.
-      for (let tries = 0; tries < 100; tries += 1) {
-        const { rows } = await h.owner.query<{ n: number }>(
-          `SELECT count(*)::int AS n FROM pg_stat_activity
-            WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'`,
-        );
-        if ((rows[0]?.n ?? 0) > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
+      // pg_locks exposes lock ownership even though this role cannot see another role's
+      // pg_stat_activity wait events. Match this holder's exact setup lock, not any other waiter.
+      const { rows: holderRows } = await holder.query<{ pid: number }>(
+        'SELECT pg_backend_pid() AS pid',
+      );
+      await vi.waitFor(
+        async () => {
+          const { rows } = await h.owner.query<{ n: number }>(
+            `SELECT count(*)::int AS n
+               FROM pg_locks waiting
+               JOIN pg_locks held USING (locktype, database, classid, objid, objsubid)
+              WHERE held.pid = $1 AND held.locktype = 'advisory'
+                AND held.granted AND NOT waiting.granted`,
+            [holderRows[0]!.pid],
+          );
+          expect(rows[0]?.n, 'the login is waiting for this transaction’s setup lock').toBe(1);
+        },
+        { timeout: 5000, interval: 10 },
+      );
       // The setup path takes the email lock while holding the setup lock. If the login already
       // holds the email lock this is a lock cycle (40P01 for one of the two).
       await holder.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [

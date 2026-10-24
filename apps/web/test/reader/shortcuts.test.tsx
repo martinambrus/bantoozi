@@ -377,6 +377,7 @@ describe('+ = and - with Shift', () => {
   });
 
   it('- holds a dislike for the reason bar, and a digit picks the reason', async () => {
+    vi.useFakeTimers();
     const app = await openReader();
     await app.user.keyboard('j');
 
@@ -404,6 +405,7 @@ describe('+ = and - with Shift', () => {
   it.each([['-'], ['_']])(
     'Shift with %s holds a dislike that hides, and the reason goes with it',
     async (key) => {
+      vi.useFakeTimers();
       const app = await openReader();
       await app.user.keyboard('j');
 
@@ -421,6 +423,7 @@ describe('+ = and - with Shift', () => {
   );
 
   it('leaves 1 to 6 to the reason bar while it is open, and does not start a mute with m', async () => {
+    vi.useFakeTimers();
     const app = await openReader();
     await app.user.keyboard('j');
     await app.user.keyboard('-');

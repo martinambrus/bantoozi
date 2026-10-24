@@ -417,6 +417,7 @@ describe('ArticleDetail action bar', () => {
   });
 
   it('rates and bookmarks with the fence, the request of the analysis and the feed', async () => {
+    vi.useFakeTimers();
     const requestId = '3f1c2b64-8a5e-4c63-9f0e-5d7a9b1c2e30';
     const item = makeItem({
       analysis: { mode: 'training', status: 'pending', requestId, overDailyCap: null },

@@ -306,6 +306,7 @@ describe('the answer', () => {
   });
 
   it('"No" asks for the reason as a dislike does, and sends it with liked: false (D-266)', async () => {
+    vi.useFakeTimers();
     const app = renderPrompt({
       routes: { 'POST /articles/:id/prompt-answer': promptAnswerAccepted },
     });
@@ -330,15 +331,17 @@ describe('the answer', () => {
   });
 
   it('"No" without a reason is sent once the reason bar times out', async () => {
+    vi.useFakeTimers();
     const app = renderPrompt({
       routes: { 'POST /articles/:id/prompt-answer': promptAnswerAccepted },
     });
     await app.user.click(within(await ask(app, FIRST)).getByRole('button', { name: 'No' }));
     await screen.findByRole('group', { name: 'Reason for the dislike' });
 
-    await waitFor(() => expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(1), {
-      timeout: 7_000,
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
     });
+    expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(1);
     expect(bodyOf(app.calls('POST', '/articles/101/prompt-answer')[0]!)).toEqual({
       stateVersion: '5',
       contentRevision: '2',

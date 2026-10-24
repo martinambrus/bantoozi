@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { json } from '../api/fake-fetch.js';
 import { deferred, findToast } from '../article/harness.js';
@@ -116,6 +116,7 @@ describe('the focus after the Undo of an entry of the Recent actions sheet', () 
 
 describe('the focus after the reason bar is answered', () => {
   async function disliked(articles: number[], which: number) {
+    vi.useFakeTimers();
     const writes = writeRoutes();
     const opened = await open({
       path: '/read/for_you',

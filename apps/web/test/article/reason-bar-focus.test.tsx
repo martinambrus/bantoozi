@@ -1,11 +1,15 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Sheet } from '../../src/components/sheet.js';
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { makeItem, renderReader } from './harness.js';
 
 const ITEM = makeItem();
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
 
 const apps: { unhandled: string[] }[] = [];
 

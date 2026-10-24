@@ -154,6 +154,7 @@ describe('1. a rating made offline, with offline reading on', () => {
 
 describe('1b. a dislike made offline, with offline reading on', () => {
   it('is kept once its reason is chosen, not before, and is sent with the reason', async () => {
+    fakeTimers();
     writeOfflineEnabled(A, true);
     const server = createArticleServer([ITEM]);
     const net = connection(server);
