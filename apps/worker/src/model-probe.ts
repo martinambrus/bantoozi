@@ -252,7 +252,7 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
     function conclude(attempt: FailedAttempt): EngineModelProbe | undefined {
       const detail = attempt.detail ?? '';
       if (attempt.status === 'auth_error') return fail('auth_rejected');
-      if (isModelUnavailableDetail(detail) || /^http_(404|410)$/.test(detail)) {
+      if (isModelUnavailableDetail(detail)) {
         return fail('model_unavailable');
       }
       const mismatch = MISMATCH.exec(detail);
