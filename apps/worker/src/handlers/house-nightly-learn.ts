@@ -54,6 +54,7 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
     let after: string | null = null;
     let examined = 0;
     let learn = 0;
+    let failed = 0;
     for (;;) {
       const page = await listNightlyLearnUsers(deps.db, {
         after,
@@ -63,9 +64,14 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
       });
       const changed = new Map<string, string>();
       for (const user of page) {
-        const inputs = await loadLearnInputs(deps.db, deps, user.userId, now);
-        if (inputs.modelState.latestTerminal?.metrics['inputSha'] !== inputs.inputSha)
-          changed.set(user.userId, inputs.inputSha);
+        try {
+          const inputs = await loadLearnInputs(deps.db, deps, user.userId, now);
+          if (inputs.modelState.latestTerminal?.metrics['inputSha'] !== inputs.inputSha)
+            changed.set(user.userId, inputs.inputSha);
+        } catch (err) {
+          deps.logger.warn({ job: JOB, userId: user.userId, err }, 'learn check failed');
+          failed += 1;
+        }
       }
       await retryTransaction(deps.db, async (tx) => {
         const sender = workerOutbox(tx);
@@ -102,6 +108,6 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
         });
       }),
     );
-    deps.logger.info({ job: JOB, examined, learn, estimate }, 'nightly learn enqueued');
+    deps.logger.info({ job: JOB, examined, learn, failed, estimate }, 'nightly learn enqueued');
   };
 }
