@@ -366,6 +366,13 @@ describe('rating pattern (DPF-3)', () => {
     expect(res.json()).toHaveProperty('pattern', null);
   });
 
+  it('D6 similar demotion off still offers teaching with lowered false', async () => {
+    const w = await world({ demote: { similar: 'off' } });
+    const body = await dislike(w, await candidate(w, TARGET));
+    expect(body.pattern).toMatchObject({ kind: 'card', lowered: false });
+    expect(body.pattern?.offer).toHaveLength(3);
+  });
+
   it('P6 exampleSuggestions off still reports lowered but offers nothing', async () => {
     const w = await world({ exampleSuggestions: false });
     const target = await candidate(w, TARGET);

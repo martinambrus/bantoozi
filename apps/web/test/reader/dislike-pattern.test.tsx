@@ -71,10 +71,17 @@ function server(item: ArticleListItem, pattern: Pattern | null, suggestion = fal
   } satisfies NonNullable<ReaderHarnessOptions['routes']>;
 }
 
-async function dislike(pattern: Pattern | null, suggestion = false) {
+async function dislike(
+  pattern: Pattern | null,
+  suggestion = false,
+  options: Pick<ReaderHarnessOptions, 'me'> = {},
+) {
   holdExits();
   const item = makeItem();
-  const app = renderReader(<Row item={item} />, { routes: server(item, pattern, suggestion) });
+  const app = renderReader(<Row item={item} />, {
+    ...options,
+    routes: server(item, pattern, suggestion),
+  });
   apps.push(app);
   await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
   await app.user.click(
@@ -356,6 +363,23 @@ describe('the dislike pattern in the undo toast', () => {
       }
     },
   );
+
+  it('D6 offers teaching with similar demotion off and makes no ranking claim', async () => {
+    const me = makeMe();
+    const app = await dislike({ ...OFFER, lowered: false }, false, {
+      me: {
+        ...me,
+        preferences: {
+          ...me.preferences,
+          demote: { ...me.preferences.demote, similar: 'off' },
+        },
+      },
+    });
+    expect(await screen.findByRole('button', { name: SHOW_FEWER })).toBeVisible();
+    expect(screen.queryByText(LOWERED, { exact: false })).toBeNull();
+    expect(app.toasts.getSnapshot().every((t) => t.message === DISLIKED)).toBe(true);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeVisible();
+  });
 
   it('T3 says the ranking was lowered, with only Undo, when there is no offer', async () => {
     const app = await dislike({
