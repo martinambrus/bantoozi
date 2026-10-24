@@ -49,6 +49,7 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   const replacement = await createUser(owner);
   const firstActivation = await createUser(owner);
   const excluded = await createUser(owner);
+  const delayed = await createUser(owner);
   const seed = async (userId: string, versions: number) =>
     owner.query(
       `
@@ -79,6 +80,7 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
         ELSE '{"status":"rejected","reason":"low_auc"}'::jsonb END WHERE user_id = $1`,
     [excluded.id],
   );
+  await seed(delayed.id, 2);
   await owner.query(
     `UPDATE user_models SET metrics = CASE WHEN version < 3 THEN '{"status":"rejected"}'::jsonb ELSE '{"status":"activated"}'::jsonb END WHERE user_id = $1`,
     [firstActivation.id],
@@ -104,6 +106,21 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
     VALUES ($1, 7, 'v1', '2026-02-01', 20, 10, 10, 0, '{}', '{}', '{"auc":0.7}')`,
     [other.id],
   );
+  const exactPrg = await owner.query(
+    `INSERT INTO user_learning_history (user_id, at, kind, n, auc)
+     VALUES ($1, '2026-01-01 00:02:00Z', 'model', 2, 0.51) RETURNING id`,
+    [other.id],
+  );
+  const delayedPrg = await owner.query(
+    `INSERT INTO user_learning_history (user_id, at, kind, n, auc)
+     VALUES ($1, '2026-01-01 00:02:00.050Z', 'model', 2, 0.51) RETURNING id`,
+    [delayed.id],
+  );
+  const ambiguousPrg = await owner.query(
+    `INSERT INTO user_learning_history (user_id, at, kind, n)
+     VALUES ($1, '2026-01-02', 'model', 3) RETURNING id`,
+    [tied.id],
+  );
   // Existing PRG rows use their append time, which can differ from trained_at.
   await owner.query(
     `INSERT INTO user_learning_history
@@ -118,6 +135,9 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   const first = (await read()).rows;
   expect.soft(first.filter((r) => r.user_id === excluded.id).map((r) => r.n)).toEqual([3, 4]);
   expect.soft(first.find((r) => r.user_id === excluded.id && r.n === 3)?.turned_on).toBe(true);
+  expect.soft(first.find((r) => r.id === exactPrg.rows[0].id)?.reason).toBe('low_auc');
+  expect.soft(first.find((r) => r.id === delayedPrg.rows[0].id)?.reason).toBe('low_auc');
+  expect.soft(first.find((r) => r.id === ambiguousPrg.rows[0].id)?.reason).toBeNull();
   expect
     .soft(first.every((r) => typeof r.activated === 'boolean' && typeof r.turned_on === 'boolean'))
     .toBe(true);
