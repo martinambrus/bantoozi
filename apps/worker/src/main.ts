@@ -29,6 +29,7 @@ import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady, startQueueReadiness } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
 import { ProcessLeases } from './process-leases.js';
+import { withShutdownDeadline } from './shutdown-deadline.js';
 import { createShutdownGate } from './shutdown-gate.js';
 import { verifyQuestionSets } from './seed.js';
 
@@ -168,7 +169,13 @@ const processId = `${hostname()}:${process.pid}`;
 let schedules: Awaited<ReturnType<typeof startWorkerSchedules>> | undefined;
 let stopped: Promise<void> | undefined;
 function shutdown(signal: string): Promise<void> {
-  stopped ??= stop(signal);
+  stopped ??= withShutdownDeadline(
+    () => stop(signal),
+    () => {
+      logger.error({ signal }, 'worker shutdown deadline exceeded');
+      process.exit(1);
+    },
+  );
   return stopped;
 }
 async function stop(signal: string): Promise<void> {
