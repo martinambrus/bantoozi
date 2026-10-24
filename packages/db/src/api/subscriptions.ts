@@ -6,6 +6,8 @@ import {
 } from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
+import { recordFeedEstimateIntents } from '../estimate/intents.js';
+import { tenantOutbox } from '../outbox.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { resolveLiveFeedId } from '../ingest/feeds.js';
 import { readerReleaseClock, releasedCarrier } from './releases.js';
@@ -335,7 +337,9 @@ export async function insertSubscriptions(
      ORDER BY r.feed_id
     ON CONFLICT (user_id, feed_id) DO NOTHING
     RETURNING feed_id::text AS feed_id`);
-  return result.rows.map((row) => row.feed_id);
+  const added = result.rows.map((row) => row.feed_id);
+  await recordFeedEstimateIntents(tx, tenantOutbox(tx), added, [tenantUserId(tx)]);
+  return added;
 }
 
 /**
@@ -365,7 +369,11 @@ export async function insertSubscription(
       coalesce((SELECT first_subscribed_at FROM user_feed_preferences
         WHERE user_id = ${tenantUserId(tx)}::uuid AND feed_id = ${input.feedId}::bigint), now()))
     ON CONFLICT (user_id, feed_id) DO NOTHING`);
-  return (result.rowCount ?? 0) > 0;
+  const added = (result.rowCount ?? 0) > 0;
+  if (added) {
+    await recordFeedEstimateIntents(tx, tenantOutbox(tx), [input.feedId], [tenantUserId(tx)]);
+  }
+  return added;
 }
 
 /** Record the first `feed.fetch` of a subscribed feed (local fetch/parse only, no inference). */
@@ -466,7 +474,9 @@ export async function deleteSubscription(
       SET first_subscribed_at = least(user_feed_preferences.first_subscribed_at, EXCLUDED.first_subscribed_at)`);
   const result = await tx.execute(sql`
     DELETE FROM subscriptions WHERE user_id = ${user}::uuid AND feed_id = ${feedId}::bigint`);
-  return { deleted: (result.rowCount ?? 0) > 0, scopedCards: scoped.rows[0]?.n ?? 0 };
+  const deleted = (result.rowCount ?? 0) > 0;
+  if (deleted) await recordFeedEstimateIntents(tx, tenantOutbox(tx), [feedId], [user]);
+  return { deleted, scopedCards: scoped.rows[0]?.n ?? 0 };
 }
 
 /**

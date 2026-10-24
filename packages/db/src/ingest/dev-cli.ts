@@ -2,6 +2,7 @@ import { enqueueFetch, newUserId, type JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { recordFeedEstimateIntents } from '../estimate/intents.js';
 import { resolveLiveFeedId } from './feeds.js';
 
 /**
@@ -106,6 +107,9 @@ export async function subscribeToFeed(
   await tx.execute(sql`SELECT refresh_feed_subscribers(${ids}::bigint[])`);
   await tx.execute(sql`SELECT refresh_feed_cards(${ids}::bigint[])`);
   await enqueueFetch(sender, { feedId });
+  if ((subscribed.rowCount ?? 0) > 0) {
+    await recordFeedEstimateIntents(tx, sender, [feedId], [input.userId]);
+  }
   return {
     feedId,
     createdFeed,

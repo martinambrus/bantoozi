@@ -2,6 +2,7 @@ import type { JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { recordArticleEstimateIntents } from '../estimate/intents.js';
 import { admitArrival } from './auto-cap.js';
 import { upsertArticleBody, type ArticleBodyInput } from './bodies.js';
 import { applyMediaSignals, assertImageCount, type MediaSignalUpdate } from './media.js';
@@ -211,6 +212,8 @@ type ResolvedIdentity =
     };
 
 interface LockedArticle {
+  title: string;
+  excerpt: string | null;
   revision: string;
   pipelineState: string;
   contentHash: string;
@@ -330,11 +333,13 @@ async function lockArticle(tx: Transaction, articleId: string): Promise<LockedAr
     revision: string;
     pipeline_state: string;
     content_hash: string;
+    title: string;
+    excerpt: string | null;
     url: string | null;
     link_enclosure_type: string | null;
   }>(sql`
     SELECT content_revision::text AS revision, pipeline_state, content_hash, url,
-           link_enclosure_type
+           link_enclosure_type, title, excerpt
       FROM articles WHERE id = ${articleId}::bigint FOR UPDATE`);
   const row = result.rows[0];
   return row === undefined
@@ -343,6 +348,8 @@ async function lockArticle(tx: Transaction, articleId: string): Promise<LockedAr
         revision: row.revision,
         pipelineState: row.pipeline_state,
         contentHash: row.content_hash,
+        title: row.title,
+        excerpt: row.excerpt,
         url: row.url,
         linkEnclosureType: row.link_enclosure_type,
       };
@@ -473,6 +480,7 @@ async function ingestFound(
   const guid = outcome === 'identity_conflict' ? null : input.guid;
   const newAssociation = await insertAssociation(tx, input.feedId, articleId, guid);
   if (newAssociation) {
+    await recordArticleEstimateIntents(tx, sender, [articleId]);
     await admitArrival(
       tx,
       input.feedId,
@@ -541,6 +549,9 @@ async function ingestFound(
     return unchanged;
   }
 
+  if (article.title !== input.title || article.excerpt !== input.excerpt) {
+    await recordArticleEstimateIntents(tx, sender, [articleId]);
+  }
   // The source's link replaces `url`, and its current enclosure type goes with it.
   await tx.execute(sql`
     UPDATE articles

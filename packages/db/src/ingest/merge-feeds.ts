@@ -2,6 +2,7 @@ import type { JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { recordFeedEstimateIntents } from '../estimate/intents.js';
 import { sqlState } from '../errors.js';
 import { lockUrlKeys } from './articles.js';
 import { activeSubscriberIds } from './demand.js';
@@ -378,6 +379,8 @@ export async function mergeFeeds(
     reason: FEED_MERGE_RANK_REASON,
     full: true,
   });
+
+  await recordFeedEstimateIntents(tx, sender, [survivorId], affectedUserIds);
 
   return {
     survivorId,
