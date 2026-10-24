@@ -3447,3 +3447,9 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   This protects rollbacks to this release and later ones; older binaries keep their strict readers, so their RUNBOOK
   steps stay. Still open: the SQL `admin_activate_provider_credential` replaces the breaker object (task #49) and the
   web client's strict parsing of every API response (design task #50). No migration.
+- D-336: 2026-10-24 (FNF-VL-25, task #49; completes D-335 for SQL writers) — Migration 0039 replaces
+  `admin_activate_provider_credential` (same signature, grants, SECURITY DEFINER and search path): closing an `auth`
+  breaker now applies the application's close transition (`engine/src/breaker.ts` `closed()`): it removes the known
+  optional fields `openedAt`, `failingSince`, `openUntil`, `probeToken`, `probeUntil`, sets `state` closed and
+  `reopenCount` 0, and keeps every other key of the breaker object instead of replacing it. A breaker not in `auth` is
+  untouched. An older release calling the function after a rollback gets the new behaviour, which only keeps more keys.
