@@ -181,7 +181,8 @@ async function stop(signal: string): Promise<void> {
     // removed only after the relay and the queue consumers have stopped.
     await health?.close();
     await relay?.stop();
-    await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
+    // Compose gives both workers 120 s: allow 100 s for in-flight calls, leaving 20 s for cleanup.
+    await boss?.stop({ graceful: true, timeout: 100_000, wait: true });
     queueReadiness.stop();
     await heartbeat?.stop();
     await models.close();
