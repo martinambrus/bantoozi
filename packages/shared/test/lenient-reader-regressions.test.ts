@@ -1,7 +1,7 @@
-import { expect, it } from 'vitest';
+import { expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 
-import { readerSchema } from '../src/setting-readers.js';
+import { preserveUnknownFields, readerSchema } from '../src/setting-readers.js';
 
 it('re-evaluates defaults and prefaults and isolates mutable object and array defaults', () => {
   let calls = 0;
@@ -87,4 +87,30 @@ it('keeps metadata on the derived root, nested objects, wrappers and leaf schema
   });
   expect(z.toJSONSchema(readerSchema(child))).toMatchObject({ description: 'child description' });
   expect(schema.shape.child.meta()).toMatchObject({ description: 'optional child' });
+});
+
+it.each([
+  { a: 2, child: { a: 2 } },
+  { b: 2, child: { b: 2 } },
+])('keeps intersection extras without resurrecting omitted known fields: %j', (next) => {
+  const schema = z.intersection(
+    z.object({ a: z.number().optional(), child: z.object({ a: z.number().optional() }) }),
+    z.object({ b: z.number().optional(), child: z.object({ b: z.number().optional() }) }),
+  );
+  const validated = schema.parse(next);
+  expect(validated).toEqual(next);
+  expect(
+    preserveUnknownFields(
+      schema,
+      { a: 1, b: 2, future: 3, child: { a: 1, b: 2, future: 4 } },
+      validated,
+    ),
+  ).toEqual({ ...next, future: 3, child: { ...next.child, future: 4 } });
+});
+
+it('exposes strip semantics in the object reader type', () => {
+  const schema = z.strictObject({ n: z.number() });
+  expectTypeOf(readerSchema(schema)).toEqualTypeOf<
+    z.ZodObject<{ n: z.ZodNumber }, z.core.$strip>
+  >();
 });

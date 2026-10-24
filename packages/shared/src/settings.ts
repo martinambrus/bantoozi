@@ -210,7 +210,7 @@ export const HouseProgressSchema = z
         ctx.addIssue({ code: 'custom', path: [job], message: 'a housekeeping entry is required' });
       }
     }
-  }) as z.ZodType<Record<string, z.output<typeof houseProgressEntry>>>;
+  });
 
 export const WorkerHeartbeatSchema = z.record(
   z.string().min(1).max(200),

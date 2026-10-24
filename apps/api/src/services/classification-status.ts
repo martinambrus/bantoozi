@@ -1,6 +1,6 @@
 import type { ClassificationStatus, EngineCircuit, EngineModelPin } from '@bantoozi/shared';
 
-type Progress = Record<string, { updatedAt: string; completedAt?: string | undefined }>;
+type Progress = Partial<Record<string, { updatedAt: string; completedAt?: string | undefined }>>;
 
 const REBUILD_JOBS = ['house.reenrich', 'house.rematch'] as const;
 const OK: ClassificationStatus = { state: 'ok', since: null, reason: null };

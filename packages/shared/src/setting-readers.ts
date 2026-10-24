@@ -2,6 +2,12 @@ import { z } from 'zod';
 
 const readers = new WeakMap<z.ZodType, z.ZodType>();
 
+/** Object readers expose strip semantics in their Zod type; other constructs retain their API. */
+export type ReaderSchema<S extends z.core.$ZodType> =
+  S extends z.ZodObject<infer Shape>
+    ? z.ZodObject<{ [K in keyof Shape]: ReaderSchema<Shape[K]> }, z.core.$strip>
+    : S;
+
 /** Explicit value-class compatibility for a schema whose writer remains strict. Register before deriving parents. */
 export function withStoredReader<S extends z.ZodType>(
   writer: S,
@@ -12,7 +18,7 @@ export function withStoredReader<S extends z.ZodType>(
 }
 
 /** Derive a stored-value reader without changing writer constraints or refinements. */
-export function readerSchema<S extends z.core.$ZodType>(input: S): S {
+export function readerSchema<S extends z.core.$ZodType>(input: S): ReaderSchema<S> {
   // Publish only a completely derived graph. A failed derivation must not poison the cache.
   const pending = new Map<z.ZodType, z.ZodType>();
   function derive(input: z.core.$ZodType): z.ZodType {
@@ -36,7 +42,7 @@ export function readerSchema<S extends z.core.$ZodType>(input: S): S {
     } else if (schema instanceof z.ZodRecord) {
       result = schema.clone({
         ...schema.def,
-        keyType: derive(schema.keyType),
+        keyType: derive(schema.keyType) as typeof schema.keyType,
         valueType: derive(schema.valueType),
       });
     } else if (schema instanceof z.ZodMap) {
@@ -127,7 +133,7 @@ export function readerSchema<S extends z.core.$ZodType>(input: S): S {
   }
   const result = derive(input);
   for (const [schema, reader] of pending) readers.set(schema, reader);
-  return result as unknown as S;
+  return result as unknown as ReaderSchema<S>;
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -149,7 +155,13 @@ function objectFields(input: z.core.$ZodType): Set<string> {
 /**
  * Retain only unknown fields of the old row, including nested objects. Known fields and record
  * entries omitted by the writer stay deleted; arrays retain extras on unchanged entries, even
- * when entries move. The caller still validates its new known value with the strict writer schema.
+ * when entries move. Extras belong to the setting key path, not record identity: replacing a
+ * model candidate, resetting a breaker or regenerating a daily snapshot can inherit old extras.
+ * Array matching compares the stripped, unchanged value (including JSON property order); editing
+ * an element in place loses its extras. Pipes/transforms and Map/Set do not restore extras.
+ * Direct object intersections combine their fields; other intersections are best-effort branch
+ * passes and should not be used when a writer must delete fields owned by another branch.
+ * The caller still validates its new known value with the strict writer schema.
  */
 export function preserveUnknownFields<T>(input: z.core.$ZodType, current: unknown, next: T): T {
   const schema = input as z.ZodType;
@@ -173,6 +185,17 @@ export function preserveUnknownFields<T>(input: z.core.$ZodType, current: unknow
     return preserveUnknownFields(branch, current, next);
   }
   if (schema instanceof z.ZodIntersection) {
+    const { left, right } = schema.def;
+    if (left instanceof z.ZodObject && right instanceof z.ZodObject) {
+      // Treat both sides' fields as known, including shared nested object fields. Otherwise
+      // either branch can resurrect an optional field deliberately omitted by the writer.
+      const shape: Record<string, z.ZodType> = { ...left.shape, ...right.shape };
+      for (const key of Object.keys(left.shape)) {
+        if (Object.hasOwn(right.shape, key))
+          shape[key] = z.intersection(left.shape[key], right.shape[key]);
+      }
+      return preserveUnknownFields(z.object(shape), current, next);
+    }
     return preserveUnknownFields(
       schema.def.right,
       current,
