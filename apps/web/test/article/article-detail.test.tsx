@@ -3,6 +3,8 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useState, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { useRuleActions } from '../../src/features/article/use-rule-actions.js';
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { ArticleDetail } from '../../src/features/article/article-detail.js';
@@ -304,6 +306,7 @@ describe('ArticleDetail "Read original"', () => {
     });
 
     it('is sent once when the page is visible again, with the time spent away', async () => {
+      useFakeClock();
       const { user, calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
       await user.click(await screen.findByRole('button', { name: 'Read original' }));
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
@@ -318,7 +321,9 @@ describe('ArticleDetail "Read original"', () => {
       });
 
       leaveAndReturn(60_000);
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
       expect(calls('POST', '/articles/101/dwell')).toHaveLength(1);
     });
 
@@ -334,35 +339,44 @@ describe('ArticleDetail "Read original"', () => {
     });
 
     it('is not sent when implicit feedback is off', async () => {
+      useFakeClock();
       const { user, calls } = renderDetail(ITEM, {}, { routes });
       await user.click(await screen.findByRole('button', { name: 'Read original' }));
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       leaveAndReturn(90_000);
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(calls('POST', '/articles/101/dwell')).toHaveLength(0);
     });
 
     it('is not sent when the page was never left', async () => {
+      useFakeClock();
       const { user, calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
       await user.click(await screen.findByRole('button', { name: 'Read original' }));
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       setVisibility('visible');
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(calls('POST', '/articles/101/dwell')).toHaveLength(0);
     });
 
     it('is not sent when the page was left long after the original was opened', async () => {
+      useFakeClock();
       const { user, calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
       await user.click(await screen.findByRole('button', { name: 'Read original' }));
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       vi.setSystemTime(Date.now() + 60_000);
       leaveAndReturn(90_000);
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(calls('POST', '/articles/101/dwell')).toHaveLength(0);
     });
@@ -787,9 +801,13 @@ describe('ArticleDetail rules', () => {
   });
 
   describe('answered once another account has signed in', () => {
-    const later = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const later = () =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
     it('confirms no rule, so its Undo cannot reach the account signed in now', async () => {
+      useFakeClock();
       const answer = deferred<void>();
       const { user, calls, signInAgain } = renderDetail(
         ITEM,
@@ -818,6 +836,7 @@ describe('ArticleDetail rules', () => {
     });
 
     it('confirms no muted story', async () => {
+      useFakeClock();
       const answer = deferred<void>();
       const { user, calls, signInAgain } = renderDetail(
         ITEM,
@@ -844,6 +863,7 @@ describe('ArticleDetail rules', () => {
     });
 
     it('reports no refusal', async () => {
+      useFakeClock();
       const answer = deferred<void>();
       const { user, calls, signInAgain } = renderDetail(
         ITEM,
@@ -873,6 +893,7 @@ describe('ArticleDetail rules', () => {
     });
 
     it('takes back nothing from a toast of the earlier sign-in', async () => {
+      useFakeClock();
       const { user, calls, signInAgain } = renderDetail(
         ITEM,
         {},
@@ -1327,9 +1348,13 @@ describe('ArticleDetail image setting', () => {
   });
 
   describe('answered once another account has signed in', () => {
-    const later = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const later = () =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
     it('confirms nothing', async () => {
+      useFakeClock();
       const answer = deferred<Response>();
       const { user, calls, queryClient, signInAgain } = renderDetail(
         BLOCKED,
@@ -1351,6 +1376,7 @@ describe('ArticleDetail image setting', () => {
     });
 
     it('reports no refusal', async () => {
+      useFakeClock();
       const answer = deferred<Response>();
       const { user, calls, queryClient, signInAgain } = renderDetail(
         BLOCKED,

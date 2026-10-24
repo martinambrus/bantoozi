@@ -1,6 +1,8 @@
 import { CARD_LIMITS, type LabelDto } from '@bantoozi/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -683,6 +685,7 @@ describe('removing an example', () => {
   });
 
   it('says nothing when removing an example fails once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const server = labelsServer([readLater], {
       'POST /labels/:id/examples/remove': async () => {
@@ -700,7 +703,9 @@ describe('removing an example', () => {
     server.me = null;
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText("We couldn't find that.")).toBeNull();
   });

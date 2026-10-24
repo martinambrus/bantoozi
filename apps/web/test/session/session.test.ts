@@ -2,6 +2,8 @@ import type { Me } from '@bantoozi/shared';
 import { QueryClient, onlineManager } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { createQueryClient } from '../../src/api/query-client.js';
 import { accountKey, meKey } from '../../src/api/query-keys.js';
 import { routes } from '../../src/api/routes.js';
@@ -109,7 +111,7 @@ const keysOf = (queryClient: QueryClient) =>
 const requestsTo = (requests: RecordedRequest[], operation: string) =>
   requests.filter((request) => `${request.method} ${request.pathname}` === operation);
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
+const settle = () => vi.advanceTimersByTimeAsync(1100);
 
 describe('loadMe', () => {
   it('resolves to the account and caches it', async () => {
@@ -123,6 +125,7 @@ describe('loadMe', () => {
   });
 
   it('resolves a 401 to null, caches it and resets nothing', async () => {
+    useFakeClock();
     const resets = recordResets();
     const tab = otherTab();
     const { session, queryClient, requests } = start({ me: null });
@@ -248,6 +251,7 @@ describe('requestCode', () => {
 
 describe('verifyCode', () => {
   it('signs in: returns the account and seeds the cache', async () => {
+    useFakeClock();
     const resets = recordResets();
     const tab = otherTab();
     const { session, queryClient, requests } = start({ me: null, verifiesAs: userA });
@@ -319,6 +323,7 @@ describe('verifyCode', () => {
   });
 
   it('is not a switch when a refetch of /me answers for the same account', async () => {
+    useFakeClock();
     const resets = recordResets();
     const { queryClient } = await startSignedIn(userA);
 
@@ -468,6 +473,7 @@ describe('a 401', () => {
     }
 
     it('leaves another account signed in since alone', async () => {
+      useFakeClock();
       const { session, queryClient, server, release, late } = await sentBeforeSignOut();
       server.verifiesAs = userB;
       await session.verifyCode({ email: 'b@example.com', code: '123456' });
@@ -482,6 +488,7 @@ describe('a 401', () => {
     });
 
     it('leaves the same account signed in again alone', async () => {
+      useFakeClock();
       const { session, queryClient, server, release, late } = await sentBeforeSignOut();
       server.verifiesAs = userA;
       await session.verifyCode({ email: 'a@example.com', code: '123456' });
@@ -497,6 +504,7 @@ describe('a 401', () => {
   });
 
   it('to a request sent before another tab signed in as the same account leaves this tab signed in', async () => {
+    useFakeClock();
     // The other tab's sign-in replaced the session cookie the request went out with.
     const server: Server = { me: userA };
     let release: () => void = () => undefined;
@@ -529,6 +537,7 @@ describe('a 401', () => {
   });
 
   it('changes nothing when nobody is signed in', async () => {
+    useFakeClock();
     const resets = recordResets();
     const tab = otherTab();
     const { session } = start({ me: null });
@@ -565,6 +574,7 @@ describe('a 401', () => {
     });
 
     it('leaves another account signed in since alone', async () => {
+      useFakeClock();
       const { session, queryClient, server } = await startSignedIn(userA);
       const sentWith = session.currentCookie();
       await session.logout();
@@ -580,6 +590,7 @@ describe('a 401', () => {
     });
 
     it('leaves this tab signed in when another tab signed in as the same account since', async () => {
+      useFakeClock();
       const { session, queryClient } = await startSignedIn(userA);
       const sentWith = session.currentCookie();
       otherTab().channel.postMessage({ type: 'signed-in', me: userA });
@@ -615,6 +626,7 @@ describe('resetAccountState', () => {
   });
 
   it('settles after the asynchronous hooks have', async () => {
+    useFakeClock();
     const order: string[] = [];
     unregister.push(
       onAccountReset(async () => {
@@ -662,6 +674,7 @@ describe('resetAccountState', () => {
 
 describe('another tab', () => {
   it('resets this one when it broadcasts a reset', async () => {
+    useFakeClock();
     const resets = recordResets();
     const tab = otherTab();
     const { queryClient } = await startSignedIn(userA);
@@ -676,6 +689,7 @@ describe('another tab', () => {
   });
 
   it('answers nobody when it ends the session while the first answer is on its way', async () => {
+    useFakeClock();
     let answer!: () => void;
     const answered = new Promise<void>((resolve) => {
       answer = resolve;
@@ -699,6 +713,7 @@ describe('another tab', () => {
   });
 
   it('ignores any other message', async () => {
+    useFakeClock();
     const resets = recordResets();
     const tab = otherTab();
     const { queryClient } = await startSignedIn(userA);
@@ -713,6 +728,7 @@ describe('another tab', () => {
   });
 
   it('signs out a second session of the browser once, without echoes', async () => {
+    useFakeClock();
     const first = await startSignedIn(userA);
     const second = await startSignedIn(userA);
     const resets = recordResets();
@@ -729,6 +745,7 @@ describe('another tab', () => {
   });
 
   it('asks who is signed in, and stays, when the reset removed an account it no longer shows', async () => {
+    useFakeClock();
     const tab = otherTab();
     const { queryClient, requests } = await startSignedIn(userB);
     const resets = recordResets();
@@ -747,6 +764,7 @@ describe('another tab', () => {
   });
 
   it('asks who is signed in, and stays, when a 401 ended the other tab of an account it no longer shows', async () => {
+    useFakeClock();
     const tab = otherTab();
     const { queryClient, requests } = await startSignedIn(userB);
     const resets = recordResets();
@@ -777,6 +795,7 @@ describe('another tab', () => {
   });
 
   it('stops listening after dispose', async () => {
+    useFakeClock();
     const tab = otherTab();
     const { session, queryClient } = await startSignedIn(userA);
 

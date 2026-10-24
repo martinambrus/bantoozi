@@ -1,6 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { gate } from '../interests/support.js';
@@ -360,6 +362,7 @@ describe('starter bundles (spec 09 §4 step 2)', () => {
   });
 
   it('sends nothing more of a bundle once the sign-in that asked for it has ended', async () => {
+    useFakeClock();
     const answer = gate();
     let sent = 0;
     const { app } = await openWizard('/onboarding?step=feeds', {
@@ -385,7 +388,9 @@ describe('starter bundles (spec 09 §4 step 2)', () => {
 
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.calls('POST /subscriptions')).toHaveLength(1);
   });
@@ -901,6 +906,7 @@ describe('finishing (spec 09 §4 step 5)', () => {
   });
 
   it('asks for nothing and goes nowhere when the answer comes once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWizard('/onboarding?step=calibrate', {
       ...options,
@@ -920,7 +926,9 @@ describe('finishing (spec 09 §4 step 5)', () => {
     await act(() => app.session.resetAccountState());
     const counted = app.calls('GET /articles/counts').length;
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.calls('GET /articles/counts')).toHaveLength(counted);
     expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ to: '/read/$lane' }));
@@ -932,6 +940,7 @@ describe('finishing (spec 09 §4 step 5)', () => {
   ])(
     'goes nowhere for %s when the sign-in ends while the lane to open is chosen',
     async (_who, me) => {
+      useFakeClock();
       const answer = gate();
       let holding = false;
       const { app, server } = await openWizard('/onboarding?step=calibrate', {
@@ -953,7 +962,9 @@ describe('finishing (spec 09 §4 step 5)', () => {
       server.me = null;
       await act(() => app.session.resetAccountState());
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ to: '/read/$lane' }));
     },

@@ -2,6 +2,8 @@ import type { CreateInviteBody, InviteDto, Me, SessionDto } from '@bantoozi/shar
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { clearLogoutPending } from '../../src/offline/device.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -360,6 +362,7 @@ describe('profile (spec 09 §7)', () => {
     });
 
     it('keeps what the next sign-in of the account saved when an answer from before comes late', async () => {
+      useFakeClock();
       // The server takes the profile at once; its answer arrives after a sign-out and a sign-in.
       const gate = deferred();
       const { user, calls, session, queryClient } = await openSettings({
@@ -382,7 +385,9 @@ describe('profile (spec 09 §7)', () => {
         queryClient.setQueryData(meKey(), { ...me, displayName: 'Grace' });
       });
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(queryClient.getQueryData<Me>(meKey())?.displayName).toBe('Grace');
     });
@@ -642,6 +647,7 @@ describe('sessions (spec 09 §7)', () => {
     ])(
       'keeps the list the account shows when the answer to revoking %s comes after signing in again',
       async (_session, respond) => {
+        useFakeClock();
         const held = deferred();
         const api = sessionsApi([CURRENT, PHONE_SESSION], {
           'DELETE /auth/sessions/:id': async (_request, params) => {
@@ -665,7 +671,9 @@ describe('sessions (spec 09 §7)', () => {
         await waitFor(() => expect(sessions().getByText(PHONE)).toBeVisible());
         const loaded = calls('GET /auth/sessions').length;
         held.release();
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1100);
+        });
 
         expect({
           listed: sessions()
@@ -734,6 +742,7 @@ describe('sessions (spec 09 §7)', () => {
     });
 
     it('takes turns with a sign-in in another tab, so its answer cannot end the session that one begins', async () => {
+      useFakeClock();
       fakeWebLocks();
       const api = sessionsApi([CURRENT], { 'POST /auth/logout': () => noContent() });
       const { user, calls, queryClient } = await openSettings({ routes: api.routes });
@@ -748,7 +757,9 @@ describe('sessions (spec 09 §7)', () => {
 
       // The device is signed out at once; the server is asked once the other sign-in is done.
       await waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
       expect(calls('POST /auth/logout')).toEqual([]);
       expect(calls('DELETE /auth/sessions/:id')).toEqual([]);
       signingIn.release();
@@ -1010,6 +1021,7 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
     ])(
       'sends no request for the invites or the account when the answer to creating %s comes after signing in again',
       async (_invite, refuse) => {
+        useFakeClock();
         const held = deferred();
         const api = invitesApi([], 3);
         const makeInvite = api.routes['POST /invites'] as ApiRouteHandler;
@@ -1034,7 +1046,9 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
         });
         const loaded = asked();
         held.release();
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1100);
+        });
 
         expect(asked()).toEqual(loaded);
       },

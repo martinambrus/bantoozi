@@ -3,6 +3,8 @@ import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { createReaderActions } from '../../src/features/reader/actions/store.js';
 import {
   UNDO_WINDOW_MS,
@@ -196,6 +198,7 @@ describe('1b. a dislike made offline, with offline reading on', () => {
 
 describe('2. a rating made offline, with offline reading off', () => {
   it('fails at once with a hint, with no request, no retry and no stored record, and works as before online', async () => {
+    useFakeClock();
     const server = createArticleServer([ITEM]);
     const net = connection(server);
     const tab = await openTab(server);
@@ -210,7 +213,9 @@ describe('2. a rating made offline, with offline reading off', () => {
     expect(isPressed(likeOf(tab))).toBe(false);
     expect(failedToasts()).toEqual([]);
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 700));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(tab.calls('POST /articles/:id/rating')).toHaveLength(0);
     expect(rowCount(await dumpDatabase(idb.factory), 'queue')).toBe(0);
     expect(await storedRecords(idb.factory)).toEqual([]);

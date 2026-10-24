@@ -7,6 +7,8 @@ import { act, screen, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { gate } from '../interests/support.js';
@@ -200,6 +202,7 @@ describe('admin settings editors (spec 09 §8)', () => {
   });
 
   it('adopts and confirms nothing when the save is answered once the sign-in has ended', async () => {
+    useFakeClock();
     const state = { values: { ...SETTINGS_VALUES } };
     const apply = applyingPatch(state);
     const answer = gate();
@@ -221,7 +224,9 @@ describe('admin settings editors (spec 09 §8)', () => {
     server.me = null;
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText(`Saved ${BUDGET}.`)).toBeNull();
     expect(
@@ -230,6 +235,7 @@ describe('admin settings editors (spec 09 §8)', () => {
   });
 
   it('reloads nothing when the save is refused once the sign-in has ended (409 settings_changed)', async () => {
+    useFakeClock();
     const answer = gate();
     const server: FakeServer = {
       me: adminMe(),
@@ -252,7 +258,9 @@ describe('admin settings editors (spec 09 §8)', () => {
     const settings = accountKey(adminMe().id, 'admin', 'settings');
     app.queryClient.setQueryData(settings, makeSettings());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.queryClient.getQueryState(settings)?.isInvalidated).toBe(false);
   });

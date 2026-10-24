@@ -1,7 +1,9 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../../support/clock.js';
 
 import {
   useReaderActions,
@@ -65,6 +67,7 @@ describe('useSettledActions', () => {
   });
 
   it('stops calling a listener whose component is gone', async () => {
+    useFakeClock();
     const item = makeItem();
     const seen: Seen[] = [];
     const app = renderReader(<Toggle item={item} seen={seen} />, {
@@ -74,7 +77,9 @@ describe('useSettledActions', () => {
     await app.user.click(screen.getByRole('button', { name: 'Stop listening' }));
     await app.user.click(screen.getByRole('button', { name: 'Read' }));
     await waitFor(() => expect(app.calls('POST', `/articles/${item.id}/read`)).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(seen).toEqual([]);
   });

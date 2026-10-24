@@ -425,6 +425,8 @@ describe('the rules page (spec 09 §6)', () => {
           within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete rule' }),
         );
         await waitFor(() => expect(app.calls('DELETE /rules/:id')).toHaveLength(1));
+        const [deletion] = app.queryClient.getMutationCache().getAll();
+        expect(deletion?.state.status).toBe('pending');
         const me = app.queryClient.getQueryData<Me>(meKey());
 
         await act(() => app.session.resetAccountState());
@@ -433,8 +435,11 @@ describe('the rules page (spec 09 §6)', () => {
         });
         await waitFor(() => expect(screen.getByText('bitcoin')).toBeVisible());
         const loaded = app.calls('GET /rules').length;
-        held.release();
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await act(async () => {
+          held.release();
+          // The reset removes it from the cache; retain the mutation until its callbacks finish.
+          await vi.waitFor(() => expect(deletion!.state.status).not.toBe('pending'));
+        });
 
         expect({
           deletable: screen

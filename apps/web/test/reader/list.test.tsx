@@ -1,6 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { failure, json } from '../api/fake-fetch.js';
 import { deferred, makeLabel } from '../article/harness.js';
 import { makeSubscription } from '../feeds/support.js';
@@ -357,6 +359,7 @@ describe('paging', () => {
   });
 
   it('does not start over when the first page itself is refused', async () => {
+    useFakeClock();
     const { app } = await open({
       path: '/read/for_you',
       list: () => failure(400, 'VALIDATION_FAILED'),
@@ -364,7 +367,7 @@ describe('paging', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await vi.advanceTimersByTimeAsync(1100);
     });
 
     expect(listQueries(app)).toHaveLength(1);

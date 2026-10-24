@@ -1,5 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { json } from '../api/fake-fetch.js';
 import { bodyOf, renderApp } from '../support/app.js';
@@ -26,6 +28,7 @@ const group = (key: string) => screen.getByRole('group', { name: key });
 
 describe('out-of-order save answers', () => {
   it('a late answer for key A leaves key B source and the workers status as the newer answer set them', async () => {
+    useFakeClock();
     let releaseA!: () => void;
     const gateA = new Promise<void>((resolve) => (releaseA = resolve));
     // The server's state: a worker waits for a restart once B is stored.
@@ -79,7 +82,9 @@ describe('out-of-order save answers', () => {
     releaseA();
     await within(group(A)).findByText('Source: stored');
     // Let the late answer and the snapshot read that follows it settle.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     // The late answer had B as "environment"; B keeps what its own answer set.
     expect(within(group(B)).getByText('Source: stored')).toBeVisible();
     expect(screen.getByText(/Pending restart: 1 of 1/)).toBeVisible();

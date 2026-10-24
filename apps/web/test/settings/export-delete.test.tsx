@@ -12,6 +12,8 @@ import {
   vi,
 } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { SESSION_CHANNEL } from '../../src/session/session.js';
 import {
@@ -232,6 +234,7 @@ describe('export (spec 09 §7)', () => {
     });
 
     it('saves nothing when the file is read once the sign-in has ended', async () => {
+      useFakeClock();
       stubExportFetch(() => new Response(DOCUMENT, { status: 200 }));
       const reading = holdReading();
       const { user, server, session } = await open();
@@ -241,12 +244,15 @@ describe('export (spec 09 §7)', () => {
       server.me = null;
       await act(() => session.resetAccountState());
       reading.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(saved).toHaveLength(0);
     });
 
     it('saves nothing when another sign-in began while the file was read', async () => {
+      useFakeClock();
       stubExportFetch(() => new Response(DOCUMENT, { status: 200 }));
       const reading = holdReading();
       const { user, session } = await open();
@@ -256,7 +262,9 @@ describe('export (spec 09 §7)', () => {
       await waitFor(() => expect(reading.held).toHaveBeenCalled());
       signIn.mockReturnValue(2);
       reading.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(saved).toHaveLength(0);
     });
@@ -319,6 +327,7 @@ describe('export (spec 09 §7)', () => {
     });
 
     it('saves nothing and says so when it is cancelled while the file is read', async () => {
+      useFakeClock();
       stubExportFetch(() => new Response(DOCUMENT, { status: 200 }));
       const reading = holdReading();
       const { user } = await open();
@@ -327,7 +336,9 @@ describe('export (spec 09 §7)', () => {
 
       await user.click(cancel());
       reading.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(saved).toHaveLength(0);
       await waitFor(() =>
@@ -720,6 +731,7 @@ describe('deleting the account (spec 09 §7)', () => {
     });
 
     it('leaves alone another account that signed in while the deletion was on its way', async () => {
+      useFakeClock();
       const gate = deferred();
       const userB = makeMe({ id: USER_B_ID, email: 'b@example.com', displayName: 'Grace' });
       const keptByB = `${USER_B_ID}:interests:keep:5:2`;
@@ -729,7 +741,7 @@ describe('deleting the account (spec 09 §7)', () => {
         clearLastAccount();
         localStorage.removeItem(keptByB);
       });
-      const { user, calls, queryClient } = await openDialog({
+      const { user, calls, queryClient, session } = await openDialog({
         routes: {
           'DELETE /me': async () => {
             await gate.promise;
@@ -746,9 +758,14 @@ describe('deleting the account (spec 09 §7)', () => {
         queryClient.setQueryData(meKey(), userB);
       });
       await waitFor(() => expect(queryClient.getQueryData<Me>(meKey())?.id).toBe(USER_B_ID));
+      await act(async () => {
+        await session.loadMe();
+      });
       localStorage.setItem(keptByB, '1');
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(queryClient.getQueryData<Me>(meKey())?.id).toBe(USER_B_ID);
       expect(localStorage.getItem(keptByB)).toBe('1');
@@ -821,6 +838,7 @@ describe('deleting the account (spec 09 §7)', () => {
     });
 
     it('leaves alone the account that another tab signed in again after that 401, which restores it', async () => {
+      useFakeClock();
       const gate = deferred();
       const { user, calls, session } = await openDialog({
         routes: {
@@ -846,7 +864,9 @@ describe('deleting the account (spec 09 §7)', () => {
       other.postMessage({ type: 'signed-in', me: makeMe() });
       await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(heard).toEqual([]);
       expect(readLastAccount()?.id).toBe(USER_A_ID);
@@ -854,6 +874,7 @@ describe('deleting the account (spec 09 §7)', () => {
     });
 
     it('keeps the choice to keep the articles of the account another tab signed in again after that 401', async () => {
+      useFakeClock();
       const gate = deferred();
       writeOfflineEnabled(USER_A_ID, true);
       const { user, calls, session } = await openDialog({
@@ -878,12 +899,15 @@ describe('deleting the account (spec 09 §7)', () => {
       other.postMessage({ type: 'signed-in', me: makeMe() });
       await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(isOfflineEnabled(USER_A_ID)).toBe(true);
     });
 
     it('leaves alone the account that another tab signed in again after that 401, when a 401 of a third tab is heard late', async () => {
+      useFakeClock();
       const gate = deferred();
       writeOfflineEnabled(USER_A_ID, true);
       const { user, calls, session } = await openDialog({
@@ -912,9 +936,13 @@ describe('deleting the account (spec 09 §7)', () => {
       other.postMessage({ type: 'signed-in', me: makeMe() });
       await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
       third.postMessage({ type: 'reset', account: USER_A_ID });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(readLastAccount()?.id).toBe(USER_A_ID);
       expect(isOfflineEnabled(USER_A_ID)).toBe(true);
@@ -922,6 +950,7 @@ describe('deleting the account (spec 09 §7)', () => {
     });
 
     it('leaves alone the account that another tab signed in again while the deletion was on its way, which restores it', async () => {
+      useFakeClock();
       const gate = deferred();
       writeOfflineEnabled(USER_A_ID, true);
       const { user, calls, session, queryClient } = await openDialog({
@@ -945,7 +974,9 @@ describe('deleting the account (spec 09 §7)', () => {
       other.postMessage({ type: 'signed-in', me: makeMe() });
       await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(heard).toEqual([]);
       expect(readLastAccount()?.id).toBe(USER_A_ID);
