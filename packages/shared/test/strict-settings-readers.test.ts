@@ -79,14 +79,16 @@ function strictCalls(source: string, file: string): string[] {
     }
     return false;
   };
+  const bind = (name: ts.BindingName) => {
+    if (ts.isIdentifier(name)) schemaAliases.add(name.text);
+    else
+      for (const element of name.elements) {
+        if (ts.isBindingElement(element)) bind(element.name);
+      }
+  };
   const declarations = (node: ts.Node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      strictSchema(node.initializer)
-    )
-      schemaAliases.add(node.name.text);
+    if (ts.isVariableDeclaration(node) && node.initializer && strictSchema(node.initializer))
+      bind(node.name);
     ts.forEachChild(node, declarations);
   };
   declarations(ast);
@@ -94,14 +96,32 @@ function strictCalls(source: string, file: string): string[] {
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
-      const direct = nameOf(callee) === 'parseSetting';
+      const direct = ['parseSetting', 'validateRuntimeSetting'].includes(nameOf(callee));
       const method =
         ts.isPropertyAccessExpression(callee) &&
-        ['parse', 'safeParse'].includes(callee.name.text) &&
+        [
+          'parse',
+          'safeParse',
+          'parseAsync',
+          'safeParseAsync',
+          'decode',
+          'decodeAsync',
+          'safeDecode',
+          'safeDecodeAsync',
+        ].includes(callee.name.text) &&
         strictSchema(callee.expression);
       const coreParse =
         ts.isPropertyAccessExpression(callee) &&
-        ['parse', 'safeParse'].includes(callee.name.text) &&
+        [
+          'parse',
+          'safeParse',
+          'parseAsync',
+          'safeParseAsync',
+          'decode',
+          'decodeAsync',
+          'safeDecode',
+          'safeDecodeAsync',
+        ].includes(callee.name.text) &&
         node.arguments[0] !== undefined &&
         strictSchema(node.arguments[0]);
       if (direct || method || coreParse)
@@ -145,4 +165,64 @@ it('catches derived strict schemas, registry aliases and core parse calls', () =
       'new-reader.ts',
     ),
   ).toHaveLength(3);
+});
+
+it('catches destructured registry schemas and async or decode reader APIs', () => {
+  expect(
+    strictCalls(
+      `
+    import { SETTINGS } from '@bantoozi/shared';
+    const { schema } = SETTINGS[k];
+    const { schema: renamed } = SETTINGS[k];
+    schema.parseAsync(stored);
+    renamed.safeParseAsync(stored);
+    schema.decode(stored);
+    z.decode(renamed, stored);
+    z.safeParseAsync(schema, stored);
+  `,
+      'new-reader.ts',
+    ),
+  ).toHaveLength(5);
+});
+
+it('records a specific review reason for every strict write site', () => {
+  expect(new Set(allowed.map((site) => site.reason)).size).toBe(allowed.length);
+});
+
+it('keeps stored ranker values stripped before the strict merge validator', () => {
+  const argumentAllowed = (argument: string) =>
+    argument.startsWith('parseStoredSetting(') ||
+    argument === '{}' ||
+    argument === 'config.rankerThresholds' ||
+    argument === 'await deployedRankerThresholds(db)';
+  // A raw stored value must fail this control even if its variable was renamed.
+  expect(argumentAllowed('stored')).toBe(false);
+  expect(argumentAllowed('thresholds')).toBe(false);
+  for (const file of [
+    'packages/ranker/src/settings.ts',
+    'packages/db/src/api/article-actions.ts',
+    'packages/db/src/house/purge-articles.ts',
+    'apps/eval/src/experiments/runner.ts',
+  ]) {
+    const source = read(file);
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    let merges = 0;
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'mergeRankerConfig'
+      ) {
+        merges++;
+        expect(argumentAllowed(node.arguments[0]!.getText(ast)), file).toBe(true);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(merges, file).toBeGreaterThan(0);
+  }
+  // The only permitted stored-value intermediary must itself strip the deployed thresholds.
+  expect(read('apps/eval/src/experiments/runner.ts')).toMatch(
+    /return parseStoredSetting\('ranker.thresholds', stored \?\? \{\}\)/,
+  );
 });
