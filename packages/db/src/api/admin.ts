@@ -1,6 +1,7 @@
 import {
   AppError,
   CandidateValidationSchema,
+  DECISION_KINDS,
   type CandidateStatus,
   type CandidateValidation,
   type Provider,
@@ -149,7 +150,7 @@ export async function adminOverviewCounts(tx: TenantTx): Promise<AdminOverviewCo
   const usage = await tx.execute<{ spend: string; llm: number; tier2: number }>(sql`
     SELECT coalesce(sum(cost_usd), 0)::text AS spend,
            coalesce(sum(calls) FILTER (WHERE engine = 'llm'
-                                       AND kind IN ('enrich','match','cluster','suggest')), 0)::int AS llm,
+                                       AND kind = ANY(${sql.param([...DECISION_KINDS])}::text[])), 0)::int AS llm,
            coalesce(sum(calls) FILTER (WHERE engine = 'llm' AND kind = 'translate'), 0)::int AS tier2
       FROM usage_daily WHERE day = ${TODAY_UTC}`);
   const translations = await tx.execute<{ engine: string; quality: string; n: number }>(sql`

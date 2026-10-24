@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { CallKind } from '@bantoozi/shared';
+
 import { MetricsWorld, type Lane, type WorldArticle, type WorldUser } from './metrics-world.js';
 
 export { DAY, HOUR, MINUTE, SECRET_TITLE, pick, utcDay } from './metrics-world.js';
@@ -38,15 +40,7 @@ export interface ModelFixture {
 
 export interface CallFixture {
   engine?: 'typesafe' | 'llm' | 'laya' | 'libretranslate';
-  kind:
-    | 'enrich'
-    | 'match'
-    | 'cluster'
-    | 'suggest'
-    | 'translate'
-    | 'credential_probe'
-    | 'model_probe'
-    | 'eval';
+  kind: CallKind;
   status?: 'ok' | 'error' | 'timeout' | 'rate_limited' | 'invalid_response';
   latencyMs?: number | null;
   costUsd?: number;

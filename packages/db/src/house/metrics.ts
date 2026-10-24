@@ -1,3 +1,4 @@
+import { NON_LIVE_KINDS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -290,7 +291,10 @@ export async function metricsModels(
 
 /** Engine aggregates of a window (spec 10 §7 "Engine"). */
 export interface MetricsEngine {
-  /** Live calls: everything but evaluation, credential and model probes and LibreTranslate. */
+  /**
+   * Live calls: every kind the kind table marks live (all but evaluation, credential and model
+   * probes), and never LibreTranslate.
+   */
   calls: number;
   errors: number;
   coverage: number | null;
@@ -304,13 +308,15 @@ export interface MetricsEngine {
   cache: { requests: number; hits: number; savedUsd: number };
 }
 
-const LIVE = sql`c.kind NOT IN ('eval', 'credential_probe', 'model_probe') AND c.engine <> 'libretranslate'`;
+/** Live engine calls: a kind the table marks live, and not a LibreTranslate row. */
+const LIVE = sql`NOT (c.kind = ANY(${sql.param([...NON_LIVE_KINDS])}::text[])) AND c.engine <> 'libretranslate'`;
 
 /**
  * Engine calls, cost and the shared-cache effect of the window `from <= created_at < to`, over `days`
  * days. An article is *active* when an active subscription's arrival at/after its activation carries
  * it, *training* when only a selected analysis request covers it, and a call on neither counts as
- * `other` (an off feed's article: the off-feed counter must stay zero).
+ * `other`: a call about no article (a suggestion, a card draft) or an off feed's article (the off-feed
+ * counter counts only calls with an article and must stay zero).
  */
 export async function metricsEngine(
   db: Executor,

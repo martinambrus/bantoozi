@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { CALL_KINDS, DECISION_KINDS } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ClassifyHarness } from './support/classify.js';
@@ -264,14 +265,14 @@ describe('house.alerts rule engine.model_mismatch (JEV-6)', () => {
     expect(await emails(row({ ageMs: 5 * MINUTE, engine: 'llm' }))).toBe(0);
   });
 
-  it.each(['match', 'cluster', 'suggest'])(
+  it.each(DECISION_KINDS.filter((k) => k !== 'enrich'))(
     'a mismatch row of a %s call fires like an enrich call',
     async (kind) => {
       expect(await emails(row({ ageMs: 5 * MINUTE, kind }))).toBe(1);
     },
   );
 
-  it.each(['credential_probe', 'eval'])(
+  it.each(CALL_KINDS.filter((k) => !DECISION_KINDS.includes(k)))(
     'NEG: a mismatch row of a %s call is not classification work and stays silent',
     async (kind) => {
       expect(await emails(row({ ageMs: 5 * MINUTE, kind }))).toBe(0);
@@ -394,7 +395,7 @@ describe('house.alerts rule engine.breaker without an open breaker (JEV-6)', () 
     ).toBe(0);
   });
 
-  it.each(['translate', 'credential_probe', 'eval'])(
+  it.each(CALL_KINDS.filter((k) => !DECISION_KINDS.includes(k)))(
     'NEG: 3 failing %s requests stay silent',
     async (kind) => {
       expect(await emails(() => failures(3, { kind }))).toBe(0);

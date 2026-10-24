@@ -611,8 +611,10 @@ source (`cards/model/degraded`), language, and prompt/calibration vs voluntary f
   and logloss change vs baseline, invalidation/failure rate and time back on cards-only ranking.
 - **Engine:** p50/p95 live latency, errors, output coverage/degraded share and billed $/day, split
   by selected training vs active arrivals (from each call's recorded `engine_calls.demand_basis`; only
-  rows without one fall back to the current subscriptions and requests, D-194); off feeds must
-  contribute zero authorized provider calls.
+  rows without one fall back to the current subscriptions and requests, D-194; spend that no article
+  explains, such as suggestions and card drafts, is reported as `other`); off feeds must contribute
+  zero authorized provider calls. *Live* calls are production traffic: classification, LLM translation
+  and card drafts; evaluation, credential checks, model probes and LibreTranslate rows are not (D-302).
   Report shared cache savings and training queue age separately from all fetched article volume.
 
 `house.metrics` stores one snapshot per UTC day: the day's lane like-rates and the recovery
