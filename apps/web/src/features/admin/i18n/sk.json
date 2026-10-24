@@ -194,6 +194,7 @@
       "none": "Žiadny živý worker",
       "pendingRestart": "Čaká na reštart: {{pending}} z {{total}} workerov",
       "problem": "Worker zamietol: {{message}}",
+      "generalProblem": "Problém workera: {{message}}",
       "restarting": "Workery sa reštartujú, aby použili zmenu…"
     },
     "reprocessing": "Články a karty sa na pozadí spracúvajú znova…",
