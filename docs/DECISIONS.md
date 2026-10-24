@@ -3394,3 +3394,10 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   One `seen` per toast showing, also across modal remounts. Feed-scope offers use the lowest-id non-hidden subscribed
   carrier, falling back to hidden ones (the rating request carries no feed). When the offer toast is not shown, the
   plain toast keeps "Similar articles will be ranked lower.".
+- D-332: 2026-10-24 (FNF-VL-22, task #45) — Removed queue options converge. pg-boss 10.4.2 `updateQueue` COALESCEs
+  every option with the stored value, so an option dropped from the registry stayed on existing databases while a fresh
+  one got pg-boss's default. The migrate job now creates each registry queue and then sets its managed columns
+  (`policy`, `retry_limit`, `retry_delay`, `retry_backoff`, `expire_seconds`) directly in one transaction: a value the
+  registry sets is written, an omitted one is reset to the installed pg-boss schema's column `DEFAULT` (no copied
+  constants, so a pg-boss upgrade keeps its own defaults). Retention and dead-letter settings, and queues outside the
+  registry, are untouched. A test checks an existing database equals a fresh one after an option is removed.
