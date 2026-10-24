@@ -29,7 +29,7 @@ import {
 
 /**
  * JEV-5 (worker): every recorded model probe also records `settings['engine.model_impact']` in the
- * same transaction: how many live users hold an active personal model, as of the probe's `at`.
+ * same transaction: the committing recorder's live active-model count, with the newest trusted `at`.
  */
 
 type Prober = ReturnType<typeof createModelProber>;
@@ -249,17 +249,33 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     expect(await probeOf(h.owner)).toEqual(newer);
   });
 
-  it('an older recorder preserves the newer impact timestamp and count', async () => {
+  it('an older recorder refreshes the impact count and preserves the newer timestamp', async () => {
     await seedModel(h.owner, await user());
     await recordModelProbe(h.db, okAt(B));
     await seedModel(h.owner, await user());
     await recordModelProbe(h.db, okAt(A, V114, V114));
-    expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 1 });
+    expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 2 });
     expect(await probeOf(h.owner, V114)).toEqual(okAt(A, V114, V114));
     // Equal timestamps may refresh the count.
     await recordModelProbe(h.db, okAt(B));
     expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 2 });
   });
+
+  it.each([60_000, 120_000])(
+    'refreshes the impact count with a stored timestamp %i ms ahead of the writer clock',
+    async (ahead) => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse(B));
+      const storedAt = iso(new Date(Date.parse(B) + ahead));
+      await seedModel(h.owner, await user());
+      await recordModelProbe(h.db, okAt(storedAt));
+      await seedModel(h.owner, await user());
+      await recordModelProbe(h.db, okAt(A));
+      expect(await impactOf(h.owner)).toEqual({
+        at: ahead === 60_000 ? storedAt : A,
+        activeModels: 2,
+      });
+    },
+  );
 
   it('I9 concurrent recorders: no deadlock, at most 10 probe keys, one impact row', async () => {
     await seedModel(h.owner, await user());

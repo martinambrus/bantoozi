@@ -374,9 +374,13 @@ export async function recordModelProbe(
       null,
       (current) => {
         const stored = EngineModelImpactSchema.safeParse(current);
-        if (stored.success && Date.parse(stored.data.at) > Date.parse(checked.at))
-          return stored.data;
-        return EngineModelImpactSchema.parse({ at: checked.at, activeModels });
+        const at =
+          stored.success &&
+          Date.parse(stored.data.at) > Date.parse(checked.at) &&
+          Date.parse(stored.data.at) <= Date.now() + MODEL_PROBE_MAX_SKEW_MS
+            ? stored.data.at
+            : checked.at;
+        return EngineModelImpactSchema.parse({ at, activeModels });
       },
     );
   });
