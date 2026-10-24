@@ -258,10 +258,10 @@ describe('model probe: resolution', () => {
     expect(fake.requests).toHaveLength(1);
   });
 
-  it('W12 a 404 with the legacy body is model_unavailable without a retry', async () => {
+  it('W12 a bare 404 is request_rejected without a retry', async () => {
     fake.setOptions({ statusOverride: () => ({ status: 404 }) });
     const probe = await setup().prober.probe('jev-latest');
-    expect(probe).toMatchObject({ ok: false, error: 'model_unavailable' });
+    expect(probe).toMatchObject({ ok: false, error: 'request_rejected' });
     expect(fake.requests).toHaveLength(1);
   });
 });

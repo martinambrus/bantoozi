@@ -15,7 +15,9 @@ export const MODEL_UNAVAILABLE_DETAIL = 'model_unavailable';
  * (`typesafe:error:model_unavailable:http_404`). The hook for the re-resolution trigger (JEV-3).
  */
 export function isModelUnavailableDetail(detail: string | undefined): boolean {
-  return detail !== undefined && /(?:^|:)model_unavailable(?::|$)/.test(detail);
+  return (
+    detail !== undefined && /^(?:(?:typesafe|llm):error:)?model_unavailable(?::|$)/.test(detail)
+  );
 }
 
 /** The shape of any model id the app stores, probes or puts in a job payload. */

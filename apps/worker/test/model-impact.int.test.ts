@@ -1,6 +1,6 @@
 import type { EngineModelProbe } from '@bantoozi/shared';
 import { createUser } from '@bantoozi/testing';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dispatch } from '../src/handlers/index.js';
 import { createModelProbeHandler } from '../src/handlers/model-probe.js';
@@ -29,7 +29,7 @@ import {
 
 /**
  * JEV-5 (worker): every recorded model probe also records `settings['engine.model_impact']` in the
- * same transaction: how many live users hold an active personal model, as of the probe's `at`.
+ * same transaction: the committing recorder's live active-model count, with the newest trusted `at`.
  */
 
 type Prober = ReturnType<typeof createModelProber>;
@@ -46,10 +46,15 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2031, 5, 2));
   await h.owner.query(`DELETE FROM user_models`);
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     ['engine.model_probe', 'engine.model_impact', 'engine.model_watch', 'house.progress'],
   ]);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 const user = async (deletedAt?: Date): Promise<string> =>
@@ -158,20 +163,20 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
 
   it('I7 the engine.model-probe handler records the impact, also for a throwing prober', async () => {
     await seedModel(h.owner, await user());
-    const started = Date.now();
+    const injectedNow = new Date(A);
     const throwing = {
       probe: async () => {
         throw new Error('boom');
       },
     } as unknown as Prober;
-    await createModelProbeHandler({ db: h.db, prober: throwing, logger })(
+    await createModelProbeHandler({ db: h.db, prober: throwing, logger, now: () => injectedNow })(
       { model: ALIAS },
       { queue: 'engine.model-probe', jobId: 'impact' },
     );
     expect(await probeOf(h.owner)).toMatchObject({ ok: false, error: 'internal_error' });
     const impact = await impactOf(h.owner);
     expect(impact?.activeModels).toBe(1);
-    expect(Date.parse(impact!.at)).toBeGreaterThanOrEqual(started - 1000);
+    expect(impact!.at).toBe(A);
     expect((await probeOf(h.owner))?.at).toBe(impact!.at);
   });
 
@@ -194,6 +199,84 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     expect(await settingValue(h.owner, 'engine.model_probe')).toBeUndefined();
   });
 
+  it('warns once when corrupt probe state is replaced, without logging its contents', async () => {
+    const warn = vi.fn();
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('engine.model_probe', $1::jsonb)`,
+      [JSON.stringify({ unexpected: 'private payload' })],
+    );
+    await recordModelProbe(h.db, okAt(A), { warn });
+    await recordModelProbe(h.db, okAt(B), { warn });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      { key: 'engine.model_probe' },
+      'invalid stored model probes; resetting the record',
+    );
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+  });
+
+  it('keeps a newer successful probe when an older failure commits later', async () => {
+    await recordModelProbe(h.db, okAt(B));
+    await recordModelProbe(h.db, { requested: ALIAS, at: A, ok: false, error: 'timeout' });
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+  });
+
+  it('adds an older probe for a different model while preserving the newer entry', async () => {
+    await recordModelProbe(h.db, okAt(B));
+    await recordModelProbe(h.db, okAt(A, V114, V114));
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+    expect(await probeOf(h.owner, V114)).toEqual(okAt(A, V114, V114));
+  });
+
+  it('replaces a probe with an equal timestamp', async () => {
+    await recordModelProbe(h.db, okAt(B));
+    const failed = { requested: ALIAS, at: B, ok: false, error: 'timeout' };
+    await recordModelProbe(h.db, failed);
+    expect(await probeOf(h.owner)).toEqual(failed);
+  });
+
+  it('replaces a stored probe two minutes ahead of the writer clock', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse(B));
+    await recordModelProbe(h.db, okAt(iso(new Date(Date.parse(B) + 120_000))));
+    await recordModelProbe(h.db, okAt(B));
+    expect(await probeOf(h.owner)).toEqual(okAt(B));
+  });
+
+  it('keeps a newer stored probe exactly 60 seconds ahead of the writer clock', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse(B));
+    const newer = okAt(iso(new Date(Date.parse(B) + 60_000)));
+    await recordModelProbe(h.db, newer);
+    await recordModelProbe(h.db, okAt(B));
+    expect(await probeOf(h.owner)).toEqual(newer);
+  });
+
+  it('an older recorder refreshes the impact count and preserves the newer timestamp', async () => {
+    await seedModel(h.owner, await user());
+    await recordModelProbe(h.db, okAt(B));
+    await seedModel(h.owner, await user());
+    await recordModelProbe(h.db, okAt(A, V114, V114));
+    expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 2 });
+    expect(await probeOf(h.owner, V114)).toEqual(okAt(A, V114, V114));
+    // Equal timestamps may refresh the count.
+    await recordModelProbe(h.db, okAt(B));
+    expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 2 });
+  });
+
+  it.each([60_000, 120_000])(
+    'refreshes the impact count with a stored timestamp %i ms ahead of the writer clock',
+    async (ahead) => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse(B));
+      const storedAt = iso(new Date(Date.parse(B) + ahead));
+      await seedModel(h.owner, await user());
+      await recordModelProbe(h.db, okAt(storedAt));
+      await seedModel(h.owner, await user());
+      await recordModelProbe(h.db, okAt(A));
+      expect(await impactOf(h.owner)).toEqual({
+        at: ahead === 60_000 ? storedAt : A,
+        activeModels: 2,
+      });
+    },
+  );
+
   it('I9 concurrent recorders: no deadlock, at most 10 probe keys, one impact row', async () => {
     await seedModel(h.owner, await user());
     const base = Date.UTC(2031, 5, 1);
@@ -208,7 +291,7 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     const impact = await impactOf(h.owner);
     expect(impact?.activeModels).toBe(1);
     const stamps = ids.map((_, i) => new Date(base + i * 60_000).toISOString());
-    expect(stamps).toContain(impact?.at);
+    expect(impact?.at).toBe(stamps.at(-1));
   });
 });
 

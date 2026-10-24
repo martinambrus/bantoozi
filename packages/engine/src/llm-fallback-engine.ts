@@ -1,6 +1,7 @@
 import {
   CHARS_PER_TOKEN,
   isUnfamiliarScript,
+  MODEL_UNAVAILABLE_DETAIL,
   REQUEST_OVERHEAD_TOKENS,
   systemClock,
   TOKEN_SAFETY_FACTOR,
@@ -311,7 +312,8 @@ export interface LlmFallbackEngineOptions {
  * the schema's keys; values must be finite and in range, distributions must sum to 1 ± 0.02 (then
  * renormalized, never clamped or invented), and a truncated reply (`done_reason: 'length'` or not
  * `done`) is invalid.
- * Confidence is the entropy proxy of spec 04 §2. HTTP statuses follow the table of spec 04 §3.
+ * Confidence is the entropy proxy of spec 04 §2. HTTP statuses follow the table of spec 04 §3;
+ * a 404 means `model_unavailable` only when Ollama's answer identifies an unknown model.
  */
 export function createLlmFallbackEngine(options: LlmFallbackEngineOptions): DecisionEngine {
   const engine = 'LlmFallbackEngine';
@@ -381,6 +383,23 @@ export function createLlmFallbackEngine(options: LlmFallbackEngineOptions): Deci
       if (outcome.kind === 'failed') return outcome.failure;
       const nowMs = clock.now().getTime();
       if (outcome.status < 200 || outcome.status > 299) {
+        // Ollama uses a string-valued error for a missing model; a generic 404 may be a bad endpoint.
+        if (outcome.status === 404) {
+          const json = parseJsonBody(outcome.body);
+          const error = json.ok ? field(json.value, 'error') : undefined;
+          if (
+            typeof error === 'string' &&
+            /^model ["'][^"'\r\n]+["'] not found(?:[,.]|$)/i.test(error)
+          ) {
+            return {
+              ok: false,
+              status: 'error',
+              retryable: false,
+              detail: `${MODEL_UNAVAILABLE_DETAIL}:http_404`,
+              billing: 'known',
+            };
+          }
+        }
         return httpStatusFailure(outcome.status, outcome.headers, outcome.body, nowMs);
       }
       if (outcome.tooLarge) return invalidResponse('response_too_large', undefined);

@@ -135,7 +135,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     }
 
     const probe = await probeAlias(alias);
-    await recordModelProbe(db, probe);
+    await recordModelProbe(db, probe, logger);
     const answered = probe.answered;
     if (!probe.ok || answered === undefined || !isConcreteJevModel(answered)) {
       const error = (probe.error ?? 'not_concrete').slice(0, 200);

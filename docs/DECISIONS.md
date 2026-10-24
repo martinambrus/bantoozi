@@ -3285,3 +3285,13 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   articles in this feed will be ranked lower." shows only while estimates are on, and no ranking claim is made while
   similar demotion is off. Measured on a heavy reader: 2–3 ms for the two extra queries, existing indexes. Older web
   bundles reject the union until the D-163 reload bar.
+- D-321: 2026-10-24 (FNF-VL-11, task #28; amends D-296 and D-298 item 1) — Provider credential and probe records.
+  `recordModelProbe` keeps a stored probe of the same model when it is strictly newer than the incoming one (equal `at`
+  replaces; a stored `at` more than 60 s ahead of the writer's clock is not trusted), so a late, older result can no
+  longer hide a newer confirming probe from the D-294 save gate; `engine.model_impact.activeModels` is always written by
+  the committing recorder with `at = max(stored, incoming)` under the same skew rule. An unparsable stored probe record
+  is reset with one warning. The Ollama lane leaves a candidate `pending/model_unavailable` for an unknown model, like
+  the Jev lane (D-298); the Ollama translator, the engine and the prober share the D-273 rule (410, or 404/400/422 with a
+  model error code; a bare 404 or a 413 carrying such a code is not a retired model). The credential resolver reports a
+  key again after it recovered and failed anew; the eval resolver honours its abort signal. Admin texts exist for
+  `keyring_unavailable` and `lookup_failed` and use the screen's "key store" terms (en/sk).

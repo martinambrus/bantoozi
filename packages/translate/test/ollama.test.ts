@@ -439,7 +439,7 @@ describe('tier-2 envelope and transport failures', () => {
         },
       ],
       [403, {}, { reason: 'auth_error', retryable: false }],
-      [404, {}, { reason: 'model_unavailable', retryable: false, attempt: { status: 'error' } }],
+      [404, {}, { reason: 'http_error', retryable: false, attempt: { status: 'error' } }],
       [
         400,
         {},
@@ -488,6 +488,53 @@ describe('tier-2 envelope and transport failures', () => {
       expect(JSON.stringify(result)).not.toContain(KEY);
     }
     agent.assertNoPendingInterceptors();
+  });
+
+  it.each([
+    ['model "glm-5.3-flash" not found, try pulling it first', 'model_unavailable'],
+    ["model 'glm-5.3-flash' not found", 'model_unavailable'],
+    ['404 page not found', 'http_error'],
+    ['model "glm-5.3-flash" not foundry', 'http_error'],
+    [{ code: 'model_not_found' }, 'http_error'],
+    [null, 'http_error'],
+  ])('classifies an Ollama 404 by its unknown-model answer: %s', async (error, reason) => {
+    replyOnce(404, { error });
+    const result = failure(await translator().translateOnce(input()));
+    expect(result).toMatchObject({
+      reason,
+      retryable: false,
+      attempt: {
+        status: 'error',
+        httpStatus: 404,
+        error: 'http_404',
+        billing: 'known',
+        costUsd: 0,
+      },
+    });
+  });
+
+  it.each([
+    'not JSON',
+    {},
+    { error: 'model "glm-5.3-flash" not found', padding: 'x'.repeat(2048) },
+  ])('keeps an unreadable or oversized 404 as an HTTP error', async (body) => {
+    replyOnce(404, body);
+    expect(
+      failure(await translator({ maxResponseBytes: 1024 }).translateOnce(input())),
+    ).toMatchObject({
+      reason: 'http_error',
+      retryable: false,
+      attempt: { httpStatus: 404, error: 'http_404', billing: 'known' },
+    });
+  });
+
+  it('requires HTTP 404 even for an unknown-model answer', async () => {
+    replyOnce(400, { error: 'model "glm-5.3-flash" not found' });
+    expect(failure(await translator().translateOnce(input()))).toMatchObject({
+      reason: 'invalid_request',
+      retryable: false,
+      attempt: { status: 'invalid_request', httpStatus: 400, billing: 'known' },
+    });
   });
 
   it('classifies network errors by code; a request that never left is known not billed', async () => {
@@ -566,6 +613,34 @@ describe('tier-2 deadlines and cancellation', () => {
       attempt: { status: 'timeout', error: 'timeout', billing: 'uncertain' },
     });
   });
+
+  it.each(['timeout', 'cancelled'] as const)(
+    'stops reading a partial 404 body on %s with known billing',
+    async (reason) => {
+      const controller = new AbortController();
+      server = createServer((_request, response) => {
+        response.writeHead(404, { 'content-type': 'application/json' });
+        response.write('{"error":');
+        if (reason === 'cancelled') setTimeout(() => controller.abort(), 50);
+      });
+      await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', resolve));
+      const own = createOllamaTranslator({
+        baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        timeoutMs: reason === 'timeout' ? 150 : 5_000,
+      });
+      try {
+        expect(
+          failure(await own.translateOnce(input({ signal: controller.signal }))),
+        ).toMatchObject({
+          reason,
+          retryable: reason === 'timeout',
+          attempt: { httpStatus: 404, error: reason, billing: 'known' },
+        });
+      } finally {
+        await own.close();
+      }
+    },
+  );
 
   it('stops at the caller’s abort, not retryable', async () => {
     const baseUrl = await hangingServer();

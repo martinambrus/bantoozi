@@ -28,6 +28,7 @@ import {
   isModelAlias,
   isModelUnavailableDetail,
   MODEL_ID_PATTERN,
+  MODEL_PROBE_MAX_SKEW_MS,
   newUuid,
   type EngineModelImpact,
   type EngineModelProbe,
@@ -252,7 +253,7 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
     function conclude(attempt: FailedAttempt): EngineModelProbe | undefined {
       const detail = attempt.detail ?? '';
       if (attempt.status === 'auth_error') return fail('auth_rejected');
-      if (isModelUnavailableDetail(detail) || /^http_(404|410)$/.test(detail)) {
+      if (isModelUnavailableDetail(detail)) {
         return fail('model_unavailable');
       }
       const mismatch = MISMATCH.exec(detail);
@@ -336,28 +337,61 @@ export function createModelProber(deps: ModelProberDeps): ModelProber {
 }
 
 /**
- * Merges a probe result into `settings['engine.model_probe']`, newest {@link ENGINE_MODEL_PROBES_MAX} by `at`,
- * and records in the same transaction how many live users hold an active personal model
- * (`settings['engine.model_impact']`): the API cannot count other users' models under row-level security.
+ * Merges a probe result into `settings['engine.model_probe']`, newest {@link ENGINE_MODEL_PROBES_MAX} by `at`.
+ * A strictly newer stored probe wins for the same model; equal timestamps replace. Stored timestamps
+ * more than 60 seconds ahead of the writer's clock are ignored for both probe and impact comparisons.
+ * In the same transaction, `settings['engine.model_impact']` always takes the committing recorder's
+ * live active-model count and the newer stored or probe `at`. The API cannot count other users'
+ * models under row-level security.
  */
-export async function recordModelProbe(db: Database, probe: EngineModelProbe): Promise<void> {
+export async function recordModelProbe(
+  db: Database,
+  probe: EngineModelProbe,
+  logger?: Pick<HandlerLogger, 'warn'>,
+): Promise<void> {
   const checked = EngineModelProbeSchema.parse(probe);
+  let resetInvalid = false;
   await retryTransaction(db, async (tx) => {
     await updateSettingLocked(tx, 'engine.model_probe', {}, (current) => {
       const stored = EngineModelProbesSchema.safeParse(current);
+      resetInvalid = !stored.success;
+      const previous = stored.success ? stored.data[checked.requested] : undefined;
+      const keepPrevious =
+        previous !== undefined &&
+        Date.parse(previous.at) > Date.parse(checked.at) &&
+        Date.parse(previous.at) <= Date.now() + MODEL_PROBE_MAX_SKEW_MS;
       const merged: Record<string, EngineModelProbe> = {
         ...(stored.success ? stored.data : {}),
-        [checked.requested]: checked,
+        [checked.requested]: keepPrevious ? previous : checked,
       };
       const newest = Object.entries(merged)
         .sort(([, a], [, b]) => Date.parse(b.at) - Date.parse(a.at))
         .slice(0, ENGINE_MODEL_PROBES_MAX);
       return Object.fromEntries(newest);
     });
-    // Counted after the probe row is locked: concurrent recorders queue on it, so the later committer carries the later count.
+    // Serialize with probe writers, and compare timestamps under the impact row's own lock.
     const activeModels = await countActiveUserModels(tx);
-    await updateSettingLocked<EngineModelImpact | null>(tx, 'engine.model_impact', null, () =>
-      EngineModelImpactSchema.parse({ at: checked.at, activeModels }),
+    await updateSettingLocked<EngineModelImpact | null>(
+      tx,
+      'engine.model_impact',
+      null,
+      (current) => {
+        const stored = EngineModelImpactSchema.safeParse(current);
+        const at =
+          stored.success &&
+          Date.parse(stored.data.at) > Date.parse(checked.at) &&
+          Date.parse(stored.data.at) <= Date.now() + MODEL_PROBE_MAX_SKEW_MS
+            ? stored.data.at
+            : checked.at;
+        return EngineModelImpactSchema.parse({ at, activeModels });
+      },
     );
   });
+  // A retried transaction reports the reset once, after it commits, without any stored payload.
+  if (resetInvalid) {
+    logger?.warn(
+      { key: 'engine.model_probe' },
+      'invalid stored model probes; resetting the record',
+    );
+  }
 }

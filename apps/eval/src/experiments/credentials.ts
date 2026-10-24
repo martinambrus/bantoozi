@@ -10,8 +10,9 @@ import { decryptProviderSecret, ProviderKeyring } from '@bantoozi/shared/server/
  * `provider_credentials` row is read and decrypted for each attempt and never kept; an environment
  * key (`TYPESAFE_API_KEY`/`OLLAMA_API_KEY`) is used only while no row exists; a disabled or pending
  * row and any read or decryption failure make the provider unavailable (`ENGINE_UNAVAILABLE` with a
- * typed reason and no key material, which the router reports as `no_key`). Eval never validates a
- * candidate key, so `useCandidate` is refused.
+ * typed reason and no key material, which the router reports as `no_key` unless the request was
+ * cancelled; cancellation ends the request as `cancelled`). Eval never validates a candidate key,
+ * so `useCandidate` is refused.
  */
 
 type Provider = 'typesafe' | 'ollama';
@@ -53,14 +54,26 @@ export function createEvalCredentialResolver(options: EvalCredentialOptions): Cr
 
     async useActive<T>(
       provider: Provider,
-      _signal: AbortSignal,
+      signal: AbortSignal,
       send: (auth: ProviderAuth) => Promise<T>,
     ): Promise<T> {
+      if (signal.aborted) throw unavailable(provider, 'cancelled');
+      let onAbort: () => void = () => undefined;
+      const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(unavailable(provider, 'cancelled'));
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
       let secret: Awaited<ReturnType<typeof readActiveCredentialSecret>>;
       try {
-        secret = await readActiveCredentialSecret(options.db, provider);
-      } catch {
-        throw unavailable(provider, 'lookup_failed');
+        secret = await Promise.race([
+          readActiveCredentialSecret(options.db, provider).catch(() => {
+            throw unavailable(provider, 'lookup_failed');
+          }),
+          aborted,
+        ]);
+        if (signal.aborted) throw unavailable(provider, 'cancelled');
+      } finally {
+        signal.removeEventListener('abort', onAbort);
       }
       if (secret.state === 'missing') {
         const key = envKey(provider);

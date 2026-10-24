@@ -1,7 +1,7 @@
 import type { Database } from '@bantoozi/db';
 
 import { recordModelProbe, type ModelProber } from '../model-probe.js';
-import type { HandlerLogger } from './deps.js';
+import { nowOf, type HandlerLogger } from './deps.js';
 import type { QueueHandler } from './index.js';
 
 /** The probe's own deadline: two attempts of 30 s plus a short wait. */
@@ -11,6 +11,7 @@ export interface ModelProbeHandlerDeps {
   db: Database;
   prober: ModelProber;
   logger: HandlerLogger;
+  now?: () => Date;
 }
 
 /** `engine.model-probe {model}`: probe the model and record the result; a failure is recorded, not thrown. */
@@ -30,10 +31,10 @@ export function createModelProbeHandler(
       result = {
         requested: model,
         ok: false,
-        at: new Date().toISOString(),
+        at: nowOf(deps).toISOString(),
         error: 'internal_error',
       };
     }
-    await recordModelProbe(db, result);
+    await recordModelProbe(db, result, logger);
   };
 }

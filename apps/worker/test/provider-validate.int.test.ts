@@ -888,3 +888,20 @@ describe('provider.validate reads the Jev price of the moment', () => {
     expect(jev.requests).toHaveLength(sent);
   });
 });
+
+describe('Ollama model availability', () => {
+  it.each([
+    ['model "glm-5.3-flash" not found, try pulling it first', 'pending', 'model_unavailable'],
+    ['404 page not found', 'invalid', 'provider_error'],
+  ])('classifies the Ollama error %s', async (error, status, code) => {
+    ollama.setOptions({ statusOverride: () => ({ status: 404, body: { error } }) });
+    const version = await stage('ollama', OLLAMA_KEY);
+    await handler().validate('ollama', version);
+    expect(await metadata('ollama')).toMatchObject({
+      candidateStatus: status,
+      lastErrorCode: code,
+    });
+    expect(ollama.requests).toHaveLength(1);
+    expect(await calls()).toMatchObject([{ status: 'error', billing: 'known' }]);
+  });
+});
