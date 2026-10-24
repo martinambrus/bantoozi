@@ -266,13 +266,13 @@ export const QUEUES = {
   'user.suggest': spec({
     payload: userOnly,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   // A card draft the person is waiting for in the editor (D-240): quick, one retry.
   'card.draft': spec({
     payload: z.object({ draftId: UuidSchema }).strict(),
     concurrency: 2,
-    options: { policy: 'standard', retryLimit: 1 },
+    options: { policy: 'standard', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
   }),
   ...houseSpecs,
   'provider.validate': spec({
@@ -320,6 +320,8 @@ export type QueueName = keyof typeof QUEUES;
  * {@link STALE_WORKER_RETRY_DELAY_SECONDS}. `analysis.process` is not listed: it reschedules itself.
  */
 export const STALE_GUARDED_QUEUES = [
+  'user.suggest',
+  'card.draft',
   'article.translate',
   'article.enrich',
   'article.cluster',

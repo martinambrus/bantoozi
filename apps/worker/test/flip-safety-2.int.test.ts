@@ -1,0 +1,213 @@
+import { randomUUID } from 'node:crypto';
+
+import * as db from '@bantoozi/db';
+import { parseJobPayload } from '@bantoozi/shared';
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+
+import { dispatch } from '../src/handlers/index.js';
+import {
+  ClassifyHarness,
+  ScriptedRouter,
+  OLD_MODEL,
+  NEW_MODEL,
+  baseConfig,
+  recorder,
+  resetWorld,
+  startRuntime,
+  setSetting,
+  type WorkerRuntimeLike,
+} from './support/m8b-t5-world.js';
+
+let h: ClassifyHarness;
+const runtimes: WorkerRuntimeLike[] = [];
+beforeAll(async () => {
+  h = await ClassifyHarness.start();
+}, 240_000);
+afterAll(async () => {
+  for (const runtime of runtimes) await runtime.close();
+  await h?.close();
+});
+beforeEach(async () => {
+  vi.restoreAllMocks();
+  await resetWorld(h);
+});
+
+async function boot(model = OLD_MODEL) {
+  const runtime = await startRuntime({
+    db: h.db,
+    config: baseConfig('production', { typesafeModel: model }),
+    recorder: recorder(),
+    selfRestart: false,
+  });
+  runtimes.push(runtime);
+  return runtime;
+}
+
+it.each(['pin', 'restart'] as const)(
+  'defers user.suggest before claiming a lease after a %s change',
+  async (change) => {
+    const old = await boot();
+    const userId = await h.user();
+    if (change === 'pin') await boot(NEW_MODEL);
+    else await setSetting(h.owner, 'engine.ollama_max_concurrency', 2);
+    await h.clearOutbox();
+    const claim = vi.spyOn(db, 'claimSuggestLease');
+    const router = new ScriptedRouter(h.db, old.processModel);
+    await expect(
+      dispatch(
+        h.handlersWith({ classification: { ...old.models.classification, router } }),
+        'user.suggest',
+        { userId },
+        { queue: 'user.suggest', jobId: 'suggest-last', retry: { count: 1, limit: 1 } },
+      ),
+    ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+    expect(claim).not.toHaveBeenCalled();
+    expect(router.asks).toEqual([]);
+    const replacements = await h.intents('user.suggest', { pending: true });
+    expect(replacements).toHaveLength(1);
+    const current = await boot(change === 'pin' ? NEW_MODEL : OLD_MODEL);
+    await h.clearOutbox();
+    await dispatch(
+      h.handlersWith({ classification: current.models.classification }),
+      'user.suggest',
+      parseJobPayload('user.suggest', replacements[0]?.payload),
+      { queue: 'user.suggest', jobId: 'suggest-current' },
+    );
+    expect(
+      (
+        await h.owner.query(
+          'SELECT suggest_lease_token, last_suggested_at FROM users WHERE id = $1',
+          [userId],
+        )
+      ).rows,
+    ).toEqual([{ suggest_lease_token: null, last_suggested_at: null }]);
+  },
+);
+
+it('defers card.draft with its pending work intact on a stale worker', async () => {
+  const old = await boot();
+  const userId = await h.user();
+  const articleId = await h.article({ feedIds: [] });
+  const draftId = randomUUID();
+  await h.owner.query(
+    'INSERT INTO card_drafts (id, user_id, article_ids, locale) VALUES ($1, $2, $3::bigint[], $4)',
+    [draftId, userId, [articleId], 'en'],
+  );
+  await setSetting(h.owner, 'engine.ollama_max_concurrency', 2);
+  await h.clearOutbox();
+  const router = new ScriptedRouter(h.db, old.processModel);
+  await expect(
+    dispatch(
+      h.handlersWith({ classification: { ...old.models.classification, router } }),
+      'card.draft',
+      { draftId },
+      { queue: 'card.draft', jobId: 'draft-last', retry: { count: 1, limit: 1 } },
+    ),
+  ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+  expect(
+    (await h.owner.query('SELECT status FROM card_drafts WHERE id = $1', [draftId])).rows,
+  ).toEqual([{ status: 'pending' }]);
+  const replacements = await h.intents('card.draft', { pending: true });
+  expect(replacements).toHaveLength(1);
+  const current = await boot();
+  await h.clearOutbox();
+  await dispatch(
+    h.handlersWith({ classification: current.models.classification }),
+    'card.draft',
+    parseJobPayload('card.draft', replacements[0]?.payload),
+    { queue: 'card.draft', jobId: 'draft-current' },
+  );
+  expect(
+    (await h.owner.query('SELECT status FROM card_drafts WHERE id = $1', [draftId])).rows,
+  ).toEqual([{ status: 'complete' }]);
+});
+
+it('fences a pin move between the enrichment cache read and continuation', async () => {
+  const old = await boot();
+  const feedId = await h.feed();
+  const userId = await h.user();
+  await h.subscribe(userId, feedId, 'active');
+  await h.heldCard(userId, { topicIds: ['technology'] });
+  const articleId = await h.article({ feedIds: [feedId] });
+  await h.enrichDirect(articleId, { model: OLD_MODEL, state: 'extracted' });
+  const read = db.readFacets;
+  vi.spyOn(db, 'readFacets').mockImplementationOnce(async (...args) => {
+    const row = await read(...args);
+    await boot(NEW_MODEL);
+    await h.clearOutbox();
+    return row;
+  });
+  const router = new ScriptedRouter(h.db, OLD_MODEL);
+  await expect(
+    dispatch(
+      h.handlersWith({ classification: { ...old.models.classification, router } }),
+      'article.enrich',
+      { articleId },
+      { queue: 'article.enrich', jobId: 'cached-last', retry: { count: 1, limit: 1 } },
+    ),
+  ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+  expect(
+    (await h.owner.query('SELECT pipeline_state FROM articles WHERE id = $1', [articleId])).rows,
+  ).toEqual([{ pipeline_state: 'extracted' }]);
+  expect(router.asks).toEqual([]);
+  expect(await h.intents('article.enrich', { pending: true })).toHaveLength(1);
+});
+
+it('discards a card draft if the restart settings change after its work is read', async () => {
+  const old = await boot();
+  const userId = await h.user();
+  const articleId = await h.article({ feedIds: [] });
+  const draftId = randomUUID();
+  await h.owner.query(
+    'INSERT INTO card_drafts (id, user_id, article_ids, locale) VALUES ($1, $2, $3::bigint[], $4)',
+    [draftId, userId, [articleId], 'en'],
+  );
+  const read = db.heldCardTexts;
+  vi.spyOn(db, 'heldCardTexts').mockImplementationOnce(async (...args) => {
+    const cards = await read(...args);
+    await setSetting(h.owner, 'engine.ollama_max_concurrency', 2);
+    return cards;
+  });
+  await h.clearOutbox();
+  await expect(
+    dispatch(
+      h.handlersWith({ classification: old.models.classification }),
+      'card.draft',
+      { draftId },
+      { queue: 'card.draft', jobId: 'draft-race' },
+    ),
+  ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+  expect(
+    (await h.owner.query('SELECT status FROM card_drafts WHERE id = $1', [draftId])).rows,
+  ).toEqual([{ status: 'pending' }]);
+  expect(await h.intents('card.draft', { pending: true })).toHaveLength(1);
+});
+
+it('releases the suggestion lease and defers if settings move before no-demand cleanup', async () => {
+  const old = await boot();
+  const userId = await h.user();
+  const demand = db.hasSuggestDemand;
+  vi.spyOn(db, 'hasSuggestDemand').mockImplementationOnce(async (...args) => {
+    const found = await demand(...args);
+    await setSetting(h.owner, 'engine.ollama_max_concurrency', 2);
+    return found;
+  });
+  await h.clearOutbox();
+  await expect(
+    dispatch(
+      h.handlersWith({ classification: old.models.classification }),
+      'user.suggest',
+      { userId },
+      { queue: 'user.suggest', jobId: 'suggest-race' },
+    ),
+  ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+  expect(
+    (
+      await h.owner.query(
+        'SELECT suggest_lease_token, last_suggested_at FROM users WHERE id = $1',
+        [userId],
+      )
+    ).rows,
+  ).toEqual([{ suggest_lease_token: null, last_suggested_at: null }]);
+  expect(await h.intents('user.suggest', { pending: true })).toHaveLength(1);
+});

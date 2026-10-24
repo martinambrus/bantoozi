@@ -39,6 +39,8 @@ import { buildState, modelInput } from '../classify/model-input.js';
 import { cardInputHashes } from '../rank/items.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
+import { assertWorkerCurrent, lockWorkerCurrent } from '../stale-worker.js';
 
 const T1_PREFIX = 't1.';
 
@@ -60,21 +62,17 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
   if (classification === undefined) {
     throw new Error('user.suggest needs the classification dependencies');
   }
-  return async ({ userId }) => {
+  const handle: QueueHandler<'user.suggest'> = async ({ userId }) => {
+    await assertWorkerCurrent(deps.db, classification);
     const now = nowOf(deps);
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const suggestSet = requireSet(await loadSuggestSet(deps.db), 'suggest');
     const pin = await readSuggestPin(deps.db, classification.primaryModel);
 
+    await assertWorkerCurrent(deps.db, classification);
     const claim = await claimSuggestLease(deps.db, userId, { leaseMs: classification.leaseMs });
     if (claim.status !== 'claimed') return;
     const { leaseToken } = claim;
-    // A rolling deployment: another model is pinned than this worker answers with, so its answers
-    // cannot be checked and the pin's suggestions must stay as they are.
-    if (pin !== classification.primaryModel) {
-      await releaseSuggestLease(deps.db, userId, leaseToken);
-      return;
-    }
     const finish = (results: { cardId: string; score: number }[] | null) =>
       finishSuggestRun(deps.db, {
         userId,
@@ -82,6 +80,10 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
         results,
         asked: { questionSetId: suggestSet.id, pin },
         fallbackModel: classification.primaryModel,
+        beforeWrite: async (tx) => {
+          const stale = await lockWorkerCurrent(tx, classification);
+          if (stale !== null) throw stale;
+        },
       });
     try {
       const demand = await hasSuggestDemand(deps.db, userId, now);
@@ -93,6 +95,7 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
         return;
       }
       if (!(await renewSuggestLease(deps.db, userId, leaseToken, classification.leaseMs))) return;
+      await assertWorkerCurrent(deps.db, classification);
       const outcome = await classification.router.ask({
         kind: 'suggest',
         priority: 'bulk',
@@ -111,6 +114,7 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
         },
         deadlineMs: now.getTime() + classification.callDeadlineMs,
       });
+      await assertWorkerCurrent(deps.db, classification);
       const answer = outcome.ok ? outcome.answers[SUGGEST_QUESTION_KEY] : undefined;
       if (
         !outcome.ok ||
@@ -130,6 +134,7 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
       throw error;
     }
   };
+  return recoverStaleJob(deps, handle);
 }
 
 /** Steps 1–5 of spec 05 §7 over the user's current evidence. */

@@ -1,6 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm';
 
-import type { Database, Executor } from '../client.js';
+import type { Database, Executor, Transaction } from '../client.js';
 import { readStoredSetting, shareLockSettings } from '../settings.js';
 import { SUGGEST_DISMISS_DAYS } from './evidence.js';
 
@@ -25,6 +25,8 @@ export interface SuggestFinish {
   /** The suggest set and pin the answer was asked under; a change since discards the results. */
   asked?: { questionSetId: string; pin: string };
   fallbackModel: string;
+  /** Optional worker fence, under this transaction before any suggestion or lease write. */
+  beforeWrite?: (tx: Transaction) => Promise<void>;
 }
 
 /** `written`: results applied; `discarded`: cleanup only; `lost`: the lease was not ours, nothing done. */
@@ -48,6 +50,7 @@ export async function finishSuggestRun(
 ): Promise<SuggestFinishStatus> {
   const { userId, leaseToken } = input;
   return db.transaction(async (tx) => {
+    await input.beforeWrite?.(tx);
     const locked = await tx.execute<{ id: string }>(sql`
       SELECT id::text AS id FROM users
        WHERE id = ${userId}::uuid AND suggest_lease_token = ${leaseToken}::uuid FOR UPDATE`);

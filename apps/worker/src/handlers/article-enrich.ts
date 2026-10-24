@@ -89,7 +89,7 @@ export function createArticleEnrichHandler(
         primaryModel: classification.primaryModel,
       })
     ) {
-      await continueFromCache(deps, config, article, stored, priority);
+      await continueFromCache(deps, classification, config, article, stored, priority);
       return;
     }
 
@@ -218,12 +218,15 @@ export function createArticleEnrichHandler(
  */
 async function continueFromCache(
   deps: WorkerDeps,
+  classification: ClassificationDeps,
   config: ClassificationConfig,
   article: ClassificationArticle,
   stored: FacetRow,
   priority: 'interactive' | 'bulk',
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
+    const stale = await lockWorkerCurrent(tx, classification);
+    if (stale !== null) throw stale;
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
     if (ENRICHED_STATES.includes(locked.pipelineState)) return;

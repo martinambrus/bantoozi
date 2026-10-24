@@ -808,7 +808,9 @@ describe('user.suggest during a rolling deployment and with stale facets (PR #25
         });
       const from = fake.requestCount();
       try {
-        await runSuggest(userId);
+        if (change === 'pin')
+          await expect(runSuggest(userId)).rejects.toMatchObject({ name: 'StaleWorkerError' });
+        else await runSuggest(userId);
         expect(finish).toHaveBeenCalledOnce();
         expect(fake.requestCount()).toBe(from);
         expect(await reservations(userId)).toBe(0);
@@ -830,13 +832,43 @@ describe('user.suggest during a rolling deployment and with stale facets (PR #25
     },
   );
 
+  it('defers an unsuccessful suggestion call when the pin moved while it was in flight', async () => {
+    const userId = await reader({ likes: 4 });
+    await seedSuggestion(userId, otherCardId, { score: 0.4 });
+    const before = await suggestions(userId);
+    routerWrap = (inner) => ({
+      ...inner,
+      ask: async () => {
+        await setSetting('engine.model_pin', { model: 'jev-next' });
+        return { ok: false, reason: 'no_key' };
+      },
+    });
+    try {
+      await expect(runSuggest(userId)).rejects.toMatchObject({ name: 'StaleWorkerError' });
+      expect(await suggestions(userId)).toEqual(before);
+      expect(await userState(userId)).toMatchObject({
+        last_suggested_at: null,
+        suggest_lease_token: null,
+        suggest_lease_until: null,
+      });
+      const replacement = await owner.query(
+        `SELECT 1 FROM job_outbox
+        WHERE queue = 'user.suggest' AND payload->>'userId' = $1 AND delivered_at IS NULL`,
+        [userId],
+      );
+      expect(replacement.rows).toHaveLength(1);
+    } finally {
+      await setSetting('engine.model_pin', PIN);
+    }
+  });
+
   it('a worker whose model differs from the stored pin sends nothing and keeps the suggestions', async () => {
     const userId = await reader({ likes: 4 });
     await seedSuggestion(userId, otherCardId, { score: 0.4 });
     const before = await suggestions(userId);
     await setSetting('engine.model_pin', { model: 'jev-next' });
     const from = fake.requestCount();
-    await runSuggest(userId);
+    await expect(runSuggest(userId)).rejects.toMatchObject({ name: 'StaleWorkerError' });
 
     expect(fake.requestCount()).toBe(from);
     expect(await reservations(userId)).toBe(0);
