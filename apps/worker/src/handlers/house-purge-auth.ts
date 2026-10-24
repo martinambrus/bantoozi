@@ -107,7 +107,14 @@ export function recoverStaleRebuild<Q extends RebuildJob>(
         error instanceof StaleWorkerError &&
         (context.retry === undefined || context.retry.count >= context.retry.limit)
       ) {
-        await recordRebuildProgress(deps, job, started, { complete: false, pending: frozen });
+        try {
+          await recordRebuildProgress(deps, job, started, { complete: false, pending: frozen });
+        } catch (recoveryError) {
+          deps.logger.error(
+            { err: recoveryError, queue: context.queue, jobId: context.jobId },
+            'stale worker recovery failed',
+          );
+        }
       }
       throw error;
     }

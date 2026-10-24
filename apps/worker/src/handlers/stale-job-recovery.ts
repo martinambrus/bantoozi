@@ -23,22 +23,29 @@ export function recoverStaleJob<Q extends QueueName>(
         error instanceof StaleWorkerError &&
         (context.retry === undefined || context.retry.count >= context.retry.limit)
       ) {
-        const previous = parseStaleRecoveryRevision(context.staleRecoveryRevision);
-        const hop = previous === null ? 0 : previous.hop + 1;
-        const delaySeconds = Math.min(error.retryDelaySeconds * 2 ** Math.min(hop, 5), 15 * 60);
-        const availableAt = new Date(nowOf(deps).getTime() + delaySeconds * 1000);
-        // A relay may still be acknowledging the original intent. This job's replacement must
-        // not coalesce with that intent; repeated handling of this job still coalesces with itself.
-        const intent = buildJobIntent(context.queue, payload, {
-          revision: `stale:${previous?.originalJobId ?? context.jobId}:${hop}`,
-        });
-        const inserted = await retryTransaction(deps.db, (tx) =>
-          enqueueDelayedWorkerIntent(tx, intent, availableAt),
-        );
-        if (inserted) {
-          deps.logger.warn(
-            { queue: context.queue, jobId: context.jobId, availableAt, hop },
-            'stale worker: delayed intent left for a current worker',
+        try {
+          const previous = parseStaleRecoveryRevision(context.staleRecoveryRevision);
+          const hop = previous === null ? 0 : previous.hop + 1;
+          const delaySeconds = Math.min(error.retryDelaySeconds * 2 ** Math.min(hop, 5), 15 * 60);
+          const availableAt = new Date(nowOf(deps).getTime() + delaySeconds * 1000);
+          // A relay may still be acknowledging the original intent. This job's replacement must
+          // not coalesce with that intent; repeated handling of this job still coalesces with itself.
+          const intent = buildJobIntent(context.queue, payload, {
+            revision: `stale:${previous?.originalJobId ?? context.jobId}:${hop}`,
+          });
+          const inserted = await retryTransaction(deps.db, (tx) =>
+            enqueueDelayedWorkerIntent(tx, intent, availableAt),
+          );
+          if (inserted) {
+            deps.logger.warn(
+              { queue: context.queue, jobId: context.jobId, availableAt, hop },
+              'stale worker: delayed intent left for a current worker',
+            );
+          }
+        } catch (recoveryError) {
+          deps.logger.error(
+            { err: recoveryError, queue: context.queue, jobId: context.jobId },
+            'stale worker recovery failed',
           );
         }
       }
