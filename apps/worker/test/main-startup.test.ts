@@ -169,7 +169,13 @@ describe('shutdown cleanup isolation', () => {
         .find((listener) => !originalTerm.has(listener));
       terminate?.('SIGTERM');
       await vi.waitFor(() => expect(h.pool.end).toHaveBeenCalledTimes(2));
+      expect(h.createDeps).toHaveBeenCalledWith(
+        expect.objectContaining({ leases: expect.any(ProcessLeases) }),
+      );
       expect(drain).toHaveBeenCalledOnce();
+      expect(h.boss.stop.mock.invocationCallOrder[0]).toBeLessThan(
+        drain.mock.invocationCallOrder[0]!,
+      );
       expect(h.readiness.stop).toHaveBeenCalledOnce();
       expect(h.heartbeat.stop).toHaveBeenCalledOnce();
       expect(h.modelsClose).toHaveBeenCalledOnce();

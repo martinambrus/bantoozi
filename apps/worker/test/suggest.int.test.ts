@@ -38,6 +38,7 @@ import { createWorkerEngineRouter, type WorkerEngineConfig } from '../src/engine
 import { createWorkerDeps, pipelineContext, type WorkerDeps } from '../src/handlers/deps.js';
 import { createHandlers, dispatch, type HandlerMap } from '../src/handlers/index.js';
 import { after } from '../src/pipeline.js';
+import { ProcessLeases } from '../src/process-leases.js';
 import { defaultSeedHooks, runSeed } from '../src/seed.js';
 
 /**
@@ -973,4 +974,43 @@ describe('user.suggest during a rolling deployment and with stale facets (PR #25
       );
     }
   });
+});
+
+it('drain uses the real suggest release, resets the admitted daily gate, fences a late valid answer and forgets the claim', async () => {
+  const userId = await reader({ likes: 4 });
+  await seedSuggestion(userId, otherCardId, { score: 0.4 });
+  const before = await suggestions(userId);
+  const leases = new ProcessLeases();
+  const forget = vi.spyOn(leases, 'forget');
+  let resume!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  let answered = false;
+  routerWrap = (inner) => ({
+    ...inner,
+    ask: async (request, signal) => {
+      const answer = await inner.ask(request, signal);
+      expect(answer.ok).toBe(true);
+      answered = true;
+      await blocked;
+      return answer;
+    },
+  });
+  const job = runSuggest(userId, { ...deps, leases });
+  try {
+    await vi.waitFor(() => expect(answered).toBe(true));
+    expect((await userState(userId)).last_suggested_at).not.toBeNull();
+    await leases.drain();
+    expect(await userState(userId)).toMatchObject({
+      last_suggested_at: null,
+      suggest_lease_token: null,
+      suggest_lease_until: null,
+    });
+  } finally {
+    resume();
+    await job;
+  }
+  expect(await suggestions(userId)).toEqual(before);
+  expect(forget).toHaveBeenCalledOnce();
 });

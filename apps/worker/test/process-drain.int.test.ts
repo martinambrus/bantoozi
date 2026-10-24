@@ -105,5 +105,65 @@ it('drain releases owned match, selected-analysis and suggest leases, preserves 
       ])
     ).rows[0]?.n,
   ).toBe(0);
-  expect(await h.analysis(requestId)).toMatchObject({ status: 'pending', leaseToken: null });
+  expect(await h.analysis(requestId)).toMatchObject({
+    status: 'pending',
+    leaseToken: null,
+    resultSnapshot: null,
+    resultSha: null,
+    stageResults: null,
+    completedAt: null,
+  });
+  expect(await h.facetRow(selectedId)).toBeNull();
+});
+
+it('drain cannot release match or analysis leases reclaimed by another process', async () => {
+  h.router.reset();
+  const leases = new ProcessLeases();
+  h.deps.leases = leases;
+  const feedId = await h.feed();
+  const userId = await h.user();
+  await h.subscribe(userId, feedId, 'active');
+  const cardId = await h.heldCard(userId);
+  const matchId = await h.article({ feedIds: [feedId] });
+  await h.enrichDirect(matchId);
+  await h.queue(matchId, [cardId]);
+  const selectedId = await h.article({ feedIds: [feedId] });
+  const { requestId } = await h.select(userId, feedId, selectedId);
+  let resume!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  let calls = 0;
+  h.router.respond = async () => {
+    calls += 1;
+    await blocked;
+    return undefined;
+  };
+  const jobs = [
+    h.dispatch('article.match', { articleId: matchId }),
+    h.dispatch('analysis.process', { analysisRequestId: requestId }),
+  ];
+  try {
+    await vi.waitFor(() => expect(calls).toBe(2));
+    await h.owner.query(
+      'UPDATE match_queue SET lease_token=gen_random_uuid() WHERE article_id=$1',
+      [matchId],
+    );
+    await h.owner.query('UPDATE analysis_requests SET lease_token=gen_random_uuid() WHERE id=$1', [
+      requestId,
+    ]);
+    const match = await h.queueRows(matchId);
+    const analysis = await h.analysis(requestId);
+    const mark = await h.mark();
+    await leases.drain();
+    expect(await h.queueRows(matchId)).toEqual(match);
+    expect(await h.analysis(requestId)).toEqual(analysis);
+    expect(await h.intents('article.match', { since: mark })).toEqual([]);
+    expect(await h.intents('analysis.process', { since: mark })).toEqual([]);
+  } finally {
+    resume();
+    await Promise.allSettled(jobs);
+  }
+  expect(await h.cardAnswers(matchId)).toEqual([]);
+  expect((await h.analysis(requestId)).resultSnapshot).toBeNull();
 });
