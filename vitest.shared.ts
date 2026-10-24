@@ -30,7 +30,9 @@ export function unitTestConfig(
     test: {
       include: ['**/*.test.ts', '**/*.test.tsx'],
       exclude: UNIT_TEST_EXCLUDE,
-      ...(options.testTimeout === undefined ? {} : { testTimeout: options.testTimeout }),
+      // 15 s, not vitest's 5 s: a test that takes milliseconds alone has timed out when the whole gate
+      // starved it on a loaded host; a test that really hangs still fails.
+      testTimeout: options.testTimeout ?? 15_000,
       coverage: {
         provider: 'v8',
         include: ['src/**'],
