@@ -328,7 +328,8 @@ describe('choosing articles', () => {
     for (const checkbox of checkboxes) expect(checkbox).toBeChecked();
     expect(screen.getByText('25 selected')).toBeVisible();
     expect(screen.queryByText(/at most/)).toBeNull();
-  });
+    // 25 real clicks take close to the 30 s default under CI coverage (30.7 s on PR #83).
+  }, 60_000);
 });
 
 describe('select all', () => {
