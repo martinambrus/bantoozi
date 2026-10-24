@@ -5097,6 +5097,15 @@
       "securityDefiner": false,
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": []
+    },
+    "admin_committed_spend": {
+      "args": "p_day date, p_exclude_kinds text[]",
+      "result": "numeric",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
     }
   },
   "triggers": {

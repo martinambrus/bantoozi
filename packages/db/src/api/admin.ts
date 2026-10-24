@@ -117,7 +117,9 @@ export interface AdminOverviewCounts {
   feeds: Record<'active' | 'quarantined' | 'dead' | 'paused', number>;
   articlesToday: number;
   queues: { queue: string; created: number; retry: number; active: number; failed: number }[];
+  /** Settled actual + reserved + uncertain production spend, on the UTC budget day. */
   spendTodayUsd: number;
+  /** Settled-only spend for kinds exempt from the production budget. */
   exemptSpendTodayUsd: number;
   llmCallsToday: number;
   tier2CallsToday: number;
@@ -149,9 +151,10 @@ export async function adminOverviewCounts(tx: TenantTx): Promise<AdminOverviewCo
     active: string;
     failed: string;
   }>(sql`SELECT queue, created, retry, active, failed FROM queue_state_counts()`);
-  const usage = await tx.execute<{ spend: string; exempt: string; llm: number; tier2: number }>(sql`
-    SELECT coalesce(sum(cost_usd) FILTER (WHERE NOT (kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[]))), 0)::text AS spend,
-           coalesce(sum(cost_usd) FILTER (WHERE kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[])), 0)::text AS exempt,
+  const spend = await tx.execute<{ usd: string }>(sql`
+    SELECT admin_committed_spend(${TODAY_UTC}, ${sql.param([...BUDGET_EXEMPT_KINDS])}::text[])::text AS usd`);
+  const usage = await tx.execute<{ exempt: string; llm: number; tier2: number }>(sql`
+    SELECT coalesce(sum(cost_usd) FILTER (WHERE kind = ANY(${sql.param([...BUDGET_EXEMPT_KINDS])}::text[])), 0)::text AS exempt,
            coalesce(sum(calls) FILTER (WHERE engine = 'llm'
                                        AND kind = ANY(${sql.param([...DECISION_KINDS])}::text[])), 0)::int AS llm,
            coalesce(sum(calls) FILTER (WHERE engine = 'llm' AND kind = 'translate'), 0)::int AS tier2
@@ -179,7 +182,7 @@ export async function adminOverviewCounts(tx: TenantTx): Promise<AdminOverviewCo
       active: Number(row.active),
       failed: Number(row.failed),
     })),
-    spendTodayUsd: Number(usageRow?.spend ?? 0),
+    spendTodayUsd: Number(spend.rows[0]?.usd ?? 0),
     exemptSpendTodayUsd: Number(usageRow?.exempt ?? 0),
     llmCallsToday: usageRow?.llm ?? 0,
     tier2CallsToday: usageRow?.tier2 ?? 0,
