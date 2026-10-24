@@ -408,6 +408,7 @@ describe('the rules page (spec 09 §6)', () => {
     ])(
       'keeps the list the account shows when the answer to deleting %s comes after signing in again',
       async (_rule, respond) => {
+        const errors = vi.spyOn(console, 'error');
         const held = gate();
         const api = rulesApi(
           [rule({ id: '7' }), rule({ id: '8', displayValue: 'nft', value: 'nft' })],
@@ -450,6 +451,7 @@ describe('the rules page (spec 09 §6)', () => {
           deletable: ['Delete rule: bitcoin', 'Delete rule: nft'],
           requests: loaded,
         });
+        expect(errors).not.toHaveBeenCalled();
       },
     );
 
