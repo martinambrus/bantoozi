@@ -114,7 +114,7 @@ describe('worker startup failure cleanup', () => {
         {},
         { tz: 'UTC' },
       );
-      expect(h.boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 20_000, wait: true });
+      expect(h.boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 100_000, wait: true });
       expect(h.heartbeat.stop).toHaveBeenCalledOnce();
       expect(h.health.close).toHaveBeenCalledOnce();
       expect(h.readiness.stop).toHaveBeenCalledOnce();
