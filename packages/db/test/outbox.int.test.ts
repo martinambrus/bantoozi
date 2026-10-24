@@ -525,3 +525,74 @@ it('inserts a new delayed intent when delivery commits while deduplication waits
     delivery.release();
   }
 });
+
+it('batch inserts preserve pending duplicates, null keys and delivered history', async () => {
+  await drain();
+  const user = await createUser(ctx.owner);
+  const pending = buildJobIntent('user.learn', { userId: user.id });
+  const history = buildJobIntent('user.estimate', { userId: user.id });
+  const unkeyed = { ...buildJobIntent('house.reconcile', {}), dedupeKey: null };
+  await ctx.worker.transaction(async (tx) => {
+    await workerOutbox(tx).enqueue(pending);
+    await workerOutbox(tx).enqueue(history);
+  });
+  await ctx.owner.query(`UPDATE job_outbox SET delivered_at = now()
+    WHERE queue = 'user.estimate' AND delivered_at IS NULL`);
+  const before = await outboxRows('user.learn');
+  await ctx.worker.transaction(async (tx) => {
+    await workerOutbox(tx).enqueueMany!([pending, pending, history, unkeyed, unkeyed]);
+  });
+  expect(await outboxRows('user.learn')).toEqual(before);
+  expect(
+    (await outboxRows('user.estimate')).filter((r) => r.dedupe_key === history.dedupeKey),
+  ).toHaveLength(2);
+  const pendingRows = (await outboxRows()).filter((r) => r.delivered_at === null);
+  expect(pendingRows.map((r) => r.queue)).toEqual([
+    'user.learn',
+    'user.estimate',
+    'house.reconcile',
+    'house.reconcile',
+  ]);
+  expect(pendingRows.every((r) => r.user_id === null)).toBe(true);
+});
+
+it('delayed batches retain the earliest time and leases, including duplicate and null keys', async () => {
+  await drain();
+  const pending = buildJobIntent('article.extract', { articleId: '990' });
+  const fresh = buildJobIntent('article.extract', { articleId: '991' });
+  const unkeyed = { ...buildJobIntent('house.reconcile', {}), dedupeKey: null };
+  const late = new Date(Date.now() + 600_000);
+  const early = new Date(Date.now() + 60_000);
+  await enqueueDelayedWorkerIntent(ctx.worker, pending, late);
+  await ctx.owner.query(`UPDATE job_outbox SET
+    lease_token = '00000000-0000-4000-8000-000000000001',
+    lease_until = now() + interval '1 hour' WHERE delivered_at IS NULL`);
+  await ctx.worker.transaction(async (tx) => {
+    await workerOutbox(tx, { availableAt: early }).enqueueMany!([
+      pending,
+      pending,
+      fresh,
+      unkeyed,
+      unkeyed,
+    ]);
+  });
+  const before = (await outboxRows()).filter((r) => r.delivered_at === null);
+  expect(before).toHaveLength(4);
+  expect(before.every((r) => r.available_at.getTime() === early.getTime())).toBe(true);
+  expect(before[0]).toMatchObject({
+    payload: pending.payload,
+    lease_token: '00000000-0000-4000-8000-000000000001',
+  });
+  await ctx.worker.transaction(async (tx) => {
+    await workerOutbox(tx, { availableAt: late }).enqueueMany!([pending, fresh]);
+  });
+  expect((await outboxRows()).filter((r) => r.delivered_at === null)).toEqual(before);
+  await ctx.owner.query(`UPDATE job_outbox SET delivered_at = now()
+    WHERE queue = 'article.extract' AND delivered_at IS NULL`);
+  await ctx.worker.transaction(async (tx) => {
+    await workerOutbox(tx, { availableAt: new Date(Date.now() - 60_000) }).enqueueMany!([fresh]);
+  });
+  expect(
+    (await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 })).map((r) => r.payload),
+  ).toEqual([fresh.payload]);
+});

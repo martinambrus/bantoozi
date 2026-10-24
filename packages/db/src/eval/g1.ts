@@ -1,9 +1,9 @@
 import {
   canonicalJson,
-  enqueueEstimate,
-  enqueueLearn,
+  enqueueEstimateMany,
+  enqueueLearnMany,
   estimateSettingsChanged,
-  enqueueRank,
+  enqueueRankMany,
   enqueueReenrich,
   enqueueRematch,
   enqueueTranslateCards,
@@ -190,8 +190,8 @@ export async function applyG1Settings(
   let settingsVersion = current('ranker.settings_version') ?? 0;
   const outbox = workerOutbox(tx);
   const intents: Record<string, number> = {};
-  const count = (queue: string) => {
-    intents[queue] = (intents[queue] ?? 0) + 1;
+  const count = (queue: string, n = 1) => {
+    if (n > 0) intents[queue] = (intents[queue] ?? 0) + n;
   };
 
   if (changed.includes('ranker.thresholds')) {
@@ -202,31 +202,31 @@ export async function applyG1Settings(
     const active = await tx.execute<{ id: string }>(sql`
       SELECT id::text AS id FROM users
        WHERE deleted_at IS NULL AND last_active_at >= ${since}::timestamptz ORDER BY id`);
-    for (const { id } of active.rows) {
-      await enqueueRank(
-        outbox,
-        { userId: id, reason: 'apply-g1', full: true },
-        { revision: String(settingsVersion) },
-      );
-      count('user.rank');
-    }
+    await enqueueRankMany(
+      outbox,
+      active.rows.map(({ id }) => ({ userId: id, reason: 'apply-g1', full: true })),
+      { revision: String(settingsVersion) },
+    );
+    count('user.rank', active.rows.length);
     const before = current('ranker.thresholds') ?? {};
     const after = next['ranker.thresholds'];
     if (estimateSettingsChanged(before, after)) {
-      for (const { id: userId } of active.rows) {
-        await enqueueEstimate(outbox, { userId });
-        count('user.estimate');
-      }
+      await enqueueEstimateMany(
+        outbox,
+        active.rows.map(({ id }) => id),
+      );
+      count('user.estimate', active.rows.length);
     }
     if (!same(before.strengthWeights, after.strengthWeights) || !same(before.model, after.model)) {
       const models = await tx.execute<{ user_id: string }>(sql`
         SELECT DISTINCT m.user_id::text AS user_id FROM user_models m
           JOIN users u ON u.id = m.user_id
          WHERE m.active AND u.deleted_at IS NULL ORDER BY 1`);
-      for (const { user_id: userId } of models.rows) {
-        await enqueueLearn(outbox, { userId });
-        count('user.learn');
-      }
+      await enqueueLearnMany(
+        outbox,
+        models.rows.map(({ user_id }) => user_id),
+      );
+      count('user.learn', models.rows.length);
     }
   }
   if (changed.includes('card_text_mode')) {

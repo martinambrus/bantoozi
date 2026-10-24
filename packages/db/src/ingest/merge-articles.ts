@@ -1,4 +1,4 @@
-import { enqueueCaptureBookmark, enqueueLearn, type JobSender } from '@bantoozi/shared';
+import { enqueueCaptureBookmark, enqueueLearnMany, type JobSender } from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
@@ -230,9 +230,7 @@ export async function mergeArticles(
 
   const affectedUserIds = await activeAffectedUserIds(tx, targetId);
   await recordRankIntents(tx, sender, affectedUserIds, { reason: MERGE_RANK_REASON, full: true });
-  for (const userId of affectedUserIds) {
-    await enqueueLearn(sender, { userId });
-  }
+  await enqueueLearnMany(sender, affectedUserIds);
   if (await hasPendingCapture(tx, targetId)) {
     await enqueueCaptureBookmark(sender, { articleId: targetId }, { revision: reset.revision });
   }

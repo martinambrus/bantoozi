@@ -16,9 +16,9 @@ import {
   AppError,
   RUNTIME_SETTING_KEYS,
   canonicalJson,
-  enqueueEstimate,
+  enqueueEstimateMany,
   estimateSettingsChanged,
-  enqueueLearn,
+  enqueueLearnMany,
   enqueueReenrich,
   enqueueRematch,
   enqueueTranslateCards,
@@ -542,10 +542,10 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
               // The API cannot read other tenants' user_models under RLS, so learning is requested
               // for every recently active user; the handler trains only when its model context or
               // eligible samples changed (spec 06 §8.4).
-              for (const userId of users) await enqueueLearn(outbox, { userId });
+              await enqueueLearnMany(outbox, users);
             }
             if (estimateSettingsChanged(prev, upd)) {
-              for (const userId of users) await enqueueEstimate(outbox, { userId });
+              await enqueueEstimateMany(outbox, users);
             }
           }
           if (changed.includes('question_sets.active')) {

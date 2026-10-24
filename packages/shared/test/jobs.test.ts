@@ -17,7 +17,10 @@ import {
   enqueueEnrich,
   enqueueFetch,
   enqueueHouse,
+  enqueueEstimateMany,
+  enqueueLearnMany,
   enqueueRank,
+  enqueueRankMany,
   enqueueTranslate,
   parseJobPayload,
   resolveWorkerQueues,
@@ -297,6 +300,44 @@ describe('jobs registry (spec 03 §2)', () => {
     ]);
     await expect(enqueueFetch(sender, { feedId: 'x' })).rejects.toThrow();
     expect(intents).toHaveLength(6);
+  });
+
+  it('batch helpers preserve single-user payloads, revisions and fallback senders', async () => {
+    const { sender, intents } = capture();
+    const rank = { userId: USER, reason: 'settings', full: true };
+    await enqueueRankMany(sender, [rank], { revision: '7' });
+    await enqueueLearnMany(sender, [USER, REQ]);
+    await enqueueEstimateMany(sender, [USER, REQ]);
+    expect(intents).toEqual([
+      buildJobIntent('user.rank', rank, { revision: '7' }),
+      buildJobIntent('user.learn', { userId: USER }),
+      buildJobIntent('user.learn', { userId: REQ }),
+      buildJobIntent('user.estimate', { userId: USER }),
+      buildJobIntent('user.estimate', { userId: REQ }),
+    ]);
+  });
+
+  it('uses the batch sink once, skips empty fan-outs and validates before writing', async () => {
+    const batches: (readonly JobIntent[])[] = [];
+    const sender: JobSender = {
+      enqueue: () => Promise.reject(new Error('unexpected single enqueue')),
+      enqueueMany: async (intents) => {
+        batches.push(intents);
+      },
+    };
+    await enqueueRankMany(sender, []);
+    await enqueueLearnMany(sender, []);
+    await enqueueEstimateMany(sender, []);
+    expect(batches).toEqual([]);
+    await enqueueEstimateMany(sender, [USER, REQ]);
+    expect(batches).toEqual([
+      [
+        buildJobIntent('user.estimate', { userId: USER }),
+        buildJobIntent('user.estimate', { userId: REQ }),
+      ],
+    ]);
+    await expect(enqueueLearnMany(sender, [USER, 'invalid'])).rejects.toThrow();
+    expect(batches).toHaveLength(1);
   });
 
   it('retries a guarded stage job after the stale-worker delay, flat', () => {
