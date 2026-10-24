@@ -140,6 +140,7 @@ export async function startQueueReadiness(options: {
       if (stopped || missing.includes(queue)) return;
       missing = [...missing, queue];
       options.logger.error({ missing }, missingMessage(missing));
+      if (inFlight !== undefined) return;
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(() => void refresh(), options.intervalMs ?? 30_000);
       timer.unref();
