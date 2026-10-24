@@ -1113,3 +1113,19 @@ it('keeps a nine-minute resolution in force when reusing a fresh probe on a skew
   expect(dialog).toHaveTextContent(KEPT_TEXT);
   expect(within(dialog).queryByRole('checkbox')).toBeNull();
 });
+
+it('ends Check now polling with a visible fingerprint registration failure', async () => {
+  const { app, model } = await open({
+    saved: ALIAS,
+    status: aliasStatus(DEFAULT, modelAgo(60)),
+    server: { checkOnRead: 1, checkResult: { ok: false, error: 'fingerprint_registration' } },
+  });
+  await app.user.click(inGroup().getByRole('button', { name: 'Check now' }));
+  await wait(1_800);
+  await vi.waitFor(() => expect(group()).toHaveTextContent('fingerprint_registration'));
+  expect(group()).toHaveTextContent(`The release stays ${DEFAULT}.`);
+  expect(inGroup().getByRole('button', { name: 'Check now' })).not.toHaveAttribute('aria-busy');
+  const settled = model.reads;
+  await wait(20_000);
+  expect(model.reads).toBe(settled);
+});

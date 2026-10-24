@@ -202,11 +202,19 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
         await recordHouseProgress({ db }, JOB, now(), true);
         return;
       }
-      await ensureFingerprintRegistered(
-        db,
-        { settingsEnv: deps.settingsEnv, primaryModel: stored.model },
-        now(),
-      );
+      try {
+        await ensureFingerprintRegistered(
+          db,
+          { settingsEnv: deps.settingsEnv, primaryModel: stored.model },
+          now(),
+        );
+      } catch (error) {
+        await updateState((state) => ({
+          ...state,
+          lastCheck: { at: now().toISOString(), ok: false, error: 'fingerprint_registration' },
+        }));
+        throw error;
+      }
     }
     const at = now();
     const result = await recordModelResolution(

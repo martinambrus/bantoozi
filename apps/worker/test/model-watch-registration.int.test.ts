@@ -72,16 +72,29 @@ describe('confirmed watch registration status', () => {
     expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
   });
 
-  it('leaves the previous check and candidate intact when registration fails', async () => {
-    vi.spyOn(fingerprints, 'ensureFingerprintRegistered').mockRejectedValueOnce(
-      new Error('registration refused'),
-    );
+  it('publishes persistent registration failure while preserving the candidate for retry', async () => {
+    const registration = vi
+      .spyOn(fingerprints, 'ensureFingerprintRegistered')
+      .mockRejectedValue(new Error('registration refused'));
     await expect(
       runWatch(h, { prober: scriptedProber(okProbe(V114, CONFIRM)), now: CONFIRM, mailer: null }),
     ).rejects.toThrow('registration refused');
-    expect((await watchRow(h.owner)).lastCheck).toEqual({ at: iso(NOW), ok: true });
+    expect((await watchRow(h.owner)).lastCheck).toEqual({
+      at: iso(CONFIRM),
+      ok: false,
+      error: 'fingerprint_registration',
+    });
+    await expect(
+      runWatch(h, { prober: scriptedProber(okProbe(V114, CONFIRM)), now: CONFIRM, mailer: null }),
+    ).rejects.toThrow('registration refused');
+    expect((await watchRow(h.owner)).lastCheck).toEqual({
+      at: iso(CONFIRM),
+      ok: false,
+      error: 'fingerprint_registration',
+    });
     expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
     expect(await candidateRow(h.owner)).toMatchObject({ model: V114 });
+    registration.mockRestore();
     await runWatch(h, {
       prober: scriptedProber(okProbe(V114, CONFIRM)),
       now: CONFIRM,
