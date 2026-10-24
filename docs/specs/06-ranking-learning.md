@@ -700,7 +700,10 @@ out-of-fold AUC and the cards-only AUC are compared on exactly those samples. If
 grouped-bootstrap interval of (model AUC − cards AUC) is below `−model.maxBaselineDrop`, the candidate is rejected
 with `upgrade_regression`, the active model is deactivated with the same reason and training becomes **strict**:
 only samples carrying the current exact fingerprint are eligible, every attempt records `strictRatingSha`, and strict
-lasts until the exact fingerprint changes (D-278). Metrics add `familySha` and
+lasts until the exact fingerprint changes (D-278). A rating captured while its article still carried answers of an
+older Jev release is stamped `staleAnswers` in its snapshot: it is left out of the guard's new-version samples and of
+strict training (relaxed training keeps it), and a linked analysis that completes with the current model replaces the
+snapshot and clears the marker (D-334). Metrics add `familySha` and
 `upgrade = {ratingSha, n, nPos, nNeg, cvAuc, baselineAuc, deltaCi, regressed} | null`.
 
 ### 8.4 When to train (`user.learn {userId}`)
