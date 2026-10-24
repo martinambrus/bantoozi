@@ -229,7 +229,8 @@
           "ratings": "Ratings",
           "quality": "Quality",
           "interestsAlone": "Your interests alone",
-          "switchedOn": "Switched on"
+          "switchedOn": "Switched on",
+          "reason": "Reason"
         }
       }
     }

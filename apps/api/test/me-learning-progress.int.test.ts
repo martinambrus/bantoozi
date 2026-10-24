@@ -305,6 +305,20 @@ async function addEstimateRows(user: TestUser, count: number): Promise<void> {
 }
 
 describe('GET /me/learning/history', () => {
+  it('exposes rejection reasons with boolean activation for older readers', async () => {
+    const user = await createTestUser(h);
+    await h.owner.query(
+      `INSERT INTO user_learning_history (user_id, kind, n, activated, turned_on, reason) VALUES ($1, 'model', 10, false, false, 'low_auc,worse_logloss')`,
+      [user.id],
+    );
+    const res = await apiClient(h.server, user).get('/me/learning/history');
+    expect(res.statusCode, res.body).toBe(200);
+    expect(LearningHistorySchema.parse(res.json()).items[0]).toMatchObject({
+      reason: 'low_auc,worse_logloss',
+      activated: false,
+      turnedOn: false,
+    });
+  });
   it('answers 401 without a session', async () => {
     expect((await apiClient(h.server).get('/me/learning/history')).statusCode).toBe(401);
   });
@@ -350,6 +364,7 @@ describe('GET /me/learning/history', () => {
         activated: false,
         turnedOn: true,
         engineModel: null,
+        reason: null,
       },
       {
         at: t2.toISOString(),
@@ -360,6 +375,7 @@ describe('GET /me/learning/history', () => {
         activated: false,
         turnedOn: false,
         engineModel: null,
+        reason: null,
       },
       {
         at: t3.toISOString(),
@@ -370,6 +386,7 @@ describe('GET /me/learning/history', () => {
         activated: true,
         turnedOn: true,
         engineModel: 'jev-1',
+        reason: null,
       },
     ]);
     expect(body.truncated).toEqual({ model: false, estimate: false });

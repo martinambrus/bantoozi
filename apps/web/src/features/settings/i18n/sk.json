@@ -235,7 +235,8 @@
           "ratings": "Hodnotenia",
           "quality": "Kvalita",
           "interestsAlone": "Samotné vaše záujmy",
-          "switchedOn": "Zapnuté"
+          "switchedOn": "Zapnuté",
+          "reason": "Dôvod"
         }
       }
     }

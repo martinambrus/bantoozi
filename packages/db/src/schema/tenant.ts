@@ -562,6 +562,7 @@ export const userLearningHistory = pgTable(
     activated: boolean('activated').notNull().default(false),
     turnedOn: boolean('turned_on').notNull().default(false),
     engineModel: text('engine_model'),
+    reason: text('reason'),
   },
   (t) => [
     check('user_learning_history_kind_check', sql`kind IN ('model','estimate')`),

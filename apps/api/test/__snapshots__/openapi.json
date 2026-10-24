@@ -3589,6 +3589,10 @@
                           "engineModel": {
                             "nullable": true,
                             "type": "string"
+                          },
+                          "reason": {
+                            "nullable": true,
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -3599,7 +3603,8 @@
                           "baselineAuc",
                           "activated",
                           "turnedOn",
-                          "engineModel"
+                          "engineModel",
+                          "reason"
                         ],
                         "additionalProperties": false
                       }
