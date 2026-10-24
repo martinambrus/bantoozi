@@ -72,7 +72,7 @@ export function concreteModelOf(
   setting: string,
   resolution: { model: string; checkedAt?: string } | null | undefined,
   pin: { model: string; alias?: string | undefined } | null | undefined,
-  nowMs: number = Date.now(),
+  nowMs: number,
 ): string | null {
   if (!isModelAlias(setting)) return setting;
   const pinned = pin?.model;

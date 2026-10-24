@@ -95,6 +95,11 @@ export function useModelStatus() {
     queryKey: key,
     queryFn: ({ signal }) => api.call(routes.adminEngineModelGet, undefined, { signal }),
   });
+  // The cache retains both the API time and when this browser received it, including on remount.
+  const serverNow = () =>
+    query.data === undefined
+      ? Date.now()
+      : Date.parse(query.data.now) + (Date.now() - query.dataUpdatedAt);
   const probe = useApiMutation(routes.adminEngineModelProbe);
   const check = useApiMutation(routes.adminEngineModelCheck);
   const { mutateAsync: sendProbe } = probe;
@@ -204,5 +209,5 @@ export function useModelStatus() {
 
   const cancel = useCallback(() => running.current?.abort(), []);
 
-  return { query, run, ensureProbe, checkNow, cancel };
+  return { query, run, ensureProbe, checkNow, cancel, serverNow };
 }

@@ -158,7 +158,7 @@ describe('concreteModelOf', () => {
         NOW,
       ),
     ).toBe('jev-1.14.0');
-    expect(concreteModelOf('jev-fake', null, null)).toBe('jev-fake');
+    expect(concreteModelOf('jev-fake', null, null, NOW)).toBe('jev-fake');
   });
 
   it('is the resolution for the alias, then the pin, then nothing', () => {
@@ -170,12 +170,12 @@ describe('concreteModelOf', () => {
         NOW,
       ),
     ).toBe('jev-1.13.0');
-    expect(concreteModelOf('jev-latest', null, { model: 'jev-1.12.0' })).toBe('jev-1.12.0');
-    expect(concreteModelOf('jev-latest', undefined, undefined)).toBeNull();
+    expect(concreteModelOf('jev-latest', null, { model: 'jev-1.12.0' }, NOW)).toBe('jev-1.12.0');
+    expect(concreteModelOf('jev-latest', undefined, undefined, NOW)).toBeNull();
   });
 
   it('does not take an alias for a pinned release', () => {
-    expect(concreteModelOf('jev-latest', null, { model: 'jev-latest' })).toBeNull();
+    expect(concreteModelOf('jev-latest', null, { model: 'jev-latest' }, NOW)).toBeNull();
     expect(
       concreteModelOf(
         'jev-latest',

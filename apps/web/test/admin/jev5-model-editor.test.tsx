@@ -1129,3 +1129,46 @@ it('ends Check now polling with a visible fingerprint registration failure', asy
   await wait(20_000);
   expect(model.reads).toBe(settled);
 });
+
+it('uses the advancing API clock for prefill after an in-force resolution becomes dormant', async () => {
+  vi.setSystemTime(new Date(Date.parse(MODEL_NOW) + 7 * 60 * 60_000));
+  const { app } = await open({
+    saved: ALIAS,
+    status: {
+      ...aliasStatus('jev-1.14.0', modelAgo(9)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).toHaveTextContent('Resolves to jev-1.14.0');
+  await wait(2 * 60_000);
+  await app.user.click(radio(PINNED_RADIO));
+  expect(input()).toHaveValue(DEFAULT);
+  expect(group()).toHaveTextContent('Not resolved yet.');
+});
+
+it('uses a recent resolution from before the setting save for display and prefill', async () => {
+  const { app } = await open({
+    saved: ALIAS,
+    savedAt: modelAgo(1),
+    status: {
+      ...aliasStatus('jev-1.14.0', modelAgo(2)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).toHaveTextContent('Resolves to jev-1.14.0');
+  await app.user.click(radio(PINNED_RADIO));
+  expect(input()).toHaveValue('jev-1.14.0');
+});
+
+it('hides a dormant resolution even when it was checked after the setting save', async () => {
+  await open({
+    saved: ALIAS,
+    savedAt: modelAgo(60),
+    status: {
+      ...aliasStatus('jev-1.14.0', modelAgo(11)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).toHaveTextContent('Not resolved yet.');
+  expect(group()).not.toHaveTextContent('Resolves to jev-1.14.0');
+});
