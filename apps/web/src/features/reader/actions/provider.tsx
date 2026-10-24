@@ -253,34 +253,30 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
         void undo(handle.id);
       },
     };
-    const showPlain = () => {
+    const showPlain = (plainMessage = message) => {
       show({
         id: undoToastId(handle),
-        message,
+        message: plainMessage,
         tone: 'success',
         durationMs: UNDO_TOAST_MS,
         action: undoAction,
       });
     };
     if (pattern !== null && pattern.offer !== null) {
+      showPlain(rated);
       void offers.patternActions(pattern, item.id).then((offered) => {
         if (turn !== latestOffer || !isRecent(handle)) return;
         const current = store.view(item);
         if (current.rating !== item.rating || current.reason !== item.reason) return;
         if (offered === null) {
-          showPlain();
           return;
         }
         show({
-          id:
-            handle.ratingBatchId === undefined
-              ? undoToastId(handle)
-              : `pattern-offer:${pattern.offerId}`,
+          id: `pattern-offer:${pattern.kind}:${pattern.kind === 'card' ? pattern.cardId : pattern.feedId}`,
           message,
           tone: 'success',
           durationMs: OFFER_TOAST_MS,
           onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
-          action: undoAction,
           actions: offered,
         });
       });

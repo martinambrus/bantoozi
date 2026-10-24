@@ -105,9 +105,11 @@ describe('the dislike pattern in the undo toast', () => {
 
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
 
-    expect(buttons(toast)).toEqual(['Undo', SHOW_FEWER, NOT_NOW]);
-    expect(app.toasts.getSnapshot()).toHaveLength(1);
-    expect(app.toasts.getSnapshot()[0]).toMatchObject({ durationMs: null });
+    expect(buttons(toast)).toEqual([SHOW_FEWER, NOT_NOW]);
+    expect(app.toasts.getSnapshot()).toHaveLength(2);
+    expect(app.toasts.getSnapshot().find((t) => t.id === 'pattern-offer:card:31')).toMatchObject({
+      durationMs: null,
+    });
 
     await app.user.click(within(toast).getByRole('button', { name: SHOW_FEWER }));
 
@@ -206,6 +208,52 @@ describe('the dislike pattern in the undo toast', () => {
     expect(later).toBeVisible();
   });
 
+  it('D2 two quick same-scope offers replace in place and keep each rating undo', async () => {
+    holdExits();
+    const items = [makeItem(), makeItem({ id: '102' })];
+    const app = renderReader(
+      <>
+        {items.map((item) => (
+          <Row key={item.id} item={item} />
+        ))}
+      </>,
+      {
+        routes: {
+          ...server(items[0]!, OFFER),
+          'POST /articles/:id/rating': (_request, params) =>
+            actionResponse(
+              acked(
+                items.find((item) => item.id === params['id'])!,
+                { rating: -1, readAt: READ_AT },
+              ),
+              {
+                exampleSuggestion: null,
+                pattern: { ...OFFER, offerId: `a0a00000-0000-4000-8000-000000000${params['id']}` },
+              },
+            ),
+        },
+      },
+    );
+    apps.push(app);
+    let firstOffer: HTMLElement | null = null;
+    for (let i = 0; i < items.length; i++) {
+      await app.user.click(screen.getAllByRole('button', { name: 'Dislike' })[i]!);
+      await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+      const button = await screen.findByRole('button', { name: SHOW_FEWER });
+      const toast = button.closest<HTMLElement>('[data-toast-id]')!;
+      expect(toast.dataset['toastId']).toBe('pattern-offer:card:31');
+      if (firstOffer !== null) expect(toast).toBe(firstOffer);
+      firstOffer = toast;
+    }
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
+    expect(app.toasts.getSnapshot().filter((t) => t.id.startsWith('reader-undo:'))).toHaveLength(2);
+    await app.user.click(screen.getByRole('button', { name: NOT_NOW }));
+    expect(app.calls('POST', '/articles/102/pattern-offer').map(bodyOf)).toContainEqual({
+      offerId: 'a0a00000-0000-4000-8000-000000000102',
+      event: 'dismissed',
+    });
+  });
+
   it.each(['on', 'off'] as const)(
     'DPF-8 opens Never with three examples (estimates %s)',
     async (estimates) => {
@@ -284,7 +332,7 @@ describe('the dislike pattern in the undo toast', () => {
 
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
 
-    expect(buttons(toast)).toEqual(['Undo', SHOW_FEWER, NOT_NOW]);
+    expect(buttons(toast)).toEqual([SHOW_FEWER, NOT_NOW]);
     expect(within(toast).queryByRole('button', { name: SINGLE_TEACH })).toBeNull();
   });
 });

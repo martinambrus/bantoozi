@@ -1433,7 +1433,7 @@ async function patternCard(
   articleId: string,
   minP: number,
   now: Date,
-): Promise<{ cardId: string; familyId: string; offered: boolean } | null> {
+): Promise<{ cardId: string; familyId: string; offered: 'seen' | 'pending' | null } | null> {
   const family = (alias: string) =>
     sql.raw(
       `CASE WHEN ${alias}.visibility = 'private' THEN coalesce(${alias}.parent_card_id, ${alias}.id) ELSE ${alias}.id END`,
@@ -1456,23 +1456,26 @@ async function patternCard(
   return {
     cardId: card.id,
     familyId: card.family,
-    offered: await patternScopeSeen(tx, userId, 'card', card.family, now),
+    offered: await patternScopeStatus(tx, userId, 'card', card.family, now),
   };
 }
 
-async function patternScopeSeen(
+async function patternScopeStatus(
   tx: TenantTx,
   userId: string,
   scope: 'card' | 'feed',
   scopeId: string,
   now: Date,
-): Promise<boolean> {
-  const result = await tx.execute(sql`
-    SELECT 1 FROM dislike_pattern_offers
+): Promise<'seen' | 'pending' | null> {
+  const result = await tx.execute<{ seen: boolean | null }>(sql`
+    SELECT seen_at > ${now.toISOString()}::timestamptz - make_interval(days => ${PATTERN_OFFER_LOOKBACK_DAYS}) AS seen FROM dislike_pattern_offers
      WHERE user_id = ${userId}::uuid AND scope = ${scope} AND scope_id = ${scopeId}::bigint
-       AND seen_at > ${now.toISOString()}::timestamptz - make_interval(days => ${PATTERN_OFFER_LOOKBACK_DAYS})
+       AND (seen_at > ${now.toISOString()}::timestamptz - make_interval(days => ${PATTERN_OFFER_LOOKBACK_DAYS})
+         OR (answer IS NULL AND offered_at > ${now.toISOString()}::timestamptz - interval '10 minutes'))
+     ORDER BY seen_at DESC NULLS LAST
      LIMIT 1`);
-  return result.rows.length > 0;
+  const row = result.rows[0];
+  return row === undefined ? null : row.seen ? 'seen' : 'pending';
 }
 
 async function insertPatternOffer(
@@ -1521,6 +1524,7 @@ async function dislikePattern(
 ): Promise<DislikePatternValue | null> {
   const card = await patternCard(tx, lock.user, article.articleId, config.lanes.maybe, now);
   if (card === null) return feedDislikePattern(tx, lock, article, now, check);
+  if (card.offered === 'pending') return null;
   const labelled = await loadSimilarFeedback(tx, lock.user, now, {
     minP: config.lanes.maybe,
     windowDays: check.windowDays,
@@ -1533,7 +1537,7 @@ async function dislikePattern(
     labelled: labelled.get(card.cardId) ?? [],
     now,
   });
-  const offer = lock.prefs.exampleSuggestions && !card.offered ? judged.offer : null;
+  const offer = lock.prefs.exampleSuggestions && card.offered === null ? judged.offer : null;
   return {
     kind: 'card',
     cardId: card.cardId,
@@ -1560,7 +1564,10 @@ async function feedDislikePattern(
       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${lock.user}::uuid
      WHERE fi.article_id = ${article.articleId}::bigint ORDER BY fi.feed_id LIMIT 1`);
   const feed = carrier.rows[0];
-  if (feed === undefined || (await patternScopeSeen(tx, lock.user, 'feed', feed.id, now)))
+  if (
+    feed === undefined ||
+    (await patternScopeStatus(tx, lock.user, 'feed', feed.id, now)) !== null
+  )
     return null;
   const since = new Date(now.getTime() - check.windowDays * 86_400_000);
   const rows = await tx.execute<{

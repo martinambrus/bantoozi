@@ -184,14 +184,46 @@ describe('rating pattern (DPF-3)', () => {
     },
   );
 
-  it('DPF-6 unseen offers do not consume the cooldown', async () => {
+  it('DPF-6 unseen offers older than ten minutes do not consume the cooldown', async () => {
     const w = await world();
     const target = await candidate(w, TARGET);
     const first = await dislike(w, target);
     expect(first.pattern?.offerId).toEqual(expect.any(String));
+    await h.owner.query(
+      "UPDATE dislike_pattern_offers SET offered_at = now() - interval '11 minutes' WHERE id = $1",
+      [first.pattern?.offerId],
+    );
     const next = await dislike(w, await candidate(w, D3));
     expect(next.pattern?.offer).toHaveLength(3);
     expect(next.pattern?.offerId).not.toBe(first.pattern?.offerId);
+  });
+
+  it.each(['card', 'feed'] as const)(
+    'D2 two quick %s dislikes create only one offer',
+    async (scope) => {
+      const w = await world();
+      if (scope === 'feed')
+        await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+      const first = await dislike(w, await candidate(w, TARGET));
+      expect(first.pattern?.offer).toHaveLength(3);
+      expect((await dislike(w, await candidate(w, D3))).pattern).toBeNull();
+      const rows = await h.owner.query('SELECT id FROM dislike_pattern_offers WHERE user_id = $1', [
+        w.user.id,
+      ]);
+      expect(rows.rows).toHaveLength(1);
+    },
+  );
+
+  it('D2 Training Dislike all serializes five concurrent ratings into one offer', async () => {
+    const w = await world({}, 'training');
+    await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+    const ids = await Promise.all([TARGET, D3, D1, D2, TARGET].map((title) => candidate(w, title)));
+    const responses = await Promise.all(ids.map((id) => dislike(w, id)));
+    expect(responses.filter((body) => body.pattern?.offer != null)).toHaveLength(1);
+    const rows = await h.owner.query('SELECT id FROM dislike_pattern_offers WHERE user_id = $1', [
+      w.user.id,
+    ]);
+    expect(rows.rows).toHaveLength(1);
   });
 
   it('DPF-6 only seen offers block their scope, with idempotent tenant-scoped events', async () => {
@@ -223,7 +255,7 @@ describe('rating pattern (DPF-3)', () => {
     const other = await world();
     expect((await dislike(other, await candidate(other, TARGET))).pattern?.offer).toHaveLength(3);
     await h.owner.query(
-      `UPDATE dislike_pattern_offers SET seen_at = now() - interval '15 days' WHERE id = $1`,
+      `UPDATE dislike_pattern_offers SET seen_at = now() - interval '15 days', offered_at = now() - interval '15 days' WHERE id = $1`,
       [offerId],
     );
     expect((await dislike(w, await candidate(w, TARGET))).pattern?.offer).toHaveLength(3);
