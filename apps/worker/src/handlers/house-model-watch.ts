@@ -23,6 +23,7 @@ import {
   resolutionInForce,
 } from '../model-resolution.js';
 import {
+  MODEL_CANDIDATE_KEY,
   MODEL_WATCH_KEY,
   isOlderSameMajorRelease,
   observeModelCandidate,
@@ -67,17 +68,21 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
   const { db, prober, logger } = deps;
   const now = (): Date => deps.now?.() ?? new Date();
 
-  const checkedWithoutCandidate = (state: EngineModelWatch): EngineModelWatch => {
-    const { candidate: _gone, ...rest } = state;
-    return { ...rest, lastCheck: { at: now().toISOString(), ok: true } };
-  };
-
-  const updateState = (change: (state: EngineModelWatch) => EngineModelWatch): Promise<void> =>
+  const updateState = (
+    change: (state: EngineModelWatch) => EngineModelWatch,
+    clearCandidate = false,
+  ): Promise<void> =>
     retryTransaction(db, async (tx) => {
       await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) =>
         change(watchStateOf(current)),
       );
+      if (clearCandidate) {
+        await updateSettingLocked(tx, MODEL_CANDIDATE_KEY, null, () => null);
+      }
     });
+
+  const checkedWithoutCandidate = (): Promise<void> =>
+    updateState((state) => ({ ...state, lastCheck: { at: now().toISOString(), ok: true } }), true);
 
   /** One round of sending the pending notice, if any. */
   const deliverPending = async (): Promise<void> => {
@@ -168,14 +173,14 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     if (stored !== null && stored.alias === alias && !resolutionInForce(stored, pin, now())) {
       const at = now();
       await recordStartResolution(db, { alias, model: answered, now: at, dormant: stored });
-      await updateState(checkedWithoutCandidate);
+      await checkedWithoutCandidate();
       await recordHouseProgress({ db }, JOB, now(), true);
       return;
     }
     if (stored !== null && stored.alias === alias && stored.model !== answered) {
       if (isOlderSameMajorRelease(answered, stored.model)) {
         logger.warn({ job: JOB, current: stored.model, answered }, 'older Jev release ignored');
-        await updateState(checkedWithoutCandidate);
+        await checkedWithoutCandidate();
         await recordHouseProgress({ db }, JOB, now(), true);
         return;
       }
@@ -196,7 +201,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
       { alias, model: answered, now: at },
       (tx, change) => writePendingNotice(tx, change, at),
     );
-    await updateState(checkedWithoutCandidate);
+    await checkedWithoutCandidate();
     if (result.changed && result.previous !== undefined) {
       logger.info({ job: JOB, from: result.previous, to: answered }, 'Jev release adopted');
       await deliverPending();

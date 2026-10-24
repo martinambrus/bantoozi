@@ -6,12 +6,15 @@ import {
   type Transaction,
 } from '@bantoozi/db';
 import {
+  EngineModelCandidateSchema,
   EngineModelWatchSchema,
   enqueueModelWatch,
   sameModelFamily,
+  type EngineModelCandidate,
   type EngineModelWatch,
 } from '@bantoozi/shared';
 
+export const MODEL_CANDIDATE_KEY = 'engine.model_candidate';
 export const MODEL_WATCH_KEY = 'engine.model_watch';
 export const MODEL_WATCH_CONFIRM_MS = 10 * 60_000;
 export const MODEL_WATCH_TRIGGER_GAP_MS = 10 * 60_000;
@@ -61,26 +64,31 @@ export async function observeModelCandidate(
   return retryTransaction(db, async (tx) => {
     let started = false;
     let confirmed = false;
-    const state = await updateSettingLocked<EngineModelWatch>(
+    // All transactions touching both rows lock watch first, then candidate.
+    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => ({
+      ...watchStateOf(current),
+      lastCheck: { at: now.toISOString(), ok: true },
+    }));
+    const candidate = await updateSettingLocked<EngineModelCandidate | null>(
       tx,
-      MODEL_WATCH_KEY,
-      {},
+      MODEL_CANDIDATE_KEY,
+      null,
       (current) => {
-        const state = watchStateOf(current);
-        const old = state.candidate;
+        const parsed = EngineModelCandidateSchema.safeParse(current);
+        const old = parsed.success ? parsed.data : undefined;
         started = old === undefined || old.model !== model;
         const candidate = started
           ? { model, firstSeenAt: now.toISOString(), count: 1 }
           : { ...old!, count: Math.min(Number.MAX_SAFE_INTEGER, old!.count + 1) };
         confirmed =
           !started && now.getTime() - Date.parse(candidate.firstSeenAt) >= MODEL_WATCH_CONFIRM_MS;
-        return { ...state, candidate, lastCheck: { at: now.toISOString(), ok: true } };
+        return candidate;
       },
     );
     if (started) {
       await enqueueModelWatch(
         workerOutbox(tx, { availableAt: new Date(now.getTime() + MODEL_WATCH_CONFIRM_MS) }),
-        { revision: `confirm:${model}:${state.candidate!.firstSeenAt}` },
+        { revision: `confirm:${model}:${candidate!.firstSeenAt}` },
       );
     }
     return confirmed;

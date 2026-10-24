@@ -422,13 +422,13 @@ describe('admin SQL hooks', () => {
   });
 
   describe('clearModelState', () => {
-    it('deletes exactly the four model state keys', async () => {
+    it('deletes exactly the five model state keys', async () => {
       const { db, calls } = recordingDb([{ key: 'engine.model_probe' }]);
       await expect(runSqlHook(db, 'clearModelState', {})).resolves.toEqual({ deleted: 1 });
       const { text } = onlyQuery(calls);
       expect(text).toContain('DELETE FROM settings');
       expect(text).toContain(
-        "key IN ('engine.model_probe','engine.model_resolution','engine.model_watch','engine.model_impact')",
+        "key IN ('engine.model_probe','engine.model_resolution','engine.model_watch', 'engine.model_candidate','engine.model_impact')",
       );
       expect(text).not.toMatch(/DROP|TRUNCATE/);
     });

@@ -259,7 +259,6 @@ export async function settingValue<T = Record<string, unknown>>(
 }
 
 export interface WatchRow {
-  candidate?: { model: string; firstSeenAt: string; count: number };
   triggeredAt?: string;
   lastCheck?: { at: string; ok: boolean; error?: string };
   notice?: { from: string; to: string; at: string; major: boolean; attempts: number };
@@ -267,6 +266,12 @@ export interface WatchRow {
 
 export const watchRow = async (owner: pg.Pool): Promise<WatchRow> =>
   (await settingValue<WatchRow>(owner, 'engine.model_watch')) ?? {};
+
+export const candidateRow = async (owner: pg.Pool) =>
+  (await settingValue<{ model: string; firstSeenAt: string; count: number } | null>(
+    owner,
+    'engine.model_candidate',
+  )) ?? undefined;
 
 export interface ProgressEntry {
   updatedAt: string;

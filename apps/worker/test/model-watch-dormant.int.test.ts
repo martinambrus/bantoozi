@@ -49,7 +49,12 @@ afterAll(async () => {
 beforeEach(async () => {
   await resetWorld(h, { model: V113 });
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-    ['engine.model_watch', 'engine.rating_fingerprints', 'house.progress'],
+    [
+      'engine.model_watch',
+      'engine.model_candidate',
+      'engine.rating_fingerprints',
+      'house.progress',
+    ],
   ]);
   await clearAdmins(h.owner);
   await addAdmin(h.owner, 'dormant-admin@example.test');

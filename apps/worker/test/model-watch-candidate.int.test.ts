@@ -1,3 +1,4 @@
+import { EngineModelWatchSchema as OriginModelWatchSchema } from '../../../packages/shared/test/support/origin-model-watch.js';
 import { startFakeTypeSafe, type FakeTypeSafeServer } from '@bantoozi/testing';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -19,6 +20,7 @@ import {
   realProber,
   runWatch,
   watchRow,
+  candidateRow,
 } from './support/model-watch-world.js';
 
 // Keep the injected clock ahead of PostgreSQL: delayed intents clamp past dates to now.
@@ -41,6 +43,7 @@ beforeEach(async () => {
     [
       'engine.model_resolution',
       'engine.model_watch',
+      'engine.model_candidate',
       'engine.model_probe',
       'engine.model_impact',
       'engine.rating_fingerprints',
@@ -67,9 +70,25 @@ afterEach(async () => {
   await h.owner.query('DROP FUNCTION IF EXISTS refuse_confirmation()');
 });
 
-const candidate = async () => (await watchRow(h.owner)).candidate;
+const candidate = async () => candidateRow(h.owner);
 
 describe('JEV-8: alias flap controls', () => {
+  it('keeps the watch row readable by the origin/main worker after observing a candidate', async () => {
+    const triggeredAt = iso(NOW);
+    const notice = { from: V113, to: V114, at: triggeredAt, major: false, attempts: 0 };
+    await setSetting(h.owner, 'engine.model_watch', { triggeredAt, notice });
+    const { observeModelCandidate } = await import('../src/model-watch.js');
+    await observeModelCandidate(h.db, V114, NOW);
+    const watch = await watchRow(h.owner);
+    expect(OriginModelWatchSchema.parse(watch)).toMatchObject({ triggeredAt, notice });
+    const { settingValue } = await import('./support/model-watch-world.js');
+    expect(await settingValue(h.owner, 'engine.model_candidate')).toEqual({
+      model: V114,
+      firstSeenAt: iso(NOW),
+      count: 1,
+    });
+  });
+
   it.each([
     ['jev-1.14.0', 'jev-1.14.0-rc1'],
     ['jev-1.14.10', 'jev-1.14.9'],

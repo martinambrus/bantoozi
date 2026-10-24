@@ -94,6 +94,7 @@ async function aliasWorld(): Promise<void> {
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     [
       'engine.model_watch',
+      'engine.model_candidate',
       'engine.model_probe',
       'engine.model_impact',
       'house.progress',
