@@ -23,6 +23,10 @@ import { holdExits } from './exit-hold.js';
 import { ratingResponse } from '../article/harness.js';
 import { acked } from './actions/fake-transport.js';
 import { failure } from '../api/fake-fetch.js';
+import { useReaderActions } from '../../src/features/reader/actions/provider.js';
+import { useLearning } from '../../src/features/learning/use-learning.js';
+import { useLearningEstimates } from '../../src/features/learning/use-learning-estimates.js';
+import { actionResponse, renderReader } from '../article/harness.js';
 
 const { open } = createReaderHarness();
 
@@ -506,23 +510,30 @@ describe('the chip for assistive technology', () => {
 });
 
 // One shared action handler owns learning refreshes even with both observers mounted.
-it.each([true, false])(
-  'one settled rating refreshes learning once only on success (%s)',
-  async (success) => {
+it.each([
+  ['training', true],
+  ['training', false],
+  ['off', true],
+  ['off', false],
+] as const)(
+  'one settled rating refreshes learning once only on success (mode %s, success %s)',
+  async (mode, success) => {
     holdExits();
     const story = item(1, { feed: { id: '1', title: 'Verge', iconUrl: null } });
     const { app } = await open({
       path: '/read/feed/1',
       items: [story],
-      subscriptions: [sub('training')],
+      subscriptions: [sub(mode)],
       routes: {
         [LEARNING]: learningRoute(() => makeLearning()),
+        [LEARNING_ESTIMATES]: learningEstimatesRoute(() => makeLearning()),
         'POST /articles/:id/rating': () =>
           success ? ratingResponse(acked(story, { rating: 1 })) : failure(500, 'INTERNAL_ERROR'),
       },
     });
     await screen.findByRole('group', { name: NAME.en });
     const before = app.calls(LEARNING).length;
+    const estimatesBefore = app.calls(LEARNING_ESTIMATES).length;
     await app.user.click(
       within(screen.getByRole('article', { name: 'Article 1' })).getByRole('button', {
         name: 'Like',
@@ -530,6 +541,48 @@ it.each([true, false])(
     );
     await settle();
     await settle();
-    expect(app.calls(LEARNING)).toHaveLength(before + (success ? 1 : 0));
+    expect(app.calls('POST /articles/:id/rating')).toHaveLength(1);
+    if (mode === 'training') expect(app.calls(LEARNING)).toHaveLength(before + (success ? 1 : 0));
+    else expect(app.calls(LEARNING_ESTIMATES)).toHaveLength(estimatesBefore + (success ? 1 : 0));
+  },
+);
+
+it.each([true, false])(
+  'a settled prompt answer refreshes both learning keys only on success (%s)',
+  async (success) => {
+    function Observer() {
+      useLearning();
+      useLearningEstimates();
+      return null;
+    }
+    function Host() {
+      const actions = useReaderActions();
+      return (
+        <>
+          <Observer />
+          <Observer />
+          <button onClick={() => actions.dispatch(item(1), { type: 'promptAnswer', liked: true })}>
+            Answer prompt
+          </button>
+        </>
+      );
+    }
+    const app = renderReader(<Host />, {
+      routes: {
+        [LEARNING]: learningRoute(() => makeLearning()),
+        [LEARNING_ESTIMATES]: learningEstimatesRoute(() => makeLearning()),
+        'POST /articles/:id/prompt-answer': () =>
+          success ? actionResponse(acked(item(1), { rating: 1 })) : failure(500, 'INTERNAL_ERROR'),
+      },
+    });
+    await waitFor(() => expect(app.calls('GET', '/me/learning')).toHaveLength(1));
+    await waitFor(() => expect(app.calls('GET', '/me/learning/estimates')).toHaveLength(1));
+    await settle();
+    await app.user.click(screen.getByRole('button', { name: 'Answer prompt' }));
+    await settle();
+    await settle();
+    expect(app.calls('POST', '/articles/1/prompt-answer')).toHaveLength(1);
+    expect(app.calls('GET', '/me/learning')).toHaveLength(success ? 2 : 1);
+    expect(app.calls('GET', '/me/learning/estimates')).toHaveLength(success ? 2 : 1);
   },
 );
