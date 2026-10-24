@@ -53,6 +53,8 @@ export interface JobContext {
    * outside pg-boss (the dev CLI, tests): that run is its only attempt.
    */
   retry?: { count: number; limit: number };
+  /** Internal stale replacement lineage, carried by the relay outside the validated payload. */
+  staleRecoveryRevision?: string;
 }
 
 export type QueueHandler<Q extends QueueName> = (

@@ -26,7 +26,7 @@ import { loadClassificationConfig } from '../classify/config.js';
 import { buildState, modelInput } from '../classify/model-input.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { REPROCESS_BATCH, REPROCESS_CONTINUATION_DELAY_MS } from './house-reenrich.js';
-import { recordRebuildProgress } from './house-purge-auth.js';
+import { recordRebuildProgress, recoverStaleRebuild } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 import { assertWorkerCurrent, lockWorkerCurrent } from '../stale-worker.js';
 
@@ -50,7 +50,7 @@ export function createRematchHandler(
   deps: WorkerDeps,
   classification: ClassificationDeps,
 ): QueueHandler<'house.rematch'> {
-  return async (payload) => {
+  const handle: QueueHandler<'house.rematch'> = async (payload) => {
     await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps);
     const since =
@@ -218,4 +218,5 @@ export function createRematchHandler(
       'rematch pass',
     );
   };
+  return recoverStaleRebuild(deps, JOB, handle);
 }

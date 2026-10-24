@@ -21,6 +21,7 @@ import { after } from '../pipeline.js';
 import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
 
 /**
  * `article.cluster {articleId}` (spec 05 §6). Best-effort story clustering after a demanded Call A:
@@ -38,7 +39,7 @@ export function createArticleClusterHandler(
   deps: WorkerDeps,
   classification: ClassificationDeps,
 ): QueueHandler<'article.cluster'> {
-  return async ({ articleId }) => {
+  const handle: QueueHandler<'article.cluster'> = async ({ articleId }) => {
     await assertWorkerCurrent(deps.db, classification);
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');
@@ -136,4 +137,5 @@ export function createArticleClusterHandler(
     });
     if (stale !== null) throw stale;
   };
+  return recoverStaleJob(deps, handle);
 }

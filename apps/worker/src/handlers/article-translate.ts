@@ -33,6 +33,7 @@ import { after } from '../pipeline.js';
 import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { recoverStaleJob } from './stale-job-recovery.js';
 import { hasRetriesLeft } from './transient.js';
 import { resetOnChangedText } from './translation-change.js';
 
@@ -75,7 +76,7 @@ export function createArticleTranslateHandler(
   classification: ClassificationDeps,
   translation: TranslationDeps,
 ): QueueHandler<'article.translate'> {
-  return async (payload, context) => {
+  const handle: QueueHandler<'article.translate'> = async (payload, context) => {
     // The translators are restart-class clients (the LibreTranslate URL, the Ollama models): a
     // process that is no longer what the database asks for neither calls them nor stores rows (D-228).
     await assertWorkerCurrent(deps.db, classification);
@@ -185,6 +186,7 @@ export function createArticleTranslateHandler(
       payload.modeChange === true,
     );
   };
+  return recoverStaleJob(deps, handle);
 }
 
 /**

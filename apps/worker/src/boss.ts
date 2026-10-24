@@ -3,6 +3,7 @@ import PgBoss, { type ConstructorOptions } from 'pg-boss';
 
 import { dispatch, isStageAvailable, type HandlerMap } from './handlers/index.js';
 import type { JobBroker, RelayLogger } from './outbox-relay.js';
+import { parseStaleRecoveryRevision } from './stale-recovery.js';
 
 /**
  * pg-boss in the worker (spec 02 §1.2): started with `migrate: false` on the worker role; the migrate
@@ -61,7 +62,19 @@ export async function registerHandlers(
     for (let i = 0; i < QUEUES[queue].concurrency; i += 1) {
       await boss.work<unknown>(queue, { batchSize: 1, includeMetadata: true }, async (jobs) => {
         for (const job of jobs) {
-          const parsed = safeParseJobPayload(queue, job.data);
+          let data = job.data;
+          let staleRecoveryRevision: string | undefined;
+          if (
+            data !== null &&
+            typeof data === 'object' &&
+            '_staleRecoveryRevision' in data &&
+            parseStaleRecoveryRevision(data._staleRecoveryRevision) !== null
+          ) {
+            const { _staleRecoveryRevision, ...payload } = data;
+            staleRecoveryRevision = _staleRecoveryRevision as string;
+            data = payload;
+          }
+          const parsed = safeParseJobPayload(queue, data);
           if (!parsed.success) {
             logger.error({ queue, jobId: job.id }, 'dropping a job with an invalid payload');
             continue;
@@ -70,6 +83,7 @@ export async function registerHandlers(
             queue,
             jobId: job.id,
             retry: { count: job.retryCount, limit: job.retryLimit },
+            ...(staleRecoveryRevision === undefined ? {} : { staleRecoveryRevision }),
           });
         }
       });

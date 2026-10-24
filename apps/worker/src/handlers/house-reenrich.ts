@@ -19,7 +19,7 @@ import {
 import { primaryAvailability } from '../classify/availability.js';
 import { languageModeOf, loadClassificationConfig } from '../classify/config.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
-import { recordRebuildProgress } from './house-purge-auth.js';
+import { recordRebuildProgress, recoverStaleRebuild } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 import { assertWorkerCurrent, lockWorkerCurrent } from '../stale-worker.js';
 
@@ -49,7 +49,7 @@ export function createReenrichHandler(
   deps: WorkerDeps,
   classification: ClassificationDeps,
 ): QueueHandler<'house.reenrich'> {
-  return async (payload) => {
+  const handle: QueueHandler<'house.reenrich'> = async (payload) => {
     await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps);
     const since =
@@ -160,6 +160,7 @@ export function createReenrichHandler(
       'reenrich pass',
     );
   };
+  return recoverStaleRebuild(deps, JOB, handle);
 }
 
 /** The re-entry an article needs under the current configuration (spec 05 §2, spec 07 §3, spec 11 §6). */

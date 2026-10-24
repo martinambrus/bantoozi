@@ -3258,3 +3258,16 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   advisory spend) derive from it, so a new kind does not compile until it is routed and classified for the budget. No
   behaviour change; the engine's in-memory test store now pairs kinds and authorizations with `kindMatchesAuthorization`
   like the real store (it admitted 27 pairings the store refuses).
+- D-319: 2026-10-24 (FNF-VL-9, task #34; supersedes D-308's "known limitation": a stale worker no longer loses work) —
+  Work consumed by a worker that stays stale (no self-restart, or a hung drain) is recovered. A `house.reenrich` /
+  `house.rematch` that is stale on its LAST attempt parks its frozen scope as a pending run (the shape
+  `house.reconcile` resumes; earlier attempts park nothing, so a retry that succeeds leaves no duplicate); reconcile
+  leaves parked runs alone while it is itself stale. A stage job (`article.enrich`, `article.translate`,
+  `article.cluster`, `article.match`, `card.backfill`, `house.translate-cards`) that is stale on its last attempt
+  writes a delayed replacement intent through the outbox; the hop count travels in a hidden `_staleRecoveryRevision`
+  field that the worker strips before payload validation, and the delay doubles per hop (30 s, 60 s, 120 s … at most
+  15 min) so a worker that never becomes current costs a bounded trickle, not a job a minute. A failed recovery write
+  is logged and the original stale error is rethrown. The graceful drain waits up to 100 s (was 20 s), inside the
+  worker containers' 120 s `stop_grace_period`; a model call longer than that is failed by pg-boss and its lease lapses
+  by expiry. Known: while an ordinary equivalent job is pending, a replacement carrying the hidden field is not seen as
+  its duplicate, so the relay re-offers it until that job finishes.

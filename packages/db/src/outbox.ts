@@ -36,12 +36,17 @@ export async function rankCovered(tx: TenantTx): Promise<boolean> {
 }
 
 /** A worker intent that becomes due only at `availableAt` (the relay skips it until then). */
-async function insertDelayedIntent(tx: Executor, intent: JobIntent, availableAt: Date) {
-  await tx.execute(sql`
+export async function enqueueDelayedWorkerIntent(
+  tx: Executor,
+  intent: JobIntent,
+  availableAt: Date,
+): Promise<boolean> {
+  const result = await tx.execute(sql`
     INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
     VALUES (${intent.queue}, ${JSON.stringify(intent.payload)}::jsonb, ${intent.dedupeKey}, NULL,
             greatest(now(), ${availableAt.toISOString()}::timestamptz))
-    ON CONFLICT DO NOTHING`);
+    ON CONFLICT DO NOTHING RETURNING id`);
+  return result.rows.length > 0;
 }
 
 /** The API's outbox writer: the requester is the transaction's tenant (RLS `job_outbox_requester`). */
@@ -59,10 +64,10 @@ export function tenantOutbox(tx: TenantTx): JobSender {
 export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = {}): JobSender {
   const { availableAt } = options;
   return {
-    enqueue: (intent) =>
-      availableAt === undefined
-        ? insertIntent(tx, intent, null)
-        : insertDelayedIntent(tx, intent, availableAt),
+    enqueue: async (intent) => {
+      if (availableAt === undefined) await insertIntent(tx, intent, null);
+      else await enqueueDelayedWorkerIntent(tx, intent, availableAt);
+    },
   };
 }
 

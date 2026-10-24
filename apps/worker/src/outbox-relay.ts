@@ -12,6 +12,7 @@ import {
 import { isQueueName, safeParseJobPayload, sendSpecFor } from '@bantoozi/shared';
 
 import { isStageAvailable, type HandlerMap } from './handlers/index.js';
+import { staleRecoveryRevisionOf } from './stale-recovery.js';
 
 /**
  * The durable outbox relay (spec 02 §3.2, spec 03 §2.1). Each pass claims at most `batchSize` due
@@ -119,7 +120,11 @@ async function relayIntent(
     if (!isStageAvailable(options.handlers, queue)) {
       return await keep('retained', 'stage_unavailable', options.unavailableRetrySeconds ?? 60);
     }
-    const payload = parsed.data as object;
+    const revision = staleRecoveryRevisionOf(intent.dedupeKey);
+    const payload =
+      revision === undefined
+        ? (parsed.data as object)
+        : { ...parsed.data, _staleRecoveryRevision: revision };
     const spec = sendSpecFor(queue, parsed.data);
     const jobId =
       spec.kind === 'debounced'

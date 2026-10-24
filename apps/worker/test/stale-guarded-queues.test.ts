@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 const HANDLERS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/handlers');
 
-/** Guarded queues that reschedule themselves instead of relying on the queue's retry delay. */
-const EXEMPT = ['analysis.process'];
+/** Queues that reschedule themselves or skip stale work without throwing to the queue. */
+const EXEMPT = ['analysis.process', 'house.reconcile'];
 
 describe('stale-worker guarded queues', () => {
   it('lists every queue whose handler asks whether the worker is current', () => {
