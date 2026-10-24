@@ -209,6 +209,18 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     expect(await probeOf(h.owner)).toEqual(okAt(B));
   });
 
+  it('an older recorder preserves the newer impact timestamp and count', async () => {
+    await seedModel(h.owner, await user());
+    await recordModelProbe(h.db, okAt(B));
+    await seedModel(h.owner, await user());
+    await recordModelProbe(h.db, okAt(A, V114, V114));
+    expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 1 });
+    expect(await probeOf(h.owner, V114)).toEqual(okAt(A, V114, V114));
+    // Equal timestamps may refresh the count.
+    await recordModelProbe(h.db, okAt(B));
+    expect(await impactOf(h.owner)).toEqual({ at: B, activeModels: 2 });
+  });
+
   it('I9 concurrent recorders: no deadlock, at most 10 probe keys, one impact row', async () => {
     await seedModel(h.owner, await user());
     const base = Date.UTC(2031, 5, 1);
@@ -223,7 +235,7 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     const impact = await impactOf(h.owner);
     expect(impact?.activeModels).toBe(1);
     const stamps = ids.map((_, i) => new Date(base + i * 60_000).toISOString());
-    expect(stamps).toContain(impact?.at);
+    expect(impact?.at).toBe(stamps.at(-1));
   });
 });
 

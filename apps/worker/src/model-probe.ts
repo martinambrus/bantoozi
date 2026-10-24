@@ -360,10 +360,18 @@ export async function recordModelProbe(
         .slice(0, ENGINE_MODEL_PROBES_MAX);
       return Object.fromEntries(newest);
     });
-    // Counted after the probe row is locked: concurrent recorders queue on it, so the later committer carries the later count.
+    // Serialize with probe writers, and compare timestamps under the impact row's own lock.
     const activeModels = await countActiveUserModels(tx);
-    await updateSettingLocked<EngineModelImpact | null>(tx, 'engine.model_impact', null, () =>
-      EngineModelImpactSchema.parse({ at: checked.at, activeModels }),
+    await updateSettingLocked<EngineModelImpact | null>(
+      tx,
+      'engine.model_impact',
+      null,
+      (current) => {
+        const stored = EngineModelImpactSchema.safeParse(current);
+        if (stored.success && Date.parse(stored.data.at) > Date.parse(checked.at))
+          return stored.data;
+        return EngineModelImpactSchema.parse({ at: checked.at, activeModels });
+      },
     );
   });
   // A retried transaction reports the reset once, after it commits, without any stored payload.
