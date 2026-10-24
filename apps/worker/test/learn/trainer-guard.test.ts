@@ -1,4 +1,4 @@
-import { DEFAULT_RANKER_CONFIG } from '@bantoozi/ranker';
+import { DEFAULT_RANKER_CONFIG, eligibleSetSha, eligibilityOf } from '@bantoozi/ranker';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { CpuPool } from '../../src/cpu-pool.js';
@@ -58,6 +58,26 @@ function args(blocks: DriftBlock[], seed: string, families: Record<string, strin
 const BOTH = { [OLD]: FAMILY, [NEW]: FAMILY };
 
 describe('poolTrainer and the upgrade guard (JEV-4 T3)', () => {
+  it('strict training excludes stale rows across the CPU pool with the same skips and eligible-set hash', async () => {
+    const input = {
+      ...args([block(OLD, 400, 1, 0), block(NEW, 36, -1, 0.4)], 'strict-stale', {}),
+      strict: true,
+    };
+    const current = input.samples.filter((sample) => sample.features?.ratingSha === NEW);
+    for (const sample of current.slice(0, 6)) sample.features!.staleAnswers = true;
+    const [pooled, inline] = await Promise.all([
+      poolTrainer(pool)(input, 'production'),
+      inlineTrainer(input, 'production'),
+    ]);
+    expect(pooled.metrics.nExplicit).toBe(30);
+    expect(pooled.metrics.skipped).toEqual({ rating_sha_mismatch: 400, stale_answers: 6 });
+    expect(pooled.metrics.eligibleSetSha).toBe(
+      eligibleSetSha(current.slice(6), eligibilityOf(input)),
+    );
+    expect(pooled.metrics.upgrade).toBeNull();
+    expect(pooled).toEqual(inline);
+  }, 120_000);
+
   it('a drift that trips the guard: the pooled result equals the inline one, upgrade metrics and reason included', async () => {
     const input = args([block(OLD, 400, 1, 0), block(NEW, 30, -1, 0.4)], 'drift-a', BOTH);
     const [pooled, inline] = await Promise.all([
