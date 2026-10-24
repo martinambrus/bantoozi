@@ -37,7 +37,15 @@ const T = {
     show: 'Show as table',
     hide: 'Hide table',
     scrubber: 'Update',
-    headers: ['Date', 'Update', 'Ratings', 'Quality', 'Your interests alone', 'Switched on'],
+    headers: [
+      'Date',
+      'Update',
+      'Ratings',
+      'Quality',
+      'Your interests alone',
+      'Switched on',
+      'Reason',
+    ],
     yes: 'Yes',
     no: 'No',
     noData: 'No updates recorded yet. They appear after your first ratings are processed.',
@@ -60,7 +68,15 @@ const T = {
     show: 'Zobraziť ako tabuľku',
     hide: 'Skryť tabuľku',
     scrubber: 'Aktualizácia',
-    headers: ['Dátum', 'Aktualizácia', 'Hodnotenia', 'Kvalita', 'Samotné vaše záujmy', 'Zapnuté'],
+    headers: [
+      'Dátum',
+      'Aktualizácia',
+      'Hodnotenia',
+      'Kvalita',
+      'Samotné vaše záujmy',
+      'Zapnuté',
+      'Dôvod',
+    ],
     yes: 'Áno',
     no: 'Nie',
     noData:
@@ -376,6 +392,48 @@ describe('learning curve: the scrubber', () => {
 });
 
 describe('learning curve: the table', () => {
+  it.each(['en', 'sk'] as const)('shows rejection reasons in %s', async (language) => {
+    const { learning, t, user } = await open(
+      makeHistory([row(0, { kind: 'model', reason: 'low_auc' })]),
+      { language },
+    );
+    await user.click(await learning.findByRole('button', { name: t.show }));
+    expect(
+      learning.getByRole('columnheader', { name: language === 'en' ? 'Reason' : 'Dôvod' }),
+    ).toBeVisible();
+    expect(
+      learning.getByText(
+        language === 'en'
+          ? 'It did not predict your ratings well enough.'
+          : 'Vaše hodnotenia nepredpovedal dosť dobre.',
+      ),
+    ).toBeVisible();
+  });
+
+  it('shows false historical activation and translates multiple or unknown reasons', async () => {
+    const { learning, t, user } = await open(
+      makeHistory([
+        row(0, {
+          kind: 'model',
+          activated: false,
+          turnedOn: false,
+          reason: 'low_auc,worse_logloss',
+        }),
+        row(1, { kind: 'model', reason: 'future_reason' }),
+      ]),
+    );
+    await user.click(await learning.findByRole('button', { name: t.show }));
+    expect(
+      learning.getByText(
+        'It did not predict your ratings well enough. Its predictions were less reliable than those of your interests alone.',
+      ),
+    ).toBeVisible();
+    expect(learning.getByText('The result was not clear enough to switch it on.')).toBeVisible();
+    const rows = within(learning.getByRole('table')).getAllByRole('row');
+    expect(within(rows[2]!).getAllByRole('cell')[5]).toHaveTextContent('No');
+    expect(learning.queryByRole('list', { name: t.milestones })).toBeNull();
+  });
+
   it('is hidden until opened, newest first, and closes again', async () => {
     const { learning, t, user } = await open(mixed());
     const button = await learning.findByRole('button', { name: t.show });
@@ -407,6 +465,7 @@ describe('learning curve: the table', () => {
       pct(0.72, 'en'),
       '–',
       '–',
+      '–',
     ]);
     expect(cells(rows[1] as HTMLElement)).toEqual([
       day(at(5)),
@@ -415,12 +474,14 @@ describe('learning curve: the table', () => {
       pct(0.74, 'en'),
       pct(0.64, 'en'),
       t.no,
+      '–',
     ]);
     expect(cells(rows[2] as HTMLElement)).toEqual([
       day(at(4)),
       t.estimate,
       '44',
       pct(0.7, 'en'),
+      '–',
       '–',
       '–',
     ]);
@@ -432,6 +493,7 @@ describe('learning curve: the table', () => {
       pct(0.7, 'en'),
       pct(0.6, 'en'),
       t.yes,
+      '–',
     ]);
     expect(cells(rows[6] as HTMLElement)[0]).toBe(day(at(0)));
 
@@ -508,6 +570,7 @@ describe('learning curve: Slovak', () => {
       pct(0.74, 'sk'),
       pct(0.64, 'sk'),
       t.no,
+      '–',
     ]);
     const second = within(body[1] as HTMLElement)
       .getAllByRole('cell')

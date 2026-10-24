@@ -1,20 +1,17 @@
 import { hasAgreement, type Subscription } from '@bantoozi/shared';
-import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { Fragment, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { invalidateCoalesced } from '../../api/coalesced-invalidate.js';
 import { IconButton } from '../../components/icon-button.js';
 import { InfoIcon } from '../../components/icons.js';
 import { Tooltip } from '../../components/tooltip.js';
-import { useAccountId, useMe } from '../../session/context.js';
+import { useMe } from '../../session/context.js';
 import { ReadyForAutomatic } from '../feeds/ready-for-automatic.js';
-import { useSettledActions } from '../reader/actions/provider.js';
 import { chipState, type CardsSegment, type EstimateSegment } from './chip-state.js';
 import { LearningPaused } from './learning-paused.js';
-import { learningKey, useLearning } from './use-learning.js';
-import { learningEstimatesKey, useLearningEstimates } from './use-learning-estimates.js';
+import { useLearning } from './use-learning.js';
+import { useLearningEstimates } from './use-learning-estimates.js';
 
 const CHIP = 'rounded border border-slate-300 px-2.5 py-1.5 text-sm dark:border-slate-600';
 const TEXT = 'text-slate-700 dark:text-slate-200';
@@ -65,21 +62,10 @@ export function FeedLearningChip({ subscription }: { subscription: Subscription 
   const { t, i18n } = useTranslation('learning');
   const { t: tFeeds } = useTranslation('feeds');
   const me = useMe();
-  const queryClient = useQueryClient();
-  const accountId = useAccountId();
   const shown = subscription.inferenceMode !== 'active';
   const training = subscription.inferenceMode === 'training';
   const learning = useLearning(training);
   const estimates = useLearningEstimates(subscription.inferenceMode === 'off');
-  useSettledActions((handle) => {
-    if (handle.action.type !== 'rate' || !shown) return;
-    // The sidebar asks the same question for a feed in training in the same turn: one refetch is
-    // enough for both, so this one waits for the turn to end and only asks if nobody has.
-    queueMicrotask(() => {
-      const key = training ? learningKey(accountId) : learningEstimatesKey(accountId);
-      if (queryClient.isFetching({ queryKey: key }) === 0) invalidateCoalesced(queryClient, key);
-    });
-  });
 
   const status = training ? learning.data : estimates.data;
   const feedId = subscription.feed.id;

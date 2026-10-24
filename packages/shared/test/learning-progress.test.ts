@@ -45,6 +45,7 @@ const item = {
   activated: true,
   turnedOn: false,
   engineModel: 'jev-1',
+  reason: null,
 };
 
 describe('LearningStatusSchema per-feed estimate', () => {
@@ -193,6 +194,19 @@ describe('LearningHistoryItemSchema', () => {
     expect(() => LearningHistoryItemSchema.parse({ ...item, kind: 'other' })).toThrow();
     expect(() => LearningHistoryItemSchema.parse({ ...item, at: 'yesterday' })).toThrow();
     expect(() => LearningHistoryItemSchema.parse({ ...item, n: -1 })).toThrow();
+  });
+
+  it('keeps rejection reasons and requires boolean activation for older readers', () => {
+    expect(
+      LearningHistoryItemSchema.parse({
+        ...item,
+        activated: false,
+        turnedOn: false,
+        reason: 'low_auc,worse_logloss',
+      }),
+    ).toMatchObject({ activated: false, turnedOn: false, reason: 'low_auc,worse_logloss' });
+    expect(() => LearningHistoryItemSchema.parse({ ...item, activated: null })).toThrow();
+    expect(() => LearningHistoryItemSchema.parse({ ...item, turnedOn: null })).toThrow();
   });
 
   it('requires every field', () => {

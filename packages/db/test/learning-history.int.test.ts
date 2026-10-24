@@ -87,6 +87,7 @@ describe('appendLearningHistory', () => {
       activated: true,
       turnedOn: true,
       engineModel: 'jev-1.14.0',
+      reason: 'low_auc,worse_logloss',
       at,
     });
     const loaded = await loadLearningHistory(ctx.worker, s.userId);
@@ -100,6 +101,7 @@ describe('appendLearningHistory', () => {
         activated: true,
         turnedOn: true,
         engineModel: 'jev-1.14.0',
+        reason: 'low_auc,worse_logloss',
       },
     ]);
     expect(loaded.truncated).toEqual({ model: false, estimate: false });
@@ -119,6 +121,7 @@ describe('appendLearningHistory', () => {
       activated: false,
       turnedOn: false,
       engineModel: null,
+      reason: null,
     });
     // The database now() of the transaction, within a generous clock-skew window of this process.
     expect(row!.at.getTime()).toBeGreaterThanOrEqual(before - 5000);

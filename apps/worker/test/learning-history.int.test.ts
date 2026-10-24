@@ -137,6 +137,11 @@ describe('user.learn history rows', () => {
     await learnWith(rejecting, userId);
 
     const models = await lw.models(userId);
+    const rejection = await h.owner.query(
+      'SELECT reason FROM user_learning_history WHERE user_id = $1',
+      [userId],
+    );
+    expect(rejection.rows).toEqual([{ reason: 'low_auc' }]);
     expect(models).toHaveLength(1);
     expect(models[0]!.active).toBe(false);
     expect(models[0]!.metrics['status']).toBe('rejected');

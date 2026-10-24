@@ -3199,7 +3199,7 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   the newest 200 per user AND kind (estimate runs follow every rating burst and would evict the model rows within hours);
   extra columns `turned_on` (estimates: no usable model before; model: activated with none active before) and
   `engine_model` (the Jev model of a learn run), so milestones are recorded when they happen rather than guessed from
-  the oldest retained row. Not backfilled: existing accounts start with an empty curve.
+  the oldest retained row. Not backfilled: existing accounts start with an empty curve (superseded by D-325).
 - D-310: 2026-10-24 (PRG-1, PRG-3) — Estimate provenance. The stored estimate model's metrics gain `ratedThrough` (newest
   rating it trained on) and `fromRatings` (a previous model of the same spec and stored trainer options exists and this
   one trained on later ratings). False for the first model, a spec or trainer-option change (the D-301 seed change), window
@@ -3305,3 +3305,15 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   that meets an identical undelivered, unleased one keeps the EARLIEST `available_at` (`enqueueDelayedWorkerIntent`,
   worker role only); no caller relies on the later time, and D-319's hop delays use distinct keys. The admin model editor
   hides an alias resolution checked before the setting was saved.
+- D-325: 2026-10-24 (FNF-VL-14, task #37; amends D-309, D-311, D-314) — Learning history for existing accounts and
+  rejection reasons. Migration 0037 adds nullable `user_learning_history.reason` (the comma-separated activation
+  rejection codes `user.learn` now writes for a rejected attempt) and backfills existing accounts: only the fitted,
+  non-superseded personal-model versions (the runs the live writer records) and the stored estimate versions, newest
+  200 per user and kind, with ties ordered by version. Rows a PRG worker already wrote are kept and matched by user, kind,
+  count and AUC within the run's training interval, so no duplicate is inserted; a reason is restored only when exactly
+  one run matches. `activated` and `turned_on` stay NOT NULL so an older release's strict DTO keeps working:
+  provenance that can be derived (the version's activation status, a first activation after only rejected versions,
+  the first estimate model or a spec change) is recovered, anything else is false; missing AUCs and Jev ids stay NULL.
+  Estimates are never `activated`, as in the live writer. The web table shows the reason through the existing
+  `learning.reasons` dictionary; the shared reader action handler refreshes the learning queries after each rating
+  and prompt answer; classification controls keep focus while saving (`aria-disabled`) and ignore a repeated choice.

@@ -9,6 +9,7 @@ import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
+import { Spinner } from '../../components/spinner.js';
 import { formatDate } from '../../i18n/dates.js';
 import { useAccountId, useMe } from '../../session/context.js';
 import { learningKey } from '../learning/use-learning.js';
@@ -112,10 +113,16 @@ export function ClassificationControls({ subscription }: { subscription: Subscri
           <Button
             key={choice.mode}
             variant="secondary"
-            loading={change.isPending && change.variables.body.mode === choice.mode}
-            disabled={change.isPending}
+            aria-disabled={change.isPending || undefined}
+            aria-busy={
+              (change.isPending && change.variables.body.mode === choice.mode) || undefined
+            }
+            className="aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
             onClick={() => switchTo(choice.mode)}
           >
+            {change.isPending && change.variables.body.mode === choice.mode ? (
+              <Spinner className="size-4" />
+            ) : null}
             {t(`classification.${choice.label}`)}
           </Button>
         ))}

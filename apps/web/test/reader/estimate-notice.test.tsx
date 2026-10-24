@@ -1,10 +1,16 @@
 import type { EstimatesStatus, LearningStatus } from '@bantoozi/shared';
+import { onlineManager } from '@tanstack/react-query';
 import { act, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { json } from '../api/fake-fetch.js';
-import { actionResponse, findToast, restoreVisibility, setVisibility } from '../article/harness.js';
-import { cardResult, makeCard } from '../interests/support.js';
+import { useReaderActions } from '../../src/features/reader/actions/provider.js';
+import { useEstimateNoticeState } from '../../src/features/learning/use-estimate-notice.js';
+import {
+  actionResponse,
+  renderReader,
+  restoreVisibility,
+  setVisibility,
+} from '../article/harness.js';
 import {
   LEARNING_ESTIMATES,
   learningEstimatesRoute,
@@ -279,32 +285,41 @@ describe('what arms the notice', () => {
     expect(await screen.findByText(SENTENCE_L1)).toBeVisible();
   });
 
-  it('a prompt answer counts as a rating: it extends the window past 60 s after the like', async () => {
-    const card = makeCard({ id: '31', title: 'EV battery tech', strength: 'love' });
-    const fork = makeCard({ id: '35', title: 'EV battery tech', strength: 'love', origin: 'fork' });
-    const { app } = await openReader({
+  it('a prompt answer alone arms polling and shows the notice when its run lands', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    function Host() {
+      const actions = useReaderActions();
+      const { notice } = useEstimateNoticeState();
+      return (
+        <>
+          <button onClick={() => actions.dispatch(item(1), { type: 'promptAnswer', liked: true })}>
+            Answer prompt
+          </button>
+          {notice === null ? null : (
+            <p>
+              Prompt updated: {notice.up} up, {notice.down} down
+            </p>
+          )}
+        </>
+      );
+    }
+    const app = renderReader(<Host />, {
       routes: {
-        'POST /articles/:id/rating': (_request, params) =>
-          actionResponse(acked(item(params['id'] ?? ''), { rating: 1 }), {
-            exampleSuggestion: { cardId: '31', side: 'yes' },
-            pattern: null,
-          }),
-        'GET /cards': () => json(200, [card]),
-        'POST /cards/:id/examples': () => json(200, cardResult(fork, { from: '31', to: '35' })),
+        [LEARNING_ESTIMATES]: learningEstimatesRoute(() => status),
+        'POST /articles/:id/prompt-answer': () => actionResponse(acked(item(1), { rating: 1 })),
       },
     });
-    await app.user.click(likeOf('Article 1'));
-    const toast = await findToast('Marked as liked');
-    await advance(50_000);
-
-    await app.user.click(
-      within(toast).getByRole('button', { name: 'Teach EV battery tech: this is it' }),
-    );
+    await advance(10_000);
+    expect(app.calls('GET', '/me/learning/estimates')).toHaveLength(0);
+    await app.user.click(screen.getByRole('button', { name: 'Answer prompt' }));
     await advance(5_000);
-    const asked = polls(app);
-    await advance(40_000);
-
-    expect(polls(app)).toBeGreaterThan(asked);
+    expect(app.calls('POST', '/articles/1/prompt-answer')).toHaveLength(1);
+    expect(app.calls('GET', '/me/learning/estimates').length).toBeGreaterThan(0);
+    withRun(null);
+    await advance(5_000);
+    withRun(L1);
+    await advance(5_000);
+    expect(await screen.findByText('Prompt updated: 12 up, 30 down')).toBeVisible();
   });
 });
 
@@ -370,6 +385,8 @@ describe('polling bounds', () => {
     act(() => {
       window.dispatchEvent(new Event('offline'));
     });
+    // Keep TanStack online: the hook itself must explicitly stop its interval.
+    onlineManager.setOnline(true);
     const settled = polls(app);
 
     await advance(40_000);
@@ -379,6 +396,7 @@ describe('polling bounds', () => {
     act(() => {
       window.dispatchEvent(new Event('online'));
     });
+    await nextPoll(app);
   });
 });
 

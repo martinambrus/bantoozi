@@ -38,6 +38,8 @@ import { CardEditor } from '../../interests/card-editor.js';
 import { articleKeys } from '../../article/query-keys.js';
 import { subscriptionsKey } from '../../feeds/subscriptions.js';
 import { unreadKeys } from '../queries.js';
+import { learningKey } from '../../learning/use-learning.js';
+import { learningEstimatesKey } from '../../learning/use-learning-estimates.js';
 import { createReasonBar, type ReasonBar } from '../../article/reason-bar-store.js';
 import { createReaderActions } from './store.js';
 import { createReaderTransport } from './transport.js';
@@ -313,6 +315,10 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
   function showOutcome(handle: ActionHandle, result: ActionResult): void {
     switch (result.status) {
       case 'done':
+        if (handle.action.type === 'rate' || handle.action.type === 'promptAnswer') {
+          invalidateCoalesced(queryClient, learningKey(accountId));
+          invalidateCoalesced(queryClient, learningEstimatesKey(accountId));
+        }
         for (const queryKey of unreadKeys(accountId)) invalidateCoalesced(queryClient, queryKey);
         offerUndo(handle, result.exampleSuggestion, result.pattern, result.item);
         return;
