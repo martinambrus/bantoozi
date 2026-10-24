@@ -1,3 +1,4 @@
+import { mergeRankerConfig, parseSetting } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 
 import {
@@ -76,3 +77,14 @@ it.each([{ model: { minExplicit: 60 } }, { estimate: { minRatings: 10, minEachCl
     expect(await estimates()).toEqual([]);
   },
 );
+
+it('repairs a schema-valid stored partial that fails merged validation and wakes estimates', async () => {
+  const broken = { lanes: { forYou: 0.1, maybe: 0.9 } };
+  expect(parseSetting('ranker.thresholds', broken)).toEqual(broken);
+  expect(() => mergeRankerConfig(broken)).toThrow();
+  await h.owner.query(`INSERT INTO settings (key, value) VALUES ('ranker.thresholds', $1::jsonb)`, [
+    JSON.stringify(broken),
+  ]);
+  await patch({});
+  expect(await estimates()).toEqual([admin.id, reader.id].sort());
+});

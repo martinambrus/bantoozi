@@ -188,3 +188,23 @@ export function mergeRankerConfig(
 function stripUndefined(o: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 }
+
+/** Whether an estimate's effective training settings changed; an invalid prior config needs repair. */
+export function estimateSettingsChanged(
+  previous: RankerThresholds,
+  next: RankerThresholds,
+): boolean {
+  const after = mergeRankerConfig(next);
+  let before: RankerConfig;
+  try {
+    before = mergeRankerConfig(previous);
+  } catch {
+    // A schema-valid stored partial can fail merged validation. Never block its repair.
+    return true;
+  }
+  return (
+    before.estimate.minRatings !== after.estimate.minRatings ||
+    before.estimate.minEachClass !== after.estimate.minEachClass ||
+    before.model.historyDays !== after.model.historyDays
+  );
+}

@@ -17,6 +17,7 @@ import {
   RUNTIME_SETTING_KEYS,
   canonicalJson,
   enqueueEstimate,
+  estimateSettingsChanged,
   enqueueLearn,
   enqueueReenrich,
   enqueueRematch,
@@ -543,12 +544,7 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
               // eligible samples changed (spec 06 §8.4).
               for (const userId of users) await enqueueLearn(outbox, { userId });
             }
-            const prevConfig = mergeRankerConfig(prev);
-            const nextConfig = mergeRankerConfig(upd);
-            if (
-              !same(prevConfig.estimate, nextConfig.estimate) ||
-              prevConfig.model.historyDays !== nextConfig.model.historyDays
-            ) {
+            if (estimateSettingsChanged(prev, upd)) {
               for (const userId of users) await enqueueEstimate(outbox, { userId });
             }
           }
