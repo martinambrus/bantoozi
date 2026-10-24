@@ -2,8 +2,24 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { sql } from 'drizzle-orm';
+import { QUEUE_NAMES } from '@bantoozi/shared';
 
 import type { Executor } from './client.js';
+import { PG_BOSS_CRON_QUEUE } from './migrate/migrate.js';
+
+export const REQUIRED_PG_BOSS_QUEUES: readonly string[] = [...QUEUE_NAMES, PG_BOSS_CRON_QUEUE];
+
+/**
+ * Required queues absent from pg-boss, including its internal cron queue. The API role cannot read
+ * `pgboss.queue`; the existing aggregate function includes empty queues and grants it EXECUTE only.
+ */
+export async function missingReadinessQueues(db: Executor): Promise<string[]> {
+  const result = await db.execute<{ queue: string }>(
+    sql`SELECT queue FROM public.queue_state_counts()`,
+  );
+  const present = new Set(result.rows.map((row) => row.queue));
+  return REQUIRED_PG_BOSS_QUEUES.filter((name) => !present.has(name));
+}
 
 /** Bundled migrations: the `when` stamps Drizzle records as `created_at` (spec 01 §4 readiness). */
 export interface MigrationJournal {

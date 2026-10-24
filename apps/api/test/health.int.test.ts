@@ -1,6 +1,7 @@
 import {
   MIGRATIONS_FOLDER,
   PG_BOSS_VERSION,
+  PG_BOSS_CRON_QUEUE,
   createDatabase,
   createPool,
   runMigrations,
@@ -43,6 +44,47 @@ afterAll(async () => {
 });
 
 describe('health (spec 08 §10)', () => {
+  it.each(['user.estimate', PG_BOSS_CRON_QUEUE])(
+    'is 503 naming missing queue %s with current migrations, then recovers after migrate',
+    async (queue) => {
+      await expect(appPool.query('SELECT name FROM pgboss.queue')).rejects.toThrow(
+        /permission denied/u,
+      );
+      await ownerPool.query('DELETE FROM pgboss.job WHERE name = $1', [queue]);
+      await ownerPool.query('SELECT pgboss.delete_queue($1)', [queue]);
+      try {
+        const res = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
+        expect(res.statusCode).toBe(503);
+        expect(res.json()).toMatchObject({
+          status: 'not_ready',
+          checks: { database: 'ok', migrations: 'ok', queues: 'pending' },
+          missingQueues: [queue],
+        });
+        expect(res.headers['cache-control']).toBe('no-store');
+      } finally {
+        await runMigrations({ databaseUrl: testDb.urls.owner });
+      }
+      const healed = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
+      expect(healed.statusCode).toBe(200);
+      expect(healed.json()).toMatchObject({ checks: { queues: 'ok' }, missingQueues: [] });
+    },
+  );
+
+  it('fails closed without leaking errors when the queue catalog cannot be read', async () => {
+    await ownerPool.query('REVOKE EXECUTE ON FUNCTION queue_state_counts() FROM bantoozi_app');
+    try {
+      const res = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({
+        checks: { database: 'ok', migrations: 'ok', queues: 'unreachable' },
+        missingQueues: [],
+      });
+      expect(res.body).not.toContain('permission denied');
+    } finally {
+      await ownerPool.query('GRANT EXECUTE ON FUNCTION queue_state_counts() TO bantoozi_app');
+    }
+  });
+
   it('GET /api/v1/healthz is 200 while the process runs', async () => {
     const res = await server.inject({ method: 'GET', url: '/api/v1/healthz' });
     expect(res.statusCode).toBe(200);
@@ -53,7 +95,11 @@ describe('health (spec 08 §10)', () => {
   it('GET /api/v1/readyz is 200 when the newest applied migration is the newest bundled one', async () => {
     const res = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ready', checks: { database: 'ok', migrations: 'ok' } });
+    expect(res.json()).toEqual({
+      status: 'ready',
+      checks: { database: 'ok', migrations: 'ok', queues: 'ok' },
+      missingQueues: [],
+    });
   });
 
   it('is 503 while a bundled migration is not applied', async () => {
@@ -68,7 +114,8 @@ describe('health (spec 08 §10)', () => {
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({
         status: 'not_ready',
-        checks: { database: 'ok', migrations: 'pending' },
+        checks: { database: 'ok', migrations: 'pending', queues: 'ok' },
+        missingQueues: [],
       });
     } finally {
       await ownerPool.query(
@@ -89,7 +136,11 @@ describe('health (spec 08 §10)', () => {
     try {
       const res = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ status: 'ready', checks: { database: 'ok', migrations: 'ok' } });
+      expect(res.json()).toEqual({
+        status: 'ready',
+        checks: { database: 'ok', migrations: 'ok', queues: 'ok' },
+        missingQueues: [],
+      });
     } finally {
       await ownerPool.query('DELETE FROM drizzle.__drizzle_migrations WHERE id = $1', [
         inserted.rows[0]?.id,
@@ -114,7 +165,8 @@ describe('health (spec 08 §10)', () => {
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({
         status: 'not_ready',
-        checks: { database: 'unreachable', migrations: 'pending' },
+        checks: { database: 'unreachable', migrations: 'pending', queues: 'pending' },
+        missingQueues: [],
       });
       expect(res.body).not.toContain('bantoozi_app');
     } finally {

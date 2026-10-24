@@ -1,4 +1,9 @@
-import { MIGRATIONS_FOLDER, PG_BOSS_VERSION, runMigrations } from '@bantoozi/db';
+import {
+  MIGRATIONS_FOLDER,
+  PG_BOSS_CRON_QUEUE,
+  PG_BOSS_VERSION,
+  runMigrations,
+} from '@bantoozi/db';
 import { ProviderKeyring, encryptProviderSecret } from '@bantoozi/shared/server/credential-crypto';
 import {
   createArticle,
@@ -106,6 +111,7 @@ describe('restore verification on a healthy restore', () => {
     expect(lines.join('\n')).toMatch(/CHECK foreign_keys=ok/u);
     expect(lines.join('\n')).toMatch(/CHECK rls=ok/u);
     expect(lines.join('\n')).toMatch(/CHECK roles=ok/u);
+    expect(lines.join('\n')).toMatch(/CHECK queues=ok/u);
     expect(lines).toContain(
       `cold bookmark snapshot verified match content_sha256=${snapshotSha} refetch=0`,
     );
@@ -124,6 +130,18 @@ describe('restore verification on a healthy restore', () => {
 });
 
 describe('restore verification on a damaged restore', () => {
+  it.each(['user.estimate', PG_BOSS_CRON_QUEUE])('fails naming missing queue %s', async (queue) => {
+    await pool.query('DELETE FROM pgboss.job WHERE name = $1', [queue]);
+    await pool.query('SELECT pgboss.delete_queue($1)', [queue]);
+    try {
+      await expect(
+        verifyRestore(pool, { keys: { keyId: KEY_ID, keysJson: KEYS } }),
+      ).rejects.toThrow(new RegExp(`check queues failed:.*${queue}.*migrate`, 'u'));
+    } finally {
+      await runMigrations({ databaseUrl: testDb.urls.owner });
+    }
+  });
+
   it('fails the migration count when it differs from the manifest', async () => {
     await expect(checkSchema(pool, 1)).rejects.toThrow(/migrations/u);
   });

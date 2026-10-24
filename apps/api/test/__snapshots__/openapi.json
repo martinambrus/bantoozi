@@ -53,7 +53,7 @@
     },
     "/api/v1/readyz": {
       "get": {
-        "summary": "Readiness: database reachable and migrations current",
+        "summary": "Readiness: database reachable, migrations current and queues present",
         "tags": [
           "health"
         ],
@@ -90,18 +90,34 @@
                             "pending",
                             "unreachable"
                           ]
+                        },
+                        "queues": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "pending",
+                            "unreachable"
+                          ]
                         }
                       },
                       "required": [
                         "database",
-                        "migrations"
+                        "migrations",
+                        "queues"
                       ],
                       "additionalProperties": false
+                    },
+                    "missingQueues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "status",
-                    "checks"
+                    "checks",
+                    "missingQueues"
                   ],
                   "additionalProperties": false
                 }
@@ -140,18 +156,34 @@
                             "pending",
                             "unreachable"
                           ]
+                        },
+                        "queues": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "pending",
+                            "unreachable"
+                          ]
                         }
                       },
                       "required": [
                         "database",
-                        "migrations"
+                        "migrations",
+                        "queues"
                       ],
                       "additionalProperties": false
+                    },
+                    "missingQueues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "status",
-                    "checks"
+                    "checks",
+                    "missingQueues"
                   ],
                   "additionalProperties": false
                 }

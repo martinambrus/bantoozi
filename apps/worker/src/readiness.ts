@@ -1,5 +1,5 @@
-import { PG_BOSS_CRON_QUEUE, listPgBossQueueNames, type Executor } from '@bantoozi/db';
-import { QUEUE_NAMES, type QueueName } from '@bantoozi/shared';
+import { REQUIRED_PG_BOSS_QUEUES, listPgBossQueueNames, type Executor } from '@bantoozi/db';
+import type { QueueName } from '@bantoozi/shared';
 import type { NodeEnv } from '@bantoozi/shared/server';
 
 import { unavailableQueues, type HandlerMap } from './handlers/index.js';
@@ -30,7 +30,7 @@ const NAMED_AT_MOST = 10;
  * pg-boss's internal cron queue (migration 0017, D-142), without which `boss.schedule` succeeds and
  * no cron ever fires.
  */
-export const REQUIRED_QUEUES: readonly string[] = [...QUEUE_NAMES, PG_BOSS_CRON_QUEUE];
+export const REQUIRED_QUEUES = REQUIRED_PG_BOSS_QUEUES;
 
 /** The required queues that pg-boss does not hold, in registry order. */
 export async function missingRegistryQueues(
