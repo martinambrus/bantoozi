@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   CALL_KIND_PROFILES,
+  kindMatchesAuthorization,
   PLATFORM_USER_ID,
   type BudgetSnapshot,
   type CallKind,
@@ -100,7 +101,7 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
 
     async reserveSpend(input) {
       if (!store.authorize(input.authorization)) return null;
-      if ((input.kind === 'eval') !== (input.authorization.type === 'eval')) return null;
+      if (!kindMatchesAuthorization(input.kind, input.authorization.type)) return null;
       if (input.callCap !== undefined) {
         const group = capKinds(input.kind);
         const used = reservations.filter(
