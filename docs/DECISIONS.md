@@ -3378,3 +3378,9 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   (no production caller) is gone, probes are recorded with their own kind through `EngineAdapterRequest`, router and
   test exclusions derive from the table and are readonly. `engine_reservations.kind` still has no CHECK (needs a
   migration, task #46).
+- D-329: 2026-10-24 (FNF-VL-20, task #41; extends D-298 item 5 and D-321) — Eval tier-2 translation answers `cancelled`
+  when the credential lookup passes its 120 s abort deadline (not `no_key`); an earlier sent attempt's failure still
+  stands. The fake Ollama takes an optional `models` table (requested → answering model); an unlisted model gets HTTP
+  404 `{"error":"model '<id>' not found"}`, the shape of Ollama's API error documentation (not a recorded live answer),
+  which the LLM fallback adapter maps to `model_unavailable:http_404`. A worker credential lookup that recovers to
+  "no row and no environment key" clears the warning dedupe, so the next failure of that provider warns again.

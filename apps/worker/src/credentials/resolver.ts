@@ -231,9 +231,9 @@ export function createWorkerCredentialResolver(
         }),
       );
       if (secret.state === 'missing') {
+        reported.delete(provider);
         const envKey = envKeys[provider];
         if (envKey === undefined) throw unavailable(provider, 'none');
-        reported.delete(provider);
         return send({ apiKey: envKey, source: 'env' });
       }
       if (!secret.enabled || secret.activeVersion === null) {

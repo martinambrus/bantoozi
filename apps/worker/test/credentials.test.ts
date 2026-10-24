@@ -307,6 +307,39 @@ describe('credential resolver cancellation', () => {
 });
 
 describe('credential warning recovery', () => {
+  it('warns again after a successful lookup recovers to no configured key', async () => {
+    const execute = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'));
+    const warn = vi.fn();
+    const resolver = createWorkerCredentialResolver({
+      db: { execute } as unknown as Database,
+      masterKeyId: undefined,
+      masterKeys: undefined,
+      envKeys: {},
+      logger: { warn },
+    });
+    const send = vi.fn();
+    const use = () => resolver.useActive('typesafe', new AbortController().signal, send);
+    await expect(use()).rejects.toMatchObject({ reason: 'lookup_failed' });
+    await expect(use()).rejects.toMatchObject({ reason: 'lookup_failed' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    await expect(use()).rejects.toMatchObject({ reason: 'none' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    await expect(use()).rejects.toMatchObject({ reason: 'lookup_failed' });
+    await expect(use()).rejects.toMatchObject({ reason: 'lookup_failed' });
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[1]).toEqual([
+      { provider: 'typesafe', reason: 'lookup_failed', sqlState: null },
+      'provider credential unavailable',
+    ]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('reports a fresh failure after recovering through the environment key', async () => {
     const execute = vi
       .fn()

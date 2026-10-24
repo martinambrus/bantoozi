@@ -58,6 +58,11 @@ export interface FakeOllamaOptions {
   recordRequests?: boolean | undefined;
   /** When set, a request without `Authorization: Bearer <apiKey>` gets 401. */
   apiKey?: string | undefined;
+  /**
+   * Requested model id to answering model id. Unset: accept every model. Set: an unlisted model
+   * gets 404 with Ollama's string `error`; `statusOverride` and `status` mode take precedence.
+   */
+  models?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface FakeOllamaServer {
@@ -124,7 +129,7 @@ const tokensOf = (text: string): number => Math.ceil(text.length / CHARS_PER_TOK
 export function fakeOllamaResponse(
   body: unknown,
   options: { mode?: Exclude<FakeOllamaMode, 'status'>; reply?: (body: unknown) => string } = {},
-): unknown {
+) {
   const mode = options.mode ?? 'ok';
   const content = options.reply === undefined ? fakeOllamaContent(body) : options.reply(body);
   const promptTokens = messages(body).reduce((total, message) => {
@@ -176,9 +181,22 @@ export async function startFakeOllama(options: FakeOllamaOptions = {}): Promise<
       };
     }
     const { reply } = current;
+    const requested = isRecord(body) ? own(body, 'model') : undefined;
+    let answering: string | undefined;
+    if (current.models !== undefined && typeof requested === 'string') {
+      answering = Object.hasOwn(current.models, requested) ? current.models[requested] : undefined;
+      if (answering === undefined) {
+        // Ollama API error documentation: https://docs.ollama.com/api/errors
+        // 404 Not Found, JSON {"error":"model '…' not found"} (no nested error code).
+        return { status: 404, body: { error: `model '${requested}' not found` } };
+      }
+    }
     return {
       status: 200,
-      body: fakeOllamaResponse(body, { mode, ...(reply === undefined ? {} : { reply }) }),
+      body: {
+        ...fakeOllamaResponse(body, { mode, ...(reply === undefined ? {} : { reply }) }),
+        ...(answering === undefined ? {} : { model: answering }),
+      },
     };
   };
 

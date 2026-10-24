@@ -780,7 +780,8 @@ async function translateTier2(
       );
     } catch (error) {
       if (isAppError(error) && error.code === 'ENGINE_UNAVAILABLE') {
-        return last === undefined ? { ok: false, reason: 'no_key' } : failedTier2(last);
+        const reason = error.details?.['reason'] === 'cancelled' ? 'cancelled' : 'no_key';
+        return last === undefined ? { ok: false, reason } : failedTier2(last);
       }
       throw error;
     }

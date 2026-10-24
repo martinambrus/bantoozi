@@ -163,6 +163,7 @@ describe('fake Ollama server', () => {
       latencyMs: 0,
       recordRequests: true,
       apiKey: undefined,
+      models: undefined,
     });
   });
 
@@ -218,6 +219,36 @@ describe('fake Ollama server', () => {
     const limited = await post(body);
     expect(limited.status).toBe(429);
     expect(limited.headers.get('retry-after')).toBe('4');
+  });
+
+  it('opts into a models table with the documented Ollama unknown-model response', async () => {
+    server.setOptions({ models: { 'glm-5.3-flash': 'glm-5.3-flash:resolved' } });
+    const missing = await post(chat(DECISION, { model: 'missing-model' }));
+    expect(missing.status).toBe(404);
+    expect(missing.json).toEqual({ error: "model 'missing-model' not found" });
+    expect(missing.headers.get('content-type')).toContain('application/json');
+    expect(await post(chat(DECISION))).toMatchObject({
+      status: 200,
+      json: { model: 'glm-5.3-flash:resolved' },
+    });
+    expect(await post(chat(DECISION, { model: 'toString' }))).toMatchObject({ status: 404 });
+    server.setOptions({ models: {} });
+    expect((await post(chat(DECISION))).status).toBe(404);
+    server.setOptions({ models: undefined });
+    expect(await post(chat(DECISION, { model: 'missing-model' }))).toMatchObject({
+      status: 200,
+      json: { model: 'missing-model' },
+    });
+  });
+
+  it('keeps authentication and explicit overrides ahead of the models table', async () => {
+    server.setOptions({ models: {}, apiKey: 'fixture-key' });
+    expect((await post(chat(DECISION))).status).toBe(401);
+    server.setOptions({
+      apiKey: undefined,
+      statusOverride: () => ({ status: 503, body: { error: 'fixture outage' } }),
+    });
+    expect((await post(chat(DECISION))).status).toBe(503);
   });
 
   it('uses reply in every 200 mode', async () => {
