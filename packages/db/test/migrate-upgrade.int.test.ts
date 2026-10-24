@@ -1,8 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import { cp, mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { encryptProviderSecret, ProviderKeyring } from '@bantoozi/shared/server/credential-crypto';
 import {
   createCard,
   createFeed,
@@ -18,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrationStatus, readMigrationJournal } from '../src/readiness.js';
 import { createDatabase } from '../src/client.js';
 import { MIGRATIONS_FOLDER, PG_BOSS_VERSION, runMigrations } from '../src/migrate/migrate.js';
-import { setupDbTest, type DbTestContext } from './support/test-db.js';
+import { asTenant, setupDbTest, type DbTestContext } from './support/test-db.js';
 
 /**
  * Launch checklist item 12 (spec 11 §9): the upgrade path. A database at the previous release (the migrations before retention and editable plans) holds representative data written through the real schema;
@@ -143,6 +145,117 @@ afterAll(async () => {
 });
 
 describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
+  it('upgrades from 0038, preserving activation identity, grants and unknown breaker fields (0039)', async () => {
+    const activationFolder = path.join(previousFolder, 'before-activation');
+    await mkdir(path.join(activationFolder, 'meta'), { recursive: true });
+    const kept = journal.entries.slice(
+      0,
+      journal.entries.findIndex((entry) => entry.tag.startsWith('0039_')),
+    );
+    expect(kept).toHaveLength(39);
+    expect(kept.at(-1)?.tag).toBe('0038_engine_kind_checks');
+    for (const entry of kept)
+      await cp(
+        path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
+        path.join(activationFolder, `${entry.tag}.sql`),
+      );
+    await writeFile(
+      path.join(activationFolder, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: kept }),
+    );
+    const old = await setupTestDatabase({
+      pkg: 'dbactup',
+      migrationsDir: activationFolder,
+      pgBossVersion: PG_BOSS_VERSION,
+      migrate: async (url) => {
+        await runMigrations({ databaseUrl: url, migrationsFolder: activationFolder });
+      },
+    });
+    const pool = new pg.Pool({ connectionString: old.urls.owner, max: 1 });
+    const appPool = new pg.Pool({ connectionString: old.urls.app, max: 1 });
+    try {
+      const admin = await createUser(pool, { role: 'admin' });
+      const ring = ProviderKeyring.parse(
+        'upgrade-key',
+        JSON.stringify({ 'upgrade-key': randomBytes(32).toString('base64') }),
+      );
+      if (!ring.ok) throw new Error('invalid upgrade keyring');
+      const envelope = encryptProviderSecret({
+        keyring: ring.keyring,
+        provider: 'typesafe',
+        secretVersion: '1',
+        secret: 'upgrade-fixture-key',
+      });
+      await pool.query(
+        `INSERT INTO provider_credentials
+           (provider, revision, candidate_version, candidate_envelope, candidate_status, validated_at)
+         VALUES ('typesafe', 1, 1, $1, 'valid', now())`,
+        [JSON.stringify(envelope)],
+      );
+      const breakers = {
+        typesafe: {
+          state: 'auth',
+          reopenCount: 3,
+          openedAt: '2026-09-25T08:00:00.000Z',
+          failingSince: '2026-09-25T07:00:00.000Z',
+          openUntil: '2026-09-25T08:05:00.000Z',
+          probeToken: '11111111-1111-4111-8111-111111111111',
+          probeUntil: '2026-09-25T08:06:00.000Z',
+          futureField: { keep: [42, null] },
+        },
+        llm: { state: 'auth', reopenCount: 2, futureField: 'other engine' },
+        resetRequested: {},
+      };
+      await pool.query("INSERT INTO settings (key, value) VALUES ('engine.circuit', $1)", [
+        JSON.stringify(breakers),
+      ]);
+      const identity = () =>
+        pool.query(`SELECT oid, proowner, proacl::text, prosecdef, proconfig
+                      FROM pg_proc
+                     WHERE oid = 'admin_activate_provider_credential(text,bigint,bigint)'::regprocedure`);
+      const beforeIdentity = (await identity()).rows;
+      const beforeCatalog = await catalog(old.urls.owner);
+      expect(await runMigrations({ databaseUrl: old.urls.owner })).toMatchObject({
+        migrationsApplied: 1,
+        pgBoss: 'current',
+      });
+      expect((await identity()).rows).toEqual(beforeIdentity);
+      const upgraded = await catalog(old.urls.owner);
+      expect(upgraded).toEqual(await catalog(fresh.testDb.urls.owner));
+      expect(upgraded).toEqual({ ...beforeCatalog, functions: upgraded.functions });
+      const changedFunctions = upgraded.functions?.filter(
+        (definition, index) => definition !== beforeCatalog.functions?.[index],
+      );
+      expect(changedFunctions).toHaveLength(1);
+      expect(changedFunctions?.[0]).toMatch(/^admin_activate_provider_credential\(/);
+      const circuit = () => pool.query("SELECT value FROM settings WHERE key = 'engine.circuit'");
+      expect((await circuit()).rows).toEqual([{ value: breakers }]);
+      const result = await asTenant(appPool, admin.id, (client) =>
+        client.query("SELECT * FROM admin_activate_provider_credential('typesafe', 1, 1)"),
+      );
+      expect(result.rows).toEqual([{ revision: '2', active_version: '1' }]);
+      expect((await circuit()).rows).toEqual([
+        {
+          value: {
+            ...breakers,
+            typesafe: {
+              state: 'closed',
+              reopenCount: 0,
+              futureField: breakers.typesafe.futureField,
+            },
+          },
+        },
+      ]);
+      expect(await runMigrations({ databaseUrl: old.urls.owner })).toMatchObject({
+        migrationsApplied: 0,
+      });
+    } finally {
+      await appPool.end();
+      await pool.end();
+      await old.drop();
+    }
+  });
+
   it('keeps representative data intact and matches a fresh schema after the remaining migrations', async () => {
     const newest = journal.entries[journal.entries.length - 1]!;
     expect(journal.entries.length).toBeGreaterThan(1);

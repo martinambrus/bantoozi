@@ -10,12 +10,14 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { MIGRATIONS_FOLDER, PG_BOSS_VERSION, runMigrations } from '../../src/migrate/migrate.js';
 
 let folder: string;
+let remainingMigrationCount: number;
 beforeAll(async () => {
   folder = await mkdtemp(path.join(tmpdir(), 'bantoozi-kind-upgrade-'));
   const journal = JSON.parse(
     await readFile(path.join(MIGRATIONS_FOLDER, 'meta/_journal.json'), 'utf8'),
   ) as { entries: { idx: number; tag: string }[] };
   const kept = journal.entries.filter((entry) => entry.idx <= 37);
+  remainingMigrationCount = journal.entries.length - kept.length;
   await mkdir(path.join(folder, 'meta'));
   for (const entry of kept) {
     await cp(
@@ -80,7 +82,9 @@ it('upgrades 0037 with every current kind without changing history', async () =>
       engine_reservations: reservations.length,
       usage_daily: usage.length,
     });
-    expect((await runMigrations({ databaseUrl: ownerUrl })).migrationsApplied).toBe(1);
+    expect((await runMigrations({ databaseUrl: ownerUrl })).migrationsApplied).toBe(
+      remainingMigrationCount,
+    );
     expect(await rows('engine_reservations')).toEqual(reservations);
     expect(await rows('usage_daily')).toEqual(usage);
     const checks = await pool.query<{ conname: string; convalidated: boolean }>(`
@@ -140,7 +144,9 @@ it.each(['engine_reservations', 'usage_daily'])(
         (await pool.query(`SELECT kind FROM ${table} WHERE kind = 'unknown_kind'`)).rows,
       ).toEqual([{ kind: 'unknown_kind' }]);
       await pool.query(`DELETE FROM ${table} WHERE kind = 'unknown_kind'`);
-      expect((await runMigrations({ databaseUrl: ownerUrl })).migrationsApplied).toBe(1);
+      expect((await runMigrations({ databaseUrl: ownerUrl })).migrationsApplied).toBe(
+        remainingMigrationCount,
+      );
       expect((await runMigrations({ databaseUrl: ownerUrl })).migrationsApplied).toBe(0);
     });
   },

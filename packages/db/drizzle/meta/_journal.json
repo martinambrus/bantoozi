@@ -274,6 +274,13 @@
       "when": 1792568400009,
       "tag": "0038_engine_kind_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792568400010,
+      "tag": "0039_credential_activation_preserve_breaker_fields",
+      "breakpoints": true
     }
   ]
 }

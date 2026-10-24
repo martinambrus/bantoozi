@@ -628,6 +628,71 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
     expect(await sqlStateOf(activate(admin, 'typesafe', 2, 1))).toBe('BZ409');
   });
 
+  it.each(['typesafe', 'ollama'] as const)(
+    'closes %s auth breakers without dropping unknown fields (0039)',
+    async (provider) => {
+      const breaker = provider === 'typesafe' ? 'typesafe' : 'llm';
+      const auth = {
+        state: 'auth',
+        reopenCount: 4,
+        openedAt: '2026-09-25T08:00:00.000Z',
+        failingSince: '2026-09-25T07:00:00.000Z',
+        openUntil: '2026-09-25T08:05:00.000Z',
+        probeToken: randomUUID(),
+        probeUntil: '2026-09-25T08:06:00.000Z',
+        futureField: { nested: ['keep', 42, null] },
+        futureNullable: null,
+      };
+      const breakers = {
+        typesafe: { ...auth, futureField: { nested: ['other', 42, null] } },
+        llm: auth,
+        resetRequested: { typesafe: '2026-09-25T06:00:00.000Z' },
+        futureCircuitField: { keep: true },
+        [breaker]: auth,
+      };
+      await seedCircuit(breakers);
+      await activateFresh(provider, 0);
+
+      // D-272 close/reset clears all five incident/lease fields and resets the doubling.
+      expect(await circuit()).toEqual({
+        value: {
+          ...breakers,
+          [breaker]: {
+            state: 'closed',
+            reopenCount: 0,
+            futureField: auth.futureField,
+            futureNullable: null,
+          },
+        },
+        updated_by: admin,
+      });
+    },
+  );
+
+  it.each(['closed', 'open', 'half_open'])(
+    'leaves the targeted %s breaker and settings metadata untouched (0039)',
+    async (state) => {
+      const breakers = {
+        typesafe: {
+          state,
+          reopenCount: 3,
+          openedAt: '2026-09-25T08:00:00.000Z',
+          failingSince: '2026-09-25T07:00:00.000Z',
+          openUntil: '2026-09-25T08:05:00.000Z',
+          probeToken: randomUUID(),
+          probeUntil: '2026-09-25T08:06:00.000Z',
+          futureField: { keep: true },
+        },
+        llm: { state: 'auth', reopenCount: 1 },
+        resetRequested: {},
+      };
+      await seedCircuit(breakers);
+      const before = await ownerRow("SELECT * FROM settings WHERE key = 'engine.circuit'");
+      await activateFresh('typesafe', 0);
+      expect(await ownerRow("SELECT * FROM settings WHERE key = 'engine.circuit'")).toEqual(before);
+    },
+  );
+
   it('maps ollama to the llm breaker and leaves a non-auth breaker alone', async () => {
     const breakers = {
       typesafe: {

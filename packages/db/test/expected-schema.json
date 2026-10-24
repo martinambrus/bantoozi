@@ -4665,7 +4665,8 @@
       "volatility": "v",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": ["bantoozi_app"]
+      "execute": ["bantoozi_app"],
+      "bodyMd5": "a0558ae1b594260d30e7be28d0bea2a8"
     },
     "admin_card_holders": {
       "args": "p_card_ids bigint[]",
