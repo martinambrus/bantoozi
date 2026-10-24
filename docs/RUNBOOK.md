@@ -281,6 +281,9 @@ Older workers ignore `engine.model_candidate` and adopt at once again after a ro
 account deletion still cascades. An older worker leaves the estimate model without `ratedThrough`/`fromRatings`; a later
 worker reads that as "no earlier run", so one retrain after a rollback is not announced. A tab cached from before the
 release rejects the new `GET /me/learning` keys until the D-163 reload bar: ship API, worker and web together.
+Migration 0037 (D-325) only adds the nullable `reason` column and backfilled rows with NOT NULL booleans, so an older
+release reads the table unchanged; a rollback leaves the backfilled rows in place, and re-running the migration
+inserts no duplicates.
 
 **Rolling back past EST-2…EST-4 (D-281…D-285).** Migration 0034 is expand-only, but an older release rejects rows with
 `score_source = 'estimate'` and a stored `ranker.thresholds.estimate` (ranking stops with `RankerSettingsError`).
