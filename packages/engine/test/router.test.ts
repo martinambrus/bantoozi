@@ -165,6 +165,20 @@ describe('EngineRouter.ask: a successful logical request', () => {
 });
 
 describe('EngineRouter.ask: request validation and demand', () => {
+  it.each(['translate', 'credential_probe', 'card_draft', 'model_probe', 'unknown'])(
+    'refuses %s at the ask boundary before dispatch',
+    async (kind) => {
+      const { router, store, typesafe } = setup();
+      const outcome = await router.ask(request({ kind: kind as EngineRequest['kind'] }));
+      expect(outcome).toMatchObject({
+        ok: false,
+        reason: 'invalid_request',
+        detail: 'kind: unknown',
+      });
+      expect(store.reservations).toHaveLength(0);
+      expect(typesafe!.calls).toHaveLength(0);
+    },
+  );
   it.each([
     ['no questions', { questions: {} }],
     ['a bad question key', { questions: { 'bad key': QUESTIONS.q1! } }],

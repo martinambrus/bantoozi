@@ -9,6 +9,8 @@ import type { CallKind, InferenceAuthorization } from './ports.js';
  * `engine_calls_kind_check` (a migration owns it); a test compares it with {@link CALL_KINDS}.
  */
 export interface CallKindProfile {
+  /** API entry points. Eval is accepted by both, under an eval router's invocation cap. */
+  route: 'ask' | 'external' | 'both';
   /**
    * Classification work. These kinds share an engine's daily call cap (spec 04 §6) and are the only
    * calls the engine alerts count (spec 11 §6.1, D-272).
@@ -28,28 +30,49 @@ export interface CallKindProfile {
   authorization?: InferenceAuthorization['type'];
 }
 
-export const CALL_KIND_PROFILES: Readonly<Record<CallKind, CallKindProfile>> = {
-  enrich: { decision: true, live: true },
-  match: { decision: true, live: true },
-  cluster: { decision: true, live: true },
-  suggest: { decision: true, live: true },
+export const CALL_KIND_PROFILES = {
+  enrich: { route: 'ask', decision: true, live: true },
+  match: { route: 'ask', decision: true, live: true },
+  cluster: { route: 'ask', decision: true, live: true },
+  suggest: { route: 'ask', decision: true, live: true },
   /** Tier-2 (LLM) translation. LibreTranslate calls are `translate` too, and not live by engine. */
-  translate: { decision: false, live: true },
+  translate: { route: 'external', decision: false, live: true },
   /** Evaluation spend: exempt from the production budget, admitted only by an eval router (D-64). */
-  eval: { decision: false, live: false, authorization: 'eval' },
+  eval: { route: 'both', decision: false, live: false, authorization: 'eval' },
   /** Key validation: synthetic, fails on purpose, bound to its validation lease (D-63, D-90). */
-  credential_probe: { decision: false, live: false, authorization: 'credential_probe' },
+  credential_probe: {
+    route: 'external',
+    decision: false,
+    live: false,
+    authorization: 'credential_probe',
+  },
   /** A person's own request for a card draft, billed under the daily budget; the pending draft is its demand (D-240). */
-  card_draft: { decision: false, live: true, authorization: 'card_draft' },
+  card_draft: { route: 'external', decision: false, live: true, authorization: 'card_draft' },
   /** One synthetic request about a model id: no reader data and no demand (D-273). */
-  model_probe: { decision: false, live: false, authorization: 'model_probe' },
-};
+  model_probe: { route: 'external', decision: false, live: false, authorization: 'model_probe' },
+} as const satisfies Readonly<Record<CallKind, CallKindProfile>>;
 
 /** Every call kind, in table order. */
 export const CALL_KINDS: readonly CallKind[] = Object.keys(CALL_KIND_PROFILES) as CallKind[];
 
 const kindsWhere = (test: (profile: CallKindProfile) => boolean): readonly CallKind[] =>
   CALL_KINDS.filter((kind) => test(CALL_KIND_PROFILES[kind]));
+
+type KindsForRoute<Route extends 'ask' | 'external'> = {
+  [Kind in CallKind]: (typeof CALL_KIND_PROFILES)[Kind]['route'] extends Route | 'both'
+    ? Kind
+    : never;
+}[CallKind];
+
+/** Kinds accepted by the question/answer API. */
+export type AskCallKind = KindsForRoute<'ask'>;
+/** Kinds accepted by the external-call API. */
+export type ExternalCallKind = KindsForRoute<'external'>;
+
+/** The runtime ask guard uses the same classification as EngineRequest.kind. */
+export const ASK_KINDS: readonly AskCallKind[] = CALL_KINDS.filter(
+  (kind): kind is AskCallKind => CALL_KIND_PROFILES[kind].route !== 'external',
+);
 
 /** The classification kinds: enrich, match, cluster and suggest. */
 export const DECISION_KINDS: readonly CallKind[] = kindsWhere((profile) => profile.decision);
@@ -61,7 +84,8 @@ export const NON_LIVE_KINDS: readonly CallKind[] = kindsWhere((profile) => !prof
 export const KIND_AUTHORIZATIONS: ReadonlyArray<
   readonly [CallKind, InferenceAuthorization['type']]
 > = CALL_KINDS.flatMap((kind) => {
-  const type = CALL_KIND_PROFILES[kind].authorization;
+  const profile: CallKindProfile = CALL_KIND_PROFILES[kind];
+  const type = profile.authorization;
   return type === undefined ? [] : [[kind, type] as const];
 });
 

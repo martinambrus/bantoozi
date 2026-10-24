@@ -1,3 +1,5 @@
+import type { ExternalCallKind } from './call-kinds.js';
+
 /**
  * Ports shared between consumer packages (`packages/engine`, `packages/feeds`) and their
  * `packages/db` implementations (spec 01 §2, spec 04 §1, spec 03 §4). Types only: `packages/db`
@@ -109,7 +111,7 @@ export const PLATFORM_USER_ID = '00000000-0000-0000-0000-000000000000';
 /** Non-engine calls logged through the router (translation, spec 07 §2). */
 export interface ExternalCall {
   engine: 'libretranslate' | 'llm' | 'typesafe';
-  kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft' | 'model_probe';
+  kind: ExternalCallKind;
   model?: string;
   articleId?: string;
   inputTokens: number;

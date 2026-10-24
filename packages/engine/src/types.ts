@@ -1,7 +1,7 @@
 import type { Question, Answer } from '@bantoozi/questions';
 import type {
   BreakerState,
-  CallKind,
+  AskCallKind,
   CallStatus,
   Clock,
   EngineName,
@@ -49,7 +49,7 @@ export type Priority = 'interactive' | 'bulk';
 
 export interface EngineRequest {
   /** Translation, credential and model probes and card drafts use ExternalCall instead. */
-  kind: Exclude<CallKind, 'translate' | 'credential_probe' | 'card_draft' | 'model_probe'>;
+  kind: AskCallKind;
   state: JsonValue;
   /** Keys: `[a-zA-Z0-9_.-]{1,64}`. */
   questions: Record<string, Question>;
