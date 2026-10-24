@@ -63,3 +63,28 @@ it('rejects unsupported constructs when deriving, including ones nested in a con
   expect(() => readerSchema(z.object({ value: custom }))).toThrow(/unsupported.*custom/i);
   expect(() => readerSchema(z.object({ value: custom }))).toThrow(/unsupported.*custom/i);
 });
+
+it('keeps metadata on the derived root, nested objects, wrappers and leaf schemas', () => {
+  const leaf = z.string().describe('leaf description').meta({ title: 'Leaf' });
+  const child = z.strictObject({ leaf }).describe('child description');
+  const schema = z
+    .strictObject({ child: child.optional().describe('optional child') })
+    .describe('root description')
+    .meta({ id: 'reader-root', title: 'Root', examples: [{ child: { leaf: 'yes' } }] });
+  const derived = readerSchema(schema);
+  expect(derived.meta()).toMatchObject({ id: 'reader-root' });
+  const json = z.toJSONSchema(derived);
+  expect(json.$defs?.['reader-root'] ?? json).toMatchObject({
+    description: 'root description',
+    title: 'Root',
+    examples: [{ child: { leaf: 'yes' } }],
+    properties: {
+      child: {
+        description: 'optional child',
+        properties: { leaf: { description: 'leaf description', title: 'Leaf' } },
+      },
+    },
+  });
+  expect(z.toJSONSchema(readerSchema(child))).toMatchObject({ description: 'child description' });
+  expect(schema.shape.child.meta()).toMatchObject({ description: 'optional child' });
+});

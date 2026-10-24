@@ -109,6 +109,10 @@ export function readerSchema<S extends z.core.$ZodType>(input: S): S {
     } else {
       throw new Error(`Unsupported reader schema construct: ${def.type}`);
     }
+    // Keep metadata on the clone itself: a parent link changes JSON Schema conversion and
+    // deliberately drops ids. Do not remap the registry's id lookup away from the writer.
+    const metadata = z.globalRegistry.get(schema);
+    if (result !== schema && metadata) z.globalRegistry._map.set(result, { ...metadata });
     pending.set(schema, result);
     return result;
   }
