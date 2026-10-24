@@ -73,10 +73,7 @@ export async function observeModelCandidate(
     let started = false;
     let confirmed = false;
     // All transactions touching both rows lock watch first, then candidate.
-    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => ({
-      ...watchStateOf(current),
-      lastCheck: { at: now.toISOString(), ok: true },
-    }));
+    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, watchStateOf);
     const candidate = await updateSettingLocked<EngineModelCandidate | null>(
       tx,
       MODEL_CANDIDATE_KEY,
@@ -98,7 +95,13 @@ export async function observeModelCandidate(
     );
     if (candidate !== null && !confirmed) {
       await enqueueCandidateConfirmation(tx, candidate, now, started);
+      await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => ({
+        ...watchStateOf(current),
+        lastCheck: { at: now.toISOString(), ok: true },
+      }));
     }
+    // A confirmed observation still needs outgoing fingerprint registration and adoption.
+    // The handler publishes lastCheck only after both succeed, so Check now keeps polling.
     return confirmed;
   });
 }
