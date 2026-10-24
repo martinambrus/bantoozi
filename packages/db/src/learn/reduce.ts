@@ -37,6 +37,7 @@ function derive(
   result: LearnAnalysisResult,
   ratingSha: string,
   ratedAt: Date,
+  ratingModel: unknown,
 ): FeatureSnapshotV1 | null {
   const frozen = result.frozen;
   if (frozen === undefined) return null;
@@ -45,6 +46,12 @@ function derive(
   return {
     specSha: FEATURE_SNAPSHOT_SPEC_SHA,
     ratingSha,
+    ...(typeof ratingModel === 'string' &&
+    ratingModel !== '' &&
+    result.model !== undefined &&
+    result.model !== ratingModel
+      ? { staleAnswers: true }
+      : {}),
     snapshotAt: ratedAt.toISOString(),
     cards: frozen.cards.map((card) => {
       const p = result.cardP.get(card.id);
@@ -144,9 +151,17 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
           result.inputSha === source.value.inputSha &&
           typeof analysisSha === 'string' &&
           analysisSha === features.ratingSha &&
-          (features.values.facets === null || features.cards.some((card) => card.p === null))
+          (features.staleAnswers === true ||
+            features.values.facets === null ||
+            features.cards.some((card) => card.p === null))
         ) {
-          features = derive(result, analysisSha, source.createdAt) ?? features;
+          const derived = derive(
+            result,
+            analysisSha,
+            source.createdAt,
+            source.value.analysisRatingModel,
+          );
+          if (derived !== null && derived.staleAnswers !== true) features = derived;
         }
       }
       if (features === null) {
@@ -158,7 +173,12 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
           result.inputSha === effective.value.inputSha &&
           typeof ratingSha === 'string'
         ) {
-          features = derive(result, ratingSha, effective.createdAt);
+          features = derive(
+            result,
+            ratingSha,
+            effective.createdAt,
+            effective.value.analysisRatingModel,
+          );
         }
       }
       return make(effective, 'rating', state.rating === 1 ? 1 : 0, 1, true, features);

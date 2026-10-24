@@ -66,6 +66,7 @@ function train(trainer: Trainer, userId: string, inputs: LearnInputs): Promise<T
       ratingSha: inputs.ratingSha,
       familySha: inputs.familySha,
       families: inputs.families,
+      strict: inputs.strict,
       consent: inputs.consent,
       seedMaterial: `learn:${userId}:${inputs.eligibleSetSha}`,
       feedbackCutoffEventId: inputs.cutoffEventId,

@@ -206,6 +206,29 @@ describe('the guard result in the handler', () => {
 });
 
 describe('strict training after the guard', () => {
+  it('strict inputs and the trainer both exclude stale answers', async () => {
+    const { userId } = await upgraded();
+    await regress(userId);
+    const before = await learnInputs(h, userId);
+    const marked = before.eligible[0]!;
+    await h.owner.query(
+      `UPDATE feedback_events SET value =
+      jsonb_set(value, '{features,staleAnswers}', 'true'::jsonb) WHERE id = $1`,
+      [marked.eventId],
+    );
+    const inputs = await learnInputs(h, userId);
+    expect(inputs.strict).toBe(true);
+    expect(inputs.eligible).toHaveLength(before.eligible.length - 1);
+    expect(inputs.eligible.some((sample) => sample.eventId === marked.eventId)).toBe(false);
+    const observed = spy();
+    await learnWith(observed.trainer, userId);
+    expect(observed.calls).toHaveLength(1);
+    expect(observed.calls[0]).toMatchObject({ strict: true });
+    const rows = await w.models(userId);
+    expect(rows.at(-1)!.metrics['nExplicit']).toBe(38);
+    expect(rows.at(-1)!.metrics['skipped']).toMatchObject({ stale_answers: 1 });
+  }, 240_000);
+
   it('trains on the rows of the current exact sha only, marks every strict attempt, and keeps its model on a later rating', async () => {
     const { userId, old, current } = await upgraded();
     await regress(userId);

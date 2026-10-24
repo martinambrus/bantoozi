@@ -232,6 +232,14 @@ function expectDerived(out: Outcome) {
   expect(out.sample.features?.values.facets).toEqual({ time_sensitive: 0.9 });
 }
 
+function expectCaptured(out: Outcome) {
+  expect(out.analysisRatingSha).toBe(out.exactSha);
+  expect(out.features?.ratingSha).toBe(out.exactSha);
+  expect(out.sample.features).toEqual(out.features);
+  expect(out.sample.features?.cards.find((c) => c.id === out.cardId)?.p).toBeNull();
+  expect(out.sample.features?.values.facets).toBeNull();
+}
+
 function expectNotDerived(out: Outcome) {
   expect(out.analysisRatingSha).toBeNull();
   expect(out.features?.ratingSha).toBe(out.exactSha);
@@ -240,13 +248,13 @@ function expectNotDerived(out: Outcome) {
 }
 
 describe('analysisRatingSha across the model pair', () => {
-  it('records the exact current sha for a request frozen under another model of the same family', async () => {
+  it('records the exact current sha but retains the capture for an older same-family result', async () => {
     const out = await rate({ pin: 'jev-1.14.0', frozenModel: 'jev-1.13.0' });
-    expectDerived(out);
+    expectCaptured(out);
   });
 
-  it('completes the sample from a same-family request when the current model is a pre-release', async () => {
-    expectDerived(await rate({ pin: 'jev-1.14.0-rc1', frozenModel: 'jev-1.13.0' }));
+  it('retains the capture for an older same-family result when the current model is a pre-release', async () => {
+    expectCaptured(await rate({ pin: 'jev-1.14.0-rc1', frozenModel: 'jev-1.13.0' }));
   });
 
   it('records the exact current sha when the frozen model equals the current one', async () => {

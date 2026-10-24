@@ -36,7 +36,7 @@ export interface LearnInputs {
   familySha: string;
   /** The sha to family map eligibility used; empty in strict mode. */
   families: Record<string, string>;
-  /** The latest attempt marked this exact sha strict: only rows carrying it are eligible. */
+  /** The latest attempt marked this exact sha strict: only rows carrying it with current answers are eligible. */
   strict: boolean;
   /** Whether the current exact sha is in the registry. */
   registered: boolean;
@@ -102,7 +102,7 @@ export async function loadLearnInputs(
         ];
   });
 
-  const opts = eligibilityOf({ now, config, ratingSha, familySha, families });
+  const opts = eligibilityOf({ now, config, ratingSha, familySha, families, strict });
   const training = samples as unknown as TrainingSample[];
   const eligible = samples.filter((_, i) => sampleEligibility(training[i]!, opts).ok);
   const setSha = eligibleSetSha(training, opts);

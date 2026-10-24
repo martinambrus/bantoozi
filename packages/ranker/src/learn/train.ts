@@ -16,10 +16,18 @@ import {
   type TrainingSample,
 } from './samples.js';
 
-/** The rating scope of a training: no rating checks, or the exact sha with its family map. */
+/**
+ * The rating scope of a training: no rating checks, or the exact sha with its family map.
+ * `strict` admits only the exact sha and excludes snapshots marked `staleAnswers: true`.
+ */
 export type RatingScope =
   | { ratingSha: null }
-  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> };
+  | {
+      ratingSha: string;
+      familySha: string;
+      families: Readonly<Record<string, string>>;
+      strict?: boolean;
+    };
 
 export type TrainArgs = {
   samples: TrainingSample[];
@@ -38,7 +46,13 @@ export function eligibilityOf(
   const base = { now: args.now, historyDays: args.config.model.historyDays };
   return args.ratingSha === null
     ? { ...base, ratingSha: null }
-    : { ...base, ratingSha: args.ratingSha, familySha: args.familySha, families: args.families };
+    : {
+        ...base,
+        ratingSha: args.ratingSha,
+        familySha: args.familySha,
+        families: args.families,
+        ...(args.strict === true ? { strict: true } : {}),
+      };
 }
 
 export type ConfidenceInterval = [number, number] | null;
@@ -583,7 +597,8 @@ export function finishTraining(
       const mask: boolean[] = [];
       for (let f = 0; f < folds.length; f += 1) {
         rows.forEach((r, i) => {
-          if (plan.folds[i] === f && r.s.explicit) mask.push(r.f.ratingSha === currentSha);
+          if (plan.folds[i] === f && r.s.explicit)
+            mask.push(r.f.ratingSha === currentSha && r.f.staleAnswers !== true);
         });
       }
       if (mask.length !== ys.length) {

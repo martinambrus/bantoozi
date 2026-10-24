@@ -3422,3 +3422,14 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   reserved/uncertain amounts), read through the new `admin_committed_spend(day, exclude_kinds)` (SECURITY DEFINER,
   `admin_context_allowed()`, aggregate only, NULL day raises, PUBLIC has no EXECUTE); `exemptSpendTodayUsd` stays
   settled evaluation spend, and `/admin/usage` stays settled-only.
+- D-334: 2026-10-24 (design item #24, owner-approved option B; amends D-289, D-290) — Stale-answers marker. Since D-289 a
+  rating on an article not yet re-analysed after an upgrade carried the new exact rating sha with older-release
+  answers, so the upgrade guard's new-version samples and strict training included it (no false trips, but a real trip
+  was delayed by about two genuine ratings per such row). The rating snapshot now records `staleAnswers` when any answer
+  it was built from comes from a release other than the current pin; the guard masks those rows and strict training
+  skips them, relaxed training is unchanged. A linked analysis request that completes with the current model refreshes
+  the snapshot (only when the refreshed one is unmarked, so the captured one is never replaced by an equally stale,
+  thinner one). An empty rating model counts as unknown, not stale. Limits: a marked snapshot of an ordinary rating stays
+  marked until the reader's next rating event of that article, dwell/read samples never refresh, and ratings captured
+  before this change carry no marker (answer provenance was not recorded, so no backfill): the guard improves for new
+  ratings only. Older releases ignore the extra snapshot field. No migration.

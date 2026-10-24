@@ -6,6 +6,8 @@ export type LearnSignal = 'rating' | 'bookmark' | 'dwell' | 'bounce' | 'read';
 export interface FeatureSnapshotV1 {
   specSha: string;
   ratingSha: string;
+  /** At least one included answer differs from the exact rating-time pin. */
+  staleAnswers?: boolean;
   snapshotAt: string;
   cards: { id: string; strength: string; p: number | null; engine: string | null }[];
   values: {
@@ -57,6 +59,8 @@ export interface LearnReaderState {
 
 /** A completed analysis result as far as the completion of selected snapshots needs it. */
 export interface LearnAnalysisResult {
+  /** The concrete answering model in result_snapshot.model. */
+  model?: string;
   inputSha: string;
   facets: Record<string, number> | null;
   cardP: Map<string, number>;

@@ -27,6 +27,7 @@ export type EligibilityReason =
   | 'missing_snapshot'
   | 'spec_sha_mismatch'
   | 'rating_sha_mismatch'
+  | 'stale_answers'
   | 'too_old'
   | 'no_facets'
   | 'invalid_facets'
@@ -40,7 +41,12 @@ export type EligibilityReason =
  */
 export type EligibilityOpts = { now: Date; historyDays: number } & (
   | { ratingSha: null }
-  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> }
+  | {
+      ratingSha: string;
+      familySha: string;
+      families: Readonly<Record<string, string>>;
+      strict?: boolean;
+    }
 );
 
 export function isValidFeatureFacets(facets: unknown): facets is Record<string, number> {
@@ -75,13 +81,18 @@ export function sampleEligibility(
   const scope = ratingScopeOf(opts);
   const f = s.features;
   if (f === null) return { ok: false, reason: 'missing_snapshot' };
-  if (scope !== null) {
+  if (scope !== null && opts.ratingSha !== null) {
     if (f.specSha !== RAW_SNAPSHOT_SPEC_SHA) return { ok: false, reason: 'spec_sha_mismatch' };
     const sha = f.ratingSha;
     const compatible =
       sha === opts.ratingSha ||
-      (Object.hasOwn(scope.families, sha) && Reflect.get(scope.families, sha) === scope.familySha);
+      (opts.strict !== true &&
+        Object.hasOwn(scope.families, sha) &&
+        Reflect.get(scope.families, sha) === scope.familySha);
     if (!compatible) return { ok: false, reason: 'rating_sha_mismatch' };
+    if (opts.strict === true && f.staleAnswers === true) {
+      return { ok: false, reason: 'stale_answers' };
+    }
   }
   const cutoff = opts.now.getTime() - opts.historyDays * DAY_MS;
   const snapshotAt = typeof f.snapshotAt === 'string' ? Date.parse(f.snapshotAt) : Number.NaN;

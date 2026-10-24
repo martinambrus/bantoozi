@@ -89,6 +89,7 @@ export async function loadLearningStatus(
     ratingSha: fingerprint.sha,
     familySha: fingerprint.familySha,
     families: strict ? {} : fingerprint.families,
+    strict,
   });
   const estimate = await loadEstimateState(tx, userId);
 
