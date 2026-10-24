@@ -53,14 +53,26 @@ export function createEvalCredentialResolver(options: EvalCredentialOptions): Cr
 
     async useActive<T>(
       provider: Provider,
-      _signal: AbortSignal,
+      signal: AbortSignal,
       send: (auth: ProviderAuth) => Promise<T>,
     ): Promise<T> {
+      if (signal.aborted) throw unavailable(provider, 'cancelled');
+      let onAbort: () => void = () => undefined;
+      const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(unavailable(provider, 'cancelled'));
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
       let secret: Awaited<ReturnType<typeof readActiveCredentialSecret>>;
       try {
-        secret = await readActiveCredentialSecret(options.db, provider);
-      } catch {
-        throw unavailable(provider, 'lookup_failed');
+        secret = await Promise.race([
+          readActiveCredentialSecret(options.db, provider).catch(() => {
+            throw unavailable(provider, 'lookup_failed');
+          }),
+          aborted,
+        ]);
+        if (signal.aborted) throw unavailable(provider, 'cancelled');
+      } finally {
+        signal.removeEventListener('abort', onAbort);
       }
       if (secret.state === 'missing') {
         const key = envKey(provider);
