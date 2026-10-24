@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Database, Executor, Transaction } from '../client.js';
+import { sameModelFamilySql } from '../model-family.js';
 import { readStoredSetting, shareLockSettings } from '../settings.js';
 import { SUGGEST_DISMISS_DAYS } from './evidence.js';
 
@@ -40,7 +41,7 @@ const HELD = (userId: string, cardId: SQL) => sql`
 /**
  * The finishing transaction of every run (spec 05 §7 steps 6–7): lock the user row and require our
  * lease token; read the active suggest set and the pin under the settings share lock; clean up
- * (undismissed rows of held cards, of another set or pin; dismissals older than 90 days); store the
+ * (undismissed rows of held cards, of another set or model family; dismissals older than 90 days); store the
  * results (an upsert that revives only rows not dismissed in the last 90 days, skipping held
  * cards) and delete the other undismissed rows; release the lease. Never stamps `last_suggested_at`.
  */
@@ -68,7 +69,7 @@ export async function finishSuggestRun(
        WHERE s.user_id = ${userId}::uuid
          AND ((s.dismissed_at IS NULL
                AND (${HELD(userId, sql`s.card_id`)}
-                    OR s.model_pin <> ${pin}
+                    OR NOT ${sameModelFamilySql(sql`s.model_pin`, pin)}
                     ${activeSet === null ? sql.empty() : sql`OR s.question_set_id <> ${activeSet}::bigint`}))
               OR s.dismissed_at <= now() - make_interval(days => ${SUGGEST_DISMISS_DAYS}))`);
 

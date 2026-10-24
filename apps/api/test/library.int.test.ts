@@ -457,6 +457,31 @@ describe('card suggestions', () => {
     expect((await stranger.api.post(`/cards/suggestions/${llm}/dismiss`)).statusCode).toBe(404);
   });
 
+  it.each([
+    ['jev-1.14.0', true],
+    ['jev-1.14.0-rc1', true],
+    ['jev-2.0.0', false],
+    ['jev-1', false],
+    ['jev-latest', false],
+    ['llama3:8b', false],
+  ] as const)('lists a jev-1.13.0 suggestion after a move to %s: %s', async (pin, visible) => {
+    const entry = await libraryEntry({ title: 'Family', interest: unique('Model family') });
+    const { user, api } = await reader();
+    await suggest(user, entry.ids[0]!, { pin: 'jev-1.13.0' });
+    await setSetting('engine.model_pin', { model: 'jev-1.13.0' });
+    try {
+      expect((await api.get('/cards/suggestions')).json()).toHaveLength(1);
+      await setSetting('engine.model_pin', { model: pin });
+      const response = await api.get('/cards/suggestions');
+      expect(response.statusCode).toBe(200);
+      expect(response.json().map((s: { card: { id: string } }) => s.card.id)).toEqual(
+        visible ? [entry.ids[0]] : [],
+      );
+    } finally {
+      await setSetting('engine.model_pin', { model: 'jev-1' });
+    }
+  });
+
   it('hides suggestions when the active set or the Jev model pin changes', async () => {
     const entry = await libraryEntry({ title: 'Switch', interest: unique('Switching') });
     const { user, api } = await reader();
