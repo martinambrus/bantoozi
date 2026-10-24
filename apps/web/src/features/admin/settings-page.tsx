@@ -156,6 +156,7 @@ export function AdminSettingsPage() {
                         defaultValue={data.defaults[key] ?? null}
                         source={data.sources[key] ?? 'env'}
                         hasStoredRow={data.stored.some((entry) => entry.key === key)}
+                        storedAt={data.stored.find((entry) => entry.key === key)?.updatedAt ?? null}
                         problems={[
                           ...new Set(
                             data.workers.flatMap((worker) =>

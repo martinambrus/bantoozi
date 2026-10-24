@@ -73,6 +73,7 @@ const CHANGE_TITLE = 'Change the Jev release?';
 interface Open {
   /** The stored setting; omitted or null: no stored row, the environment default (jev-1.13.0). */
   saved?: string | null;
+  savedAt?: string;
   status?: Partial<AdminEngineModel>;
   server?: ModelServerOptions;
   routes?: Record<string, ApiRouteHandler>;
@@ -93,6 +94,8 @@ const aliasStatus = (model = DEFAULT, checkedAt = modelAgo(15)): Partial<AdminEn
 async function open(o: Open = {}) {
   const saved = o.saved ?? null;
   const fixture: RuntimeFixture = {
+    // Existing alias fixtures describe a setting saved before its active resolution.
+    storedAt: o.savedAt ?? '2026-09-01T00:00:00.000Z',
     ...(saved === null ? {} : { stored: { [MODEL]: saved } }),
     ...(o.problems
       ? { workers: [worker({ problems: o.problems.map((message) => ({ key: MODEL, message })) })] }
@@ -1033,4 +1036,30 @@ describe('JEV-5 strings', () => {
     expect(forms('en')).toEqual(['restart_one', 'restart_other']);
     expect(forms('sk')).toEqual(['restart_few', 'restart_many', 'restart_one', 'restart_other']);
   });
+});
+
+it('hides a dormant resolution after returning from a concrete pin to the alias', async () => {
+  await open({
+    saved: ALIAS,
+    savedAt: T1,
+    status: {
+      ...aliasStatus('jev-1.12.0', modelAgo(60 * 24 * 14)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).not.toHaveTextContent('Resolves to jev-1.12.0');
+  expect(group()).toHaveTextContent('Not resolved yet.');
+});
+
+it('uses the active pin rather than a dormant resolution when choosing one release', async () => {
+  const { app } = await open({
+    saved: ALIAS,
+    savedAt: T1,
+    status: {
+      ...aliasStatus('jev-1.12.0', modelAgo(60 * 24 * 14)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  await app.user.click(radio(PINNED_RADIO));
+  expect(input()).toHaveValue(DEFAULT);
 });
