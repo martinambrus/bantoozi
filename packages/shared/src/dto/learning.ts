@@ -147,6 +147,7 @@ export const LearningHistoryItemSchema = z
     activated: z.boolean().nullable(),
     turnedOn: z.boolean().nullable(),
     engineModel: z.string().nullable(),
+    reason: z.string().nullable(),
   })
   .strict();
 export type LearningHistoryItem = z.infer<typeof LearningHistoryItemSchema>;

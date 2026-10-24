@@ -235,8 +235,25 @@
           "ratings": "Hodnotenia",
           "quality": "Kvalita",
           "interestsAlone": "Samotné vaše záujmy",
-          "switchedOn": "Zapnuté"
+          "switchedOn": "Zapnuté",
+          "reason": "Dôvod"
         }
+      },
+      "reasons": {
+        "low_auc": "Príliš nízka kvalita",
+        "below_baseline_auc": "Slabšie než samotné vaše záujmy",
+        "worse_logloss": "Menej spoľahlivé predpovede",
+        "upgrade_regression": "Aktualizácia analýzy znížila kvalitu",
+        "insufficient_explicit": "Treba viac hodnotení",
+        "insufficient_class": "Treba viac kladných aj záporných hodnotení",
+        "rating_fingerprint_changed": "Analýza sa počas učenia zmenila",
+        "context_changed": "Záujmy sa počas učenia zmenili",
+        "inputs_changed": "Hodnotenia sa počas učenia zmenili",
+        "singular": "Model sa z týchto hodnotení nedokázal naučiť",
+        "nonfinite": "Učenie sa nepodarilo dokončiť",
+        "nonconverged": "Učenie sa nepodarilo dokončiť",
+        "research": "Vyhodnocovací beh",
+        "unknown": "Aktualizácia nebola zapnutá"
       }
     }
   },

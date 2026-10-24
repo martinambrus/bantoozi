@@ -101,6 +101,7 @@ export const makeHistoryItem = (over: Partial<LearningHistoryItem> = {}): Learni
   activated: false,
   turnedOn: false,
   engineModel: null,
+  reason: null,
   ...over,
 });
 

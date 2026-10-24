@@ -45,6 +45,7 @@ const item = {
   activated: true,
   turnedOn: false,
   engineModel: 'jev-1',
+  reason: null,
 };
 
 describe('LearningStatusSchema per-feed estimate', () => {
@@ -193,6 +194,17 @@ describe('LearningHistoryItemSchema', () => {
     expect(() => LearningHistoryItemSchema.parse({ ...item, kind: 'other' })).toThrow();
     expect(() => LearningHistoryItemSchema.parse({ ...item, at: 'yesterday' })).toThrow();
     expect(() => LearningHistoryItemSchema.parse({ ...item, n: -1 })).toThrow();
+  });
+
+  it('keeps nullable backfill provenance and rejection reasons', () => {
+    expect(
+      LearningHistoryItemSchema.parse({
+        ...item,
+        activated: null,
+        turnedOn: null,
+        reason: 'low_auc,worse_logloss',
+      }),
+    ).toMatchObject({ activated: null, turnedOn: null, reason: 'low_auc,worse_logloss' });
   });
 
   it('requires every field', () => {

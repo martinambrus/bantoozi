@@ -14,7 +14,15 @@ export function HistoryTable({ items }: { items: readonly LearningHistoryItem[] 
   const { t, i18n } = useTranslation('settings');
   const me = useMe();
   const count = new Intl.NumberFormat(i18n.language);
-  const columns = ['date', 'update', 'ratings', 'quality', 'interestsAlone', 'switchedOn'] as const;
+  const columns = [
+    'date',
+    'update',
+    'ratings',
+    'quality',
+    'interestsAlone',
+    'switchedOn',
+    'reason',
+  ] as const;
   return (
     // A table wider than a phone scrolls inside this region, which the keyboard can reach.
     <div
@@ -51,6 +59,18 @@ export function HistoryTable({ items }: { items: readonly LearningHistoryItem[] 
                     {row.switchedOn === null
                       ? NO_VALUE
                       : t(row.switchedOn ? 'learning.history.yes' : 'learning.history.no')}
+                  </td>
+                  <td className="px-3 py-2">
+                    {item.reason === null
+                      ? NO_VALUE
+                      : item.reason
+                          .split(',')
+                          .map((reason) =>
+                            t(`learning.history.reasons.${reason}`, {
+                              defaultValue: t('learning.history.reasons.unknown'),
+                            }),
+                          )
+                          .join('; ')}
                   </td>
                 </tr>
               );
