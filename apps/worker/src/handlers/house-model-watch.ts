@@ -206,7 +206,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     const at = now();
     const result = await recordModelResolution(
       db,
-      { alias, model: answered, now: at },
+      { alias, model: answered, now: at, expectedModel: stored?.model ?? null },
       (tx, change) => writePendingNotice(tx, change, at),
     );
     await checkedWithoutCandidate();
