@@ -48,10 +48,14 @@ export function readerSchema<S extends z.core.$ZodType>(input: S): S {
     });
   } else if ('innerType' in def) {
     // Optional, nullable, default, prefault, catch, readonly and nonoptional wrappers.
-    result = schema.clone({
-      ...def,
-      innerType: readerSchema(def.innerType as z.ZodType),
-    } as typeof def);
+    // Preserve Zod's defaultValue getter: spreading the definition evaluates a function default
+    // once and shares mutable defaults across parses.
+    const rebuilt = Object.defineProperties({}, Object.getOwnPropertyDescriptors(def));
+    Object.defineProperty(rebuilt, 'innerType', {
+      value: readerSchema(def.innerType as z.ZodType),
+      enumerable: true,
+    });
+    result = schema.clone(rebuilt as typeof def);
   }
   readers.set(schema, result);
   return result as unknown as S;
