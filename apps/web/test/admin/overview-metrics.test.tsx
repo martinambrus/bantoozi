@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { json } from '../api/fake-fetch.js';
@@ -114,5 +114,40 @@ describe('overview metrics (spec 10 §7, M8-T4)', () => {
     // The rest of the overview is still there.
     expect(screen.getByText('120')).toBeVisible();
     if (language === 'sk') expect(screen.queryByText(/no data yet/i)).toBeNull();
+  });
+});
+
+describe('overview budgeted spend', () => {
+  it.each([
+    ['en', 'Spend today', /plus .*1[.,]50.* evaluation spend/i],
+    ['sk', 'Výdavky dnes', /navyše .*1[.,]50.* vyhodnocovanie/i],
+  ] as const)('separates exempt spend from the budget (%s)', async (language, label, words) => {
+    const overview = makeOverview();
+    await guard(
+      await renderApp({
+        path: '/admin',
+        language,
+        server: {
+          me: adminMe(),
+          routes: adminRoutes({
+            'GET /admin/overview': () =>
+              json(200, {
+                ...overview,
+                engine: { ...overview.engine, exemptSpendTodayUsd: 1.5 },
+              }),
+          }),
+        },
+      }),
+    );
+    const tile = await screen.findByRole('group', { name: label });
+    expect(within(tile).getByText(words)).toBeVisible();
+    expect(tile.textContent).toMatch(/1[.,]20/);
+    expect(tile.textContent).toMatch(/5[.,]00/);
+  });
+
+  it('omits the exempt spend note when it is zero', async () => {
+    await open('en', null);
+    await screen.findByRole('group', { name: 'Spend today' });
+    expect(screen.queryByText(/evaluation spend/i)).toBeNull();
   });
 });

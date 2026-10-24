@@ -75,7 +75,10 @@ export const AdminOverviewSchema = z
     engine: z
       .object({
         breakers: z.object({ typesafe: AdminBreakerSchema, llm: AdminBreakerSchema }).strict(),
+        /** Settled spend for kinds charged to the production budget, including synthetic probes. */
         spendTodayUsd: Usd,
+        /** Settled spend for kinds exempt from the production budget (currently evaluation). */
+        exemptSpendTodayUsd: Usd,
         dailyBudgetUsd: Usd,
         /** LLM fallback decision calls today (the `engine.llm_daily_cap` group, D-64). */
         llmCallsToday: Count,

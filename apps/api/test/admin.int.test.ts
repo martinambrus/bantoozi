@@ -543,6 +543,12 @@ describe('engine operations (spec 08 §9)', () => {
     expect(invalid.statusCode).toBe(400);
   });
 
+  it('overview reports zero budgeted and exempt spend before any usage', async () => {
+    const res = await apiClient(h.server, admin).get('/admin/overview');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().engine).toMatchObject({ spendTodayUsd: 0, exemptSpendTodayUsd: 0 });
+  });
+
   it('overview reports users, feeds, queues, breakers, spend and translations', async () => {
     await createFeed(h.owner, { status: 'quarantined' });
     await h.owner.query(
@@ -551,7 +557,9 @@ describe('engine operations (spec 08 §9)', () => {
               ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'enrich', 3, 0.01),
               ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'translate', 2, 0.01),
               ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'card_draft', 5, 0),
-              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'model_probe', 7, 0)
+              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'llm', 'model_probe', 7, 0.03),
+              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'typesafe', 'credential_probe', 1, 0.02),
+              ((now() AT TIME ZONE 'UTC')::date, '00000000-0000-0000-0000-000000000000', 'typesafe', 'eval', 1, 1.5)
        ON CONFLICT DO NOTHING`,
     );
     const res = await apiClient(h.server, admin).get('/admin/overview');
@@ -560,7 +568,8 @@ describe('engine operations (spec 08 §9)', () => {
     expect(body.users.total).toBeGreaterThanOrEqual(2);
     expect(body.feeds.quarantined).toBeGreaterThanOrEqual(1);
     expect(body.engine.breakers.typesafe.state).toBe('closed');
-    expect(body.engine.spendTodayUsd).toBeCloseTo(0.27, 5);
+    expect(body.engine.spendTodayUsd).toBeCloseTo(0.32, 5);
+    expect(body.engine.exemptSpendTodayUsd).toBeCloseTo(1.5, 5);
     expect(body.engine.llmCallsToday).toBe(3);
     expect(body.translations.tier2CallsToday).toBe(2);
     expect(body.queues.length).toBeGreaterThan(0);

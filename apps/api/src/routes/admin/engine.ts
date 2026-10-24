@@ -161,6 +161,7 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
               llm: breaker(circuit.llm, circuit.resetRequested.llm),
             },
             spendTodayUsd: counts.spendTodayUsd,
+            exemptSpendTodayUsd: counts.exemptSpendTodayUsd,
             dailyBudgetUsd:
               readSetting('engine.daily_budget_usd', stored.get('engine.daily_budget_usd'), env) ??
               env.dailyBudgetUsd,

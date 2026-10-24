@@ -30,6 +30,7 @@
       },
       "articles": "Články dnes",
       "spend": "Výdavky dnes",
+      "exemptSpend": "navyše {{value}} za vyhodnocovanie",
       "llm": "Volania LLM dnes",
       "tier2": "Preklady 2. úrovne dnes",
       "ofCap": "{{used}} z {{cap}}"
