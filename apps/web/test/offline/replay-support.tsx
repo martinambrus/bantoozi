@@ -5,6 +5,7 @@ import { vi } from 'vitest';
 import { OFFLINE_DB } from '../../src/offline/names.js';
 import type { QueueRecord } from '../../src/offline/queue.js';
 import { failure, json, type RecordedRequest } from '../api/fake-fetch.js';
+import { makeLearning } from '../learning/fixtures.js';
 import { makeItem } from '../reader/actions/fake-transport.js';
 import { makeMe } from '../session/fixtures.js';
 import { renderApp, type ApiRouteHandler, type FakeServer } from '../support/app.js';
@@ -220,12 +221,20 @@ export function createArticleServer(
     });
   }
 
-  const routes: Record<string, ApiRouteHandler> = Object.fromEntries(
-    MUTATIONS.map(([route, kind]) => [
-      route,
-      (request: RecordedRequest, params: Record<string, string>) => handle(kind, request, params),
-    ]),
-  );
+  const routes: Record<string, ApiRouteHandler> = {
+    ...Object.fromEntries(
+      MUTATIONS.map(([route, kind]) => [
+        route,
+        (request: RecordedRequest, params: Record<string, string>) => handle(kind, request, params),
+      ]),
+    ),
+    // A rating makes the reader ask for the estimate status (the effect notice).
+    'GET /me/learning': () => json(200, makeLearning()),
+    'GET /me/learning/estimates': () => {
+      const { estimates, estimateGate } = makeLearning();
+      return json(200, { estimates, estimateGate });
+    },
+  };
 
   const fake: FakeServer = { me, routes };
 

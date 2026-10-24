@@ -125,6 +125,24 @@ export async function loadModelState(
   };
 }
 
+/**
+ * The newest invalidation stamp (`deactivatedAt` / `deactivatedReason`, written by
+ * {@link deactivateUserModels}) on any stored version. The stamp sits on the model that was active,
+ * which is older than an attempt stored after it, so the newest row cannot be asked for it.
+ */
+export async function loadLastDeactivation(
+  db: Executor,
+  userId: string,
+): Promise<{ at: string; reason: string } | null> {
+  const result = await db.execute<{ at: string; reason: string | null }>(sql`
+    SELECT metrics->>'deactivatedAt' AS at, metrics->>'deactivatedReason' AS reason
+      FROM user_models
+     WHERE user_id = ${userId}::uuid AND metrics->>'deactivatedAt' IS NOT NULL
+     ORDER BY version DESC LIMIT 1`);
+  const row = result.rows[0];
+  return row === undefined || row.reason === null ? null : { at: row.at, reason: row.reason };
+}
+
 export interface NewUserModel {
   userId: string;
   active: boolean;

@@ -11,7 +11,7 @@ import { afterEach, vi } from 'vitest';
 
 import { json, type RecordedRequest } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
-import { makeLearning } from '../learning/fixtures.js';
+import { makeHistory, makeLearning } from '../learning/fixtures.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 
@@ -114,6 +114,11 @@ export function settingsRoutes(
     'GET /feed-preferences': () => json(200, []),
     'GET /subscriptions': () => json(200, []),
     'GET /me/learning': () => json(200, makeLearning()),
+    'GET /me/learning/estimates': () => {
+      const { estimates, estimateGate } = makeLearning();
+      return json(200, { estimates, estimateGate });
+    },
+    'GET /me/learning/history': () => json(200, makeHistory()),
     ...over,
   };
 }

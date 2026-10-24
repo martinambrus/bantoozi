@@ -1,5 +1,5 @@
 import { AxeGate } from './a11y-support/axe.js';
-import { expectLoaded } from './a11y-support/screens.js';
+import { PHONE, expectLoaded, expectNoSidewaysScroll, useScheme } from './a11y-support/screens.js';
 import { TargetGate } from './a11y-support/targets.js';
 import { unreadTitles } from './flow-support/articles.js';
 import {
@@ -75,6 +75,8 @@ test('word estimates: ten ratings give unanalyzed articles a tier, with the word
   };
   const probeIds = [H1, H2, L1].map(idOf);
 
+  const chip = () => page.getByRole('group', { name: 'Estimate learning for this feed' });
+
   await test.step('before any rating: no model, no estimate, no marker', async () => {
     const rows = await feedRows(user, feedId);
     for (const title of [H1, H2, L1]) {
@@ -94,18 +96,26 @@ test('word estimates: ten ratings give unanalyzed articles a tier, with the word
         0,
       );
     }
+    await expect(chip()).toContainText('Rate 10 more articles to turn on estimates');
   });
 
   let modelWaitMs = 0;
   await test.step('ten ratings: the gate stays closed at nine and opens at ten', async () => {
     for (const [index, entry] of rated.entries()) {
       await rateFromAnotherDevice(user, idOf(entry.item.title), entry.rating);
-      if (index === 8) expect(await estimatesOf(user)).toBeNull();
+      if (index === 8) {
+        expect(await estimatesOf(user)).toBeNull();
+        await page.reload();
+        await expect(chip()).toContainText('Rate 1 more article to turn on estimates');
+      }
     }
     const started = Date.now();
     await waitForEstimates(user, 10);
     modelWaitMs = Date.now() - started;
     console.log(`estimates | model of 10 ratings and its refresh after ${modelWaitMs} ms`);
+    await page.reload();
+    await expect(chip()).toContainText('Estimates on');
+    await expect(chip()).toContainText('10 rated in this feed');
   });
 
   const rows = await feedRows(user, feedId);
@@ -316,6 +326,85 @@ test('word estimates: ten ratings give unanalyzed articles a tier, with the word
     await refreshUntil(page, async () => {
       await expect(marker(H1, 5)).toBeVisible({ timeout: 1_500 });
     });
+  });
+
+  await test.step('the history: a second model gives the curve its second point', async () => {
+    await rateFromAnotherDevice(user, idOf(H1), 1);
+    const started = Date.now();
+    await waitForEstimates(user, 11);
+    console.log(`estimates | second model of 11 ratings after ${Date.now() - started} ms`);
+    await expect
+      .poll(
+        async () =>
+          (
+            await callJson<{ items: Array<{ kind: string }> }>(
+              user,
+              'GET',
+              '/api/v1/me/learning/history',
+            )
+          ).items.filter((item) => item.kind === 'estimate').length,
+        { message: 'two estimate rows are in the history', timeout: 30_000 },
+      )
+      .toBeGreaterThanOrEqual(2);
+
+    await page.goto('/settings');
+    const region = page.getByRole('region', { name: 'Personal learning' });
+    await expect(region.getByRole('heading', { level: 3, name: 'Learning curve' })).toBeVisible();
+    const figure = region.getByRole('figure');
+    await expect(figure.getByRole('img', { name: 'Learning curve' })).toBeVisible();
+    await expect(
+      region.getByRole('list', { name: 'Milestones' }).getByText('Estimates turned on'),
+    ).toBeVisible();
+    await region.getByRole('button', { name: 'Show as table' }).click();
+    const table = region.getByRole('table');
+    await expect(table.getByRole('columnheader', { name: 'Update' })).toBeVisible();
+    expect(
+      await table.getByRole('cell', { name: 'Word estimates' }).count(),
+    ).toBeGreaterThanOrEqual(2);
+    await region.evaluate((element) => {
+      element.setAttribute('data-e2e', 'personal-learning');
+    });
+
+    await expectLoaded(page);
+    await axe.scanBoth(page, 'Settings, Personal learning');
+    await targets.check(page, 'Settings, Personal learning', {
+      within: '[data-e2e="personal-learning"]',
+    });
+    await expect(region.getByRole('slider', { name: 'Update' })).toBeVisible();
+
+    const strokeOf = async (scheme: 'light' | 'dark'): Promise<string> => {
+      await useScheme(page, scheme);
+      return figure
+        .locator('path[data-series="estimate"]')
+        .first()
+        .evaluate((path) => getComputedStyle(path).stroke);
+    };
+    const light = await strokeOf('light');
+    const dark = await strokeOf('dark');
+    console.log(`curve stroke | light ${light} | dark ${dark}`);
+    expect(light).not.toBe('');
+    expect(dark).not.toBe('');
+    expect(light).not.toBe(dark);
+    await snap(page, 'learning-curve', figure);
+    await snap(page, 'learning-curve-section', region);
+
+    // On a phone the chart takes the width of the column: nothing makes the page scroll sideways.
+    const phone = await browse.as(email, { context: PHONE });
+    await phone.goto('/settings');
+    const phoneRegion = phone.getByRole('region', { name: 'Personal learning' });
+    await expect(phoneRegion.getByRole('img', { name: 'Learning curve' })).toBeVisible();
+    await expectNoSidewaysScroll(phone);
+    await phoneRegion.getByRole('button', { name: 'Show as table' }).click();
+    await expect(phoneRegion.getByRole('table')).toBeVisible();
+    await expectNoSidewaysScroll(phone);
+    await axe.scanBoth(phone, 'Settings, Personal learning, phone');
+    await snap(phone, 'learning-curve-phone', phoneRegion);
+    await phone.goto(`/read/feed/${feedId}`);
+    await expect(
+      phone.getByRole('group', { name: 'Estimate learning for this feed' }),
+    ).toContainText('Estimates on');
+    await expectNoSidewaysScroll(phone);
+    await snap(phone, 'feed-chip-phone');
   });
 
   console.log(`axe | ${axe.summary()}`);

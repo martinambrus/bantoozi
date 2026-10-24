@@ -311,3 +311,12 @@ export async function listTrainingFeeds(
     return { feedId: row.feed_id, items7d: Number.isFinite(items) ? items : null };
   });
 }
+
+/** Every feed the tenant is subscribed to, in any mode, ordered by feed id. */
+export async function listSubscribedFeedIds(tx: TenantTx): Promise<string[]> {
+  const result = await tx.execute<{ feed_id: string }>(sql`
+    SELECT feed_id::text AS feed_id FROM subscriptions
+     WHERE user_id = ${tenantUserId(tx)}::uuid
+     ORDER BY feed_id`);
+  return result.rows.map((row) => row.feed_id);
+}

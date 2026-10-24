@@ -14,6 +14,7 @@ import { useToast } from '../../components/toast/toast-provider.js';
 import { useAccountId, useSession } from '../../session/context.js';
 import { useReaderActions, useUndoAction } from './actions/provider.js';
 import { unreadKeys } from './queries.js';
+import { useArmEstimateNotice } from './reader-state.js';
 
 const TOAST_ID = 'reader-rate-visible';
 /** Spec 09 §3.3: the undo toast of a bulk action stays for 5 seconds. */
@@ -81,6 +82,7 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
   const queryClient = useQueryClient();
   const session = useSession();
   const accountId = useAccountId();
+  const armEstimateNotice = useArmEstimateNotice();
   const [pending, setPending] = useState<1 | -1 | null>(null);
   const [failure, setFailure] = useState<ApiError | null>(null);
   const count = asked.items.length;
@@ -106,6 +108,7 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
               : { label: t('common:actions.undo'), onAction: () => void undo(entry.id) },
         });
         for (const queryKey of unreadKeys(accountId)) invalidateCoalesced(queryClient, queryKey);
+        armEstimateNotice();
         onClose();
         return;
       }

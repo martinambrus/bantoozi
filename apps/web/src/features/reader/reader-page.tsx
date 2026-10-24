@@ -15,6 +15,7 @@ import { ArticleList, useVisibleRows } from './article-list.js';
 import { DetailPane } from './detail-pane.js';
 import { ReaderHeader } from './header.js';
 import type { ScopedLane } from './lanes.js';
+import { EstimateNoticeBar } from './estimate-notice.js';
 import { NewArticlesBanner } from './new-articles-banner.js';
 import { unreadKeys, useCounts } from './queries.js';
 import { ReaderShortcuts } from './shortcuts/reader-shortcuts.js';
@@ -24,7 +25,16 @@ import { useArticleList } from './use-article-list.js';
 import { useDesktop } from './use-desktop.js';
 import { usePolling } from './use-polling.js';
 import { useViewTitle } from './use-view-title.js';
-import { countOf, detailScope, scopeOf, viewKey, viewMinTier, type ReaderView } from './view.js';
+import { useEstimateNotice } from './reader-state.js';
+import {
+  countOf,
+  detailScope,
+  scopeOf,
+  showsEstimates,
+  viewKey,
+  viewMinTier,
+  type ReaderView,
+} from './view.js';
 
 /** How far down the page the reader may be for the list to still count as being at its top. */
 const TOP_PX = 80;
@@ -255,6 +265,20 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
     void reload().then(loaded);
   }, [reload, loaded]);
 
+  const estimateNotice = useEstimateNotice();
+  const dismissNotice = estimateNotice.dismiss;
+  const loadedGeneration = useRef(generation);
+  useEffect(() => {
+    if (loadedGeneration.current === generation) return;
+    loadedGeneration.current = generation;
+    dismissNotice();
+  }, [generation, dismissNotice]);
+  const showEstimates = useCallback(() => {
+    window.scrollTo({ top: 0 });
+    refresh();
+    dismissNotice();
+  }, [refresh, dismissNotice]);
+
   return (
     <ReaderShortcuts
       rows={rows}
@@ -285,6 +309,11 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
         )}
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
           <div className="flex min-w-0 flex-col gap-3">
+            <EstimateNoticeBar
+              notice={showsEstimates(view) ? estimateNotice.notice : null}
+              onShow={showEstimates}
+              onDismiss={dismissNotice}
+            />
             <NewArticlesBanner
               count={added}
               onShow={showNew}

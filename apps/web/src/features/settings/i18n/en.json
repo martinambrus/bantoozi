@@ -186,7 +186,53 @@
       "lost_evidence": "some of the ratings it learned from are gone"
     },
     "uncoveredTitle": "Interests to add",
-    "unwantedTitle": "Topics to avoid"
+    "unwantedTitle": "Topics to avoid",
+    "history": {
+      "title": "Learning curve",
+      "description": "How well each update predicted your ratings: the share of times it put an article you liked above one you disliked. 50% is guessing, 100% is perfect.",
+      "empty": "No updates recorded yet. They appear after your first ratings are processed.",
+      "single": "One update recorded so far. The curve appears after the next one.",
+      "chartTitle": "Learning curve: quality of each update",
+      "summary_one": "{{count}} update from {{from}} to {{to}}",
+      "summary_other": "{{count}} updates from {{from}} to {{to}}",
+      "ratings_one": "{{count}} rating",
+      "ratings_other": "{{count}} ratings",
+      "quality": "quality {{value}}",
+      "legend": "Latest quality of each line",
+      "scrubber": "Update",
+      "rough": "Updates from fewer than 30 ratings are rough.",
+      "capped": "Older updates are not kept.",
+      "series": {
+        "model": "Personal model",
+        "estimate": "Word estimates",
+        "baseline": "Your interests alone"
+      },
+      "milestones": {
+        "title": "Milestones",
+        "estimatesOn": "Estimates turned on",
+        "modelOn": "Personal model switched on",
+        "updated": "Analysis updated"
+      },
+      "result": {
+        "on": "Switched on",
+        "off": "Not switched on"
+      },
+      "yes": "Yes",
+      "no": "No",
+      "table": {
+        "show": "Show as table",
+        "hide": "Hide table",
+        "caption": "Learning updates, newest first",
+        "columns": {
+          "date": "Date",
+          "update": "Update",
+          "ratings": "Ratings",
+          "quality": "Quality",
+          "interestsAlone": "Your interests alone",
+          "switchedOn": "Switched on"
+        }
+      }
+    }
   },
   "sessions": {
     "title": "Sessions",

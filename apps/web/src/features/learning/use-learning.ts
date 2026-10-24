@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
+import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
@@ -12,13 +13,17 @@ export function learningKey(accountId: string) {
   return accountKey(accountId, 'learning');
 }
 
+export function learningQueryOptions(api: ApiClient, accountId: string) {
+  return {
+    queryKey: learningKey(accountId),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      api.call(routes.meLearning, undefined, { signal }),
+    staleTime: LEARNING_STALE_MS,
+  };
+}
+
 export function useLearning(enabled = true) {
   const api = useApi();
   const accountId = useAccountId();
-  return useQuery({
-    queryKey: learningKey(accountId),
-    queryFn: ({ signal }) => api.call(routes.meLearning, undefined, { signal }),
-    enabled,
-    staleTime: LEARNING_STALE_MS,
-  });
+  return useQuery({ ...learningQueryOptions(api, accountId), enabled });
 }

@@ -1,6 +1,7 @@
+import { loadLearnSamples } from '@bantoozi/db';
 import { ESTIMATE_SPEC } from '@bantoozi/ranker';
 import { LearningStatusSchema } from '@bantoozi/shared';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   apiClient,
@@ -15,6 +16,11 @@ import {
  * (size, quality, last refresh), null while no usable model of the current spec exists, and never
  * the model's weights or calibration.
  */
+
+vi.mock(import('@bantoozi/db'), async (importOriginal) => {
+  const original = await importOriginal();
+  return { ...original, loadLearnSamples: vi.fn(original.loadLearnSamples) };
+});
 
 let h: ApiHarness;
 
@@ -74,9 +80,39 @@ describe('GET /me/learning estimates', () => {
       n: 23,
       auc: 0.71,
       trainedAt: TRAINED_AT.toISOString(),
-      lastRun: LAST_RUN,
+      lastRun: { ...LAST_RUN, fromRatings: false },
     });
     expect(LearningStatusSchema.parse(raw).estimates).toEqual(raw.estimates);
+  });
+
+  it('marks a run that followed new ratings (metrics.fromRatings) and reads anything else as false', async () => {
+    for (const [stored, expected] of [
+      [true, true],
+      [false, false],
+      ['true', false],
+      [1, false],
+      [undefined, false],
+    ] as const) {
+      const user = await createTestUser(h);
+      await storeModel(user, {
+        metrics: {
+          auc: 0.71,
+          lastRun: LAST_RUN,
+          ...(stored === undefined ? {} : { fromRatings: stored }),
+        },
+      });
+      const { raw } = await read(user);
+      expect(raw.estimates, String(stored)).toMatchObject({
+        lastRun: { ...LAST_RUN, fromRatings: expected },
+      });
+    }
+  });
+
+  it('does not report fromRatings without a lastRun', async () => {
+    const user = await createTestUser(h);
+    await storeModel(user, { metrics: { auc: 0.71, fromRatings: true } });
+    const { raw } = await read(user);
+    expect(raw.estimates).toMatchObject({ n: 23, lastRun: null });
   });
 
   it('reads lastRun as null, and still answers 200, when the stored value is malformed', async () => {
@@ -148,4 +184,23 @@ describe('GET /me/learning estimates', () => {
       expect(res.json().estimates, estimates).toMatchObject({ n: 23, auc: 0.71 });
     }
   });
+});
+
+describe('GET /me/learning/estimates light control', () => {
+  it.each(['missing', 'current', 'obsolete'] as const)(
+    'matches the full status with a %s model without loading samples',
+    async (model) => {
+      const user = await createTestUser(h);
+      if (model !== 'missing') {
+        await storeModel(user, model === 'obsolete' ? { spec: 'obsolete' } : {});
+      }
+      const full = (await read(user)).raw;
+      expect(loadLearnSamples).toHaveBeenCalled();
+      vi.mocked(loadLearnSamples).mockClear();
+      const res = await apiClient(h.server, user).get('/me/learning/estimates');
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toEqual({ estimates: full.estimates, estimateGate: full.estimateGate });
+      expect(loadLearnSamples).not.toHaveBeenCalled();
+    },
+  );
 });

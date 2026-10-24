@@ -1,4 +1,5 @@
 import {
+  appendLearningHistory,
   deleteEstimateModels,
   insertEstimateModel,
   loadEstimateState,
@@ -8,7 +9,7 @@ import {
   workerOutbox,
 } from '@bantoozi/db';
 import { ESTIMATE_SPEC } from '@bantoozi/ranker';
-import { enqueueRank } from '@bantoozi/shared';
+import { canonicalJson, enqueueRank } from '@bantoozi/shared';
 
 import { estimateAction, loadEstimateInputs } from '../estimate/inputs.js';
 import { inlineEstimateTrainer } from '../estimate/trainer.js';
@@ -70,6 +71,25 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
       ) {
         return 'duplicate';
       }
+      const ratedThrough = ratings.reduce<Date | null>(
+        (max, r) => (max === null || r.ratedAt > max ? r.ratedAt : max),
+        null,
+      );
+      // A model differs from the one before it by the reader's ratings alone when the spec and the
+      // trainer options (seed, epochs, gate) are the same and a newer rating reached it.
+      const earlierOptions = current?.metrics['options'];
+      const previous =
+        current !== null &&
+        current.spec === ESTIMATE_SPEC &&
+        earlierOptions !== undefined &&
+        canonicalJson(earlierOptions) === canonicalJson(options)
+          ? new Date(String(current.metrics['ratedThrough'] ?? ''))
+          : null;
+      const fromRatings =
+        ratedThrough !== null &&
+        previous !== null &&
+        !Number.isNaN(previous.getTime()) &&
+        ratedThrough > previous;
       await insertEstimateModel(tx, {
         userId,
         spec: model.spec,
@@ -79,9 +99,22 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
         intercept: model.intercept,
         weights: model.weights,
         platt: model.platt,
-        metrics: { ...model.metrics, inputSha, options },
+        metrics: {
+          ...model.metrics,
+          inputSha,
+          options,
+          ratedThrough: ratedThrough?.toISOString() ?? null,
+          fromRatings,
+        },
       });
       await pruneEstimateModels(tx, userId, KEEP_VERSIONS);
+      await appendLearningHistory(tx, {
+        userId,
+        kind: 'estimate',
+        n: model.metrics.n,
+        auc: model.metrics.auc,
+        turnedOn: current === null || current.spec !== ESTIMATE_SPEC,
+      });
       await enqueueRank(workerOutbox(tx), { userId, reason: 'estimate', estimate: {} });
       return 'trained';
     });

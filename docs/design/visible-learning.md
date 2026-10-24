@@ -331,6 +331,12 @@ an assumption until one real Jev answer is recorded.
   (migration; RLS; the newest 200 per user are kept), written by `user.learn` and `user.estimate`. Settings →
   Personal learning draws AUC over time, with milestones: estimates on, personal model active, upgrades.
 
+- **As built (PRG-1…PRG-4, D-309…D-315).** History: newest 200 rows per user and kind, extra columns `turned_on` and
+  `engine_model`, written in the run's transaction, no backfill. `/me/learning` adds `estimateGate`, per-feed `estimate`
+  and `lastRun.fromRatings`; `GET /me/learning/history`; a light `GET /me/learning/estimates` for the notice poll and Off
+  feeds. Chip states add "estimates off" and "starting"; "Interests agree" shows the agreement lower bound. The notice
+  announces only runs with `fromRatings` (never the first model, a sweep or a trainer change).
+
 ### 4.6 "Show fewer like these?" fixes (DPF-6, DPF-7, DPF-8)
 
 - **Seen-based cooldown.**

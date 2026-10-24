@@ -1,4 +1,5 @@
 import {
+  hasAgreement,
   IMAGE_POLICIES,
   MAX_FOLDER_NAME_LENGTH,
   MAX_TITLE_OVERRIDE_LENGTH,
@@ -124,7 +125,9 @@ export function FeedSettingsSheet({
   const training = subscription.inferenceMode === 'training';
   const learning = useLearning(training);
   const agreement = training
-    ? learning.data?.feeds.find((candidate) => candidate.feedId === subscription.feed.id)
+    ? learning.data?.feeds
+        .filter(hasAgreement)
+        .find((candidate) => candidate.feedId === subscription.feed.id)
     : undefined;
   const changes = changesOf(subscription, draft);
   const change = (next: Partial<Draft>) => setDraft((current) => ({ ...current, ...next }));

@@ -1,4 +1,5 @@
 import {
+  appendLearningHistory,
   deactivateUserModels,
   insertUserModel,
   lockLearnUser,
@@ -194,6 +195,20 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
             inputs.strict || guarded,
           ),
         });
+        if (model !== null) {
+          const pin = fresh.fingerprint.settings['engine.model_pin'];
+          const pinned = (pin as { model?: unknown } | null | undefined)?.model;
+          await appendLearningHistory(tx, {
+            userId,
+            kind: 'model',
+            n: result.metrics.nExplicit,
+            auc: result.metrics.cvAuc,
+            baselineAuc: result.metrics.baselineAuc,
+            activated: decision.activate,
+            turnedOn: decision.activate && current.active === null,
+            engineModel: typeof pinned === 'string' && pinned !== '' ? pinned : null,
+          });
+        }
         if (guarded) {
           deactivated =
             (await deactivateUserModels(tx, userId, {

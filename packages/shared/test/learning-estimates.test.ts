@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { EstimatesStatusSchema, LearningStatusSchema } from '../src/index.js';
 
 const AT = '2026-10-20T08:30:00.000Z';
-const LAST_RUN = { at: '2026-10-21T02:00:00.000Z', movedUp: 12, movedDown: 30 };
+const LAST_RUN = { at: '2026-10-21T02:00:00.000Z', movedUp: 12, movedDown: 30, fromRatings: false };
 const FULL = { n: 23, auc: 0.71, trainedAt: AT, lastRun: LAST_RUN };
 
 const base = {

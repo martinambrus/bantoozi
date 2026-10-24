@@ -522,6 +522,33 @@ export const userEstimateModels = pgTable(
   ],
 );
 
+export const userLearningHistory = pgTable(
+  'user_learning_history',
+  {
+    id: int8('id').primaryKey().generatedAlwaysAsIdentity(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    at: tstz('at').notNull().defaultNow(),
+    kind: text('kind').notNull(),
+    n: integer('n').notNull(),
+    auc: doublePrecision('auc'),
+    baselineAuc: doublePrecision('baseline_auc'),
+    activated: boolean('activated').notNull().default(false),
+    turnedOn: boolean('turned_on').notNull().default(false),
+    engineModel: text('engine_model'),
+  },
+  (t) => [
+    check('user_learning_history_kind_check', sql`kind IN ('model','estimate')`),
+    check('user_learning_history_n_check', sql`n >= 0`),
+    index('user_learning_history_user_idx').on(
+      t.userId,
+      t.at.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
+    ),
+  ],
+);
+
 export const apiMutations = pgTable(
   'api_mutations',
   {

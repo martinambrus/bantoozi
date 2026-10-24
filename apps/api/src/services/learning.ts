@@ -2,7 +2,11 @@ import {
   accessibleArticleTitles,
   cardHintDismissals,
   cardsMadeFromFeedArticles,
+  countEstimateRatings,
+  listSubscribedFeedIds,
   listTrainingFeeds,
+  loadLastDeactivation,
+  loadLearningHistory,
   loadEstimateState,
   loadLearnSamples,
   loadModelState,
@@ -16,6 +20,7 @@ import {
 import {
   eligibleRows,
   ESTIMATE_SPEC,
+  estimateGate,
   FEED_AGREEMENT,
   feedAgreement,
   learningCounts,
@@ -27,6 +32,8 @@ import {
   EngineCircuitSchema,
   EngineModelPinSchema,
   HouseProgressSchema,
+  type LearningEstimates,
+  type LearningHistory,
   type LearningStatus,
 } from '@bantoozi/shared';
 
@@ -42,6 +49,10 @@ const LastRunSchema = z
     movedDown: z.number().int().min(0),
   })
   .strict();
+const FeedMetricsSchema = z.object({
+  n: z.number().int().min(0),
+  auc: z.number().nullable().catch(null),
+});
 const num = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
@@ -94,16 +105,15 @@ export async function loadLearningStatus(
         }
       : null;
 
-  const reason = state.latest?.metrics['deactivatedReason'];
-  const deactivatedAt = text(state.latest?.metrics['deactivatedAt']);
+  const stamp = state.active === null ? await loadLastDeactivation(tx, userId) : null;
   const deactivated =
-    state.active === null &&
-    deactivatedAt !== null &&
-    (reason === 'incompatible' || reason === 'lost_evidence')
+    stamp !== null && (stamp.reason === 'incompatible' || stamp.reason === 'lost_evidence')
       ? {
-          at: deactivatedAt,
+          at: stamp.at,
           reason:
-            reason === 'incompatible' ? ('incompatible' as const) : ('lost_evidence' as const),
+            stamp.reason === 'incompatible'
+              ? ('incompatible' as const)
+              : ('lost_evidence' as const),
         }
       : null;
 
@@ -156,6 +166,15 @@ export async function loadLearningStatus(
       const title = titles.get(id);
       return title === undefined ? [] : [{ id, title }];
     });
+  const current = estimate !== null && estimate.spec === ESTIMATE_SPEC ? estimate : null;
+  const feedMetrics = new Map<string, { n: number; auc: number | null }>();
+  const rawFeeds: unknown = current?.metrics['feeds'];
+  if (typeof rawFeeds === 'object' && rawFeeds !== null && !Array.isArray(rawFeeds)) {
+    for (const [feedId, value] of Object.entries(rawFeeds)) {
+      const parsed = FeedMetricsSchema.safeParse(value);
+      if (parsed.success) feedMetrics.set(feedId, { n: parsed.data.n, auc: parsed.data.auc });
+    }
+  }
   const feeds = agreements.map(({ feed, agreement, uncovered, unwanted }) => {
     const likeArticles = named(uncovered.articleIds);
     const neverArticles = named(unwanted.articleIds);
@@ -173,8 +192,25 @@ export async function loadLearningStatus(
         articles: neverArticles,
       },
       articlesPerWeek: feed.items7d === null ? null : Math.round(feed.items7d),
+      estimate: feedMetrics.get(feed.feedId) ?? null,
     };
   });
+  const training = new Set(trainingFeeds.map((feed) => feed.feedId));
+  const estimateOnly = (await listSubscribedFeedIds(tx)).flatMap((feedId) => {
+    const metrics = feedMetrics.get(feedId);
+    return training.has(feedId) || metrics === undefined ? [] : [{ feedId, estimate: metrics }];
+  });
+  const needed =
+    current === null
+      ? estimateGate(
+          await countEstimateRatings(
+            tx,
+            userId,
+            new Date(now.getTime() - config.model.historyDays * 86_400_000),
+          ),
+          config.estimate,
+        ).needed
+      : 0;
 
   return {
     model: {
@@ -191,20 +227,79 @@ export async function loadLearningStatus(
       lastAttempt,
       deactivated,
     },
-    feeds,
+    feeds: [...feeds, ...estimateOnly],
     classification: classificationStatus({
       circuit: EngineCircuitSchema.safeParse(stored.get('engine.circuit')).data,
       pin: EngineModelPinSchema.safeParse(stored.get('engine.model_pin')).data,
       progress: HouseProgressSchema.safeParse(stored.get('house.progress')).data,
     }),
     estimates:
-      estimate === null || estimate.spec !== ESTIMATE_SPEC
+      current === null
         ? null
         : {
-            n: estimate.n,
-            auc: num(estimate.metrics['auc']),
-            trainedAt: estimate.trainedAt.toISOString(),
-            lastRun: LastRunSchema.safeParse(estimate.metrics['lastRun']).data ?? null,
+            n: current.n,
+            auc: num(current.metrics['auc']),
+            trainedAt: current.trainedAt.toISOString(),
+            lastRun: parsedLastRun(current.metrics),
           },
+    estimateGate: { needed },
+  };
+}
+
+/** Estimate progress without loading training samples or computing feed agreement. */
+export async function loadLearningEstimates(tx: TenantTx, now: Date): Promise<LearningEstimates> {
+  const userId = tenantUserId(tx);
+  const stored = await readStoredSettings(tx, ['ranker.thresholds', 'ranker.settings_version']);
+  const { config } = resolveRankerSettings({
+    thresholds: stored.get('ranker.thresholds'),
+    settingsVersion: stored.get('ranker.settings_version'),
+  });
+  const estimate = await loadEstimateState(tx, userId);
+  const current = estimate !== null && estimate.spec === ESTIMATE_SPEC ? estimate : null;
+  const needed =
+    current === null
+      ? estimateGate(
+          await countEstimateRatings(
+            tx,
+            userId,
+            new Date(now.getTime() - config.model.historyDays * 86_400_000),
+          ),
+          config.estimate,
+        ).needed
+      : 0;
+  return {
+    estimates:
+      current === null
+        ? null
+        : {
+            n: current.n,
+            auc: num(current.metrics['auc']),
+            trainedAt: current.trainedAt.toISOString(),
+            lastRun: parsedLastRun(current.metrics),
+          },
+    estimateGate: { needed },
+  };
+}
+
+function parsedLastRun(metrics: Record<string, unknown>) {
+  const run = LastRunSchema.safeParse(metrics['lastRun']).data;
+  return run === undefined ? null : { ...run, fromRatings: metrics['fromRatings'] === true };
+}
+
+/** The learning milestones, oldest first, for `GET /me/learning/history`. */
+export async function loadLearningHistoryStatus(tx: TenantTx): Promise<LearningHistory> {
+  const { rows, truncated } = await loadLearningHistory(tx, tenantUserId(tx));
+  return {
+    items: rows.map((row) => ({
+      at: row.at.toISOString(),
+      kind: row.kind,
+      n: row.n,
+      auc: row.auc,
+      baselineAuc: row.baselineAuc,
+      activated: row.activated,
+      turnedOn: row.turnedOn,
+      engineModel: row.engineModel,
+    })),
+    truncated,
   };
 }

@@ -41,6 +41,8 @@ GET /library/updates
 GET /me
 GET /me/export
 GET /me/learning
+GET /me/learning/estimates
+GET /me/learning/history
 GET /metrics
 GET /readyz
 GET /rules

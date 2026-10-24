@@ -116,6 +116,7 @@ export function readerServer(options: ReaderOptions) {
     'GET /subscriptions': () => json(200, state.subscriptions),
     'GET /labels': () => json(200, state.labels),
     'GET /me/learning': () => json(200, makeLearning()),
+    'GET /me/learning/estimates': () => json(200, { estimates: null, estimateGate: { needed: 0 } }),
     'PATCH /me': patchMeLikeTheApi(server),
     'POST /articles/:id/read': (_request, params) =>
       actionResponse(write(params['id'], { readAt: AS_OF })),

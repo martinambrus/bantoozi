@@ -1,14 +1,25 @@
-import type { LearningFeedAgreement, LearningStatus } from '@bantoozi/shared';
+import type {
+  EstimatesStatus,
+  LearningFeedAgreement,
+  LearningFeedEntry,
+  LearningFeedEstimate,
+  LearningHistory,
+  LearningHistoryItem,
+  LearningStatus,
+} from '@bantoozi/shared';
 
 import { json } from '../api/fake-fetch.js';
 import type { ApiRouteHandler } from '../support/app.js';
 
 export const LEARNING = 'GET /me/learning';
+export const LEARNING_ESTIMATES = 'GET /me/learning/estimates';
+export const LEARNING_HISTORY = 'GET /me/learning/history';
 
 /** A schema-valid status: no ratings yet, no model, no feed in training. */
 export function makeLearning(
   model: Partial<LearningStatus['model']> = {},
-  feeds: LearningFeedAgreement[] = [],
+  feeds: LearningFeedEntry[] = [],
+  over: Partial<LearningStatus> = {},
 ): LearningStatus {
   return {
     model: {
@@ -22,6 +33,8 @@ export function makeLearning(
     feeds,
     classification: { state: 'ok', since: null, reason: null },
     estimates: null,
+    estimateGate: { needed: 0 },
+    ...over,
   };
 }
 
@@ -42,6 +55,7 @@ export function makeAgreement(
     uncovered: { count: 0, suggest: false, articles: [] },
     unwanted: { count: 0, suggest: false, articles: [] },
     articlesPerWeek: null,
+    estimate: null,
     ...over,
   };
 }
@@ -63,3 +77,46 @@ export const learningRoute =
   (status: () => LearningStatus = () => makeLearning()): ApiRouteHandler =>
   () =>
     json(200, status());
+
+export const makeEstimates = (over: Partial<EstimatesStatus> = {}): EstimatesStatus => ({
+  n: 23,
+  auc: 0.71,
+  trainedAt: '2026-10-20T08:30:00.000Z',
+  lastRun: null,
+  ...over,
+});
+
+export const makeFeedEstimate = (
+  feedId: string,
+  n: number,
+  auc: number | null,
+): LearningFeedEstimate => ({ feedId, estimate: { n, auc } });
+
+export const makeHistoryItem = (over: Partial<LearningHistoryItem> = {}): LearningHistoryItem => ({
+  at: '2026-10-20T08:30:00.000Z',
+  kind: 'estimate',
+  n: 20,
+  auc: 0.7,
+  baselineAuc: null,
+  activated: false,
+  turnedOn: false,
+  engineModel: null,
+  ...over,
+});
+
+export const makeHistory = (
+  items: LearningHistoryItem[] = [],
+  truncated: Partial<LearningHistory['truncated']> = {},
+): LearningHistory => ({ items, truncated: { model: false, estimate: false, ...truncated } });
+
+export const learningHistoryRoute =
+  (history: () => LearningHistory = () => makeHistory()): ApiRouteHandler =>
+  () =>
+    json(200, history());
+
+export const learningEstimatesRoute =
+  (status: () => LearningStatus = () => makeLearning()): ApiRouteHandler =>
+  () => {
+    const { estimates, estimateGate } = status();
+    return json(200, { estimates, estimateGate });
+  };

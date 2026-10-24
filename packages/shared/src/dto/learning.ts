@@ -6,6 +6,10 @@ import { IsoTimestampSchema } from './common.js';
 
 const count = z.number().int().min(0);
 
+/** The word-estimate model's quality on one feed's ratings. */
+export const FeedEstimateSchema = z.object({ n: count, auc: z.number().nullable() }).strict();
+export type FeedEstimate = z.infer<typeof FeedEstimateSchema>;
+
 export const LearningFeedAgreementSchema = z
   .object({
     feedId: z.string(),
@@ -39,9 +43,22 @@ export const LearningFeedAgreementSchema = z
       })
       .strict(),
     articlesPerWeek: count.nullable(),
+    estimate: FeedEstimateSchema.nullable().default(null),
   })
   .strict();
 export type LearningFeedAgreement = z.infer<typeof LearningFeedAgreementSchema>;
+
+/** A followed feed outside Training that has word-estimate metrics but no card agreement. */
+export const LearningFeedEstimateSchema = z
+  .object({ feedId: z.string(), estimate: FeedEstimateSchema })
+  .strict();
+export type LearningFeedEstimate = z.infer<typeof LearningFeedEstimateSchema>;
+
+export type LearningFeedEntry = LearningFeedAgreement | LearningFeedEstimate;
+
+export function hasAgreement(entry: LearningFeedEntry): entry is LearningFeedAgreement {
+  return 'status' in entry;
+}
 
 /** Whether analysis of new articles is paused for everyone, and why (global, not per user). */
 export const ClassificationStatusSchema = z
@@ -66,7 +83,13 @@ export const EstimatesStatusSchema = z
     trainedAt: IsoTimestampSchema,
     /** The latest refresh: the unread rows whose tier rose or fell. */
     lastRun: z
-      .object({ at: IsoTimestampSchema, movedUp: count, movedDown: count })
+      .object({
+        at: IsoTimestampSchema,
+        movedUp: count,
+        movedDown: count,
+        /** The refresh followed new ratings (not window ageing or a sweep). */
+        fromRatings: z.boolean().default(false),
+      })
       .strict()
       .nullable(),
   })
@@ -98,9 +121,41 @@ export const LearningStatusSchema = z
           .nullable(),
       })
       .strict(),
-    feeds: z.array(LearningFeedAgreementSchema),
+    feeds: z.array(z.union([LearningFeedAgreementSchema, LearningFeedEstimateSchema])),
     classification: ClassificationStatusSchema.default({ state: 'ok', since: null, reason: null }),
     estimates: EstimatesStatusSchema.nullable().default(null),
+    /** Ratings still missing to open the word-estimate gate (0 once a model exists or the gate is open). */
+    estimateGate: z.object({ needed: count }).strict().default({ needed: 0 }),
   })
   .strict();
 export type LearningStatus = z.infer<typeof LearningStatusSchema>;
+
+/** The cheap estimate status (`GET /me/learning/estimates`). */
+export const LearningEstimatesSchema = LearningStatusSchema.pick({
+  estimates: true,
+  estimateGate: true,
+});
+export type LearningEstimates = z.infer<typeof LearningEstimatesSchema>;
+
+export const LearningHistoryItemSchema = z
+  .object({
+    at: IsoTimestampSchema,
+    kind: z.enum(['model', 'estimate']),
+    n: count,
+    auc: z.number().nullable(),
+    baselineAuc: z.number().nullable(),
+    activated: z.boolean(),
+    turnedOn: z.boolean(),
+    engineModel: z.string().nullable(),
+  })
+  .strict();
+export type LearningHistoryItem = z.infer<typeof LearningHistoryItemSchema>;
+
+/** Learning milestones, oldest first (`GET /me/learning/history`). */
+export const LearningHistorySchema = z
+  .object({
+    items: z.array(LearningHistoryItemSchema),
+    truncated: z.object({ model: z.boolean(), estimate: z.boolean() }).strict(),
+  })
+  .strict();
+export type LearningHistory = z.infer<typeof LearningHistorySchema>;
