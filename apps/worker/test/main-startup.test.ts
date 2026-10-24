@@ -127,3 +127,16 @@ describe('worker startup failure cleanup', () => {
     },
   );
 });
+
+describe('ingest-only queue readiness', () => {
+  it('compares only consumed queues plus the internal cron queue', async () => {
+    h.ingestOnly = true;
+    h.readinessFailure = true;
+    await expect(import('../src/main.js')).rejects.toThrow('readiness test stop');
+    expect(h.queueReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queues: ['feed.schedule', 'feed.fetch', 'article.extract', '__pgboss__send-it'],
+      }),
+    );
+  });
+});

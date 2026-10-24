@@ -1,6 +1,11 @@
 import { hostname } from 'node:os';
 
-import { createDatabase, createPgOriginLimiter, createPool } from '@bantoozi/db';
+import {
+  PG_BOSS_CRON_QUEUE,
+  createDatabase,
+  createPgOriginLimiter,
+  createPool,
+} from '@bantoozi/db';
 import {
   FEED_SCHEDULE_CRON,
   HOUSE_CRON_SCHEDULES,
@@ -66,7 +71,13 @@ await verifyQuestionSets(db).catch((error: unknown) => {
   logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
   throw error;
 });
-const queueReadiness = await startQueueReadiness({ db, logger });
+// EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction on golden databases (D-96).
+const workerQueues = effectiveWorkerQueues(config.workerQueues, config.evalIngestOnly);
+const queueReadiness = await startQueueReadiness({
+  db,
+  logger,
+  queues: [...workerQueues, PG_BOSS_CRON_QUEUE],
+});
 
 // The runtime builds the models from the effective settings and records the engine model pin under
 // its row lock (a changed pin enqueues the model rebuild once); it checks restart-class changes.
@@ -144,9 +155,6 @@ const handlers = createHandlers(
     ...(config.deletionHmacKey === undefined ? {} : { deletionHmacKey: config.deletionHmacKey }),
   }),
 );
-// EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction; a golden database refuses
-// ordinary workers (D-96).
-const workerQueues = effectiveWorkerQueues(config.workerQueues, config.evalIngestOnly);
 const unavailable = assertProductionReady(config.nodeEnv, handlers, workerQueues);
 if (unavailable.length > 0) {
   logger.warn({ unavailable }, 'stages not implemented yet: their jobs and intents stay pending');

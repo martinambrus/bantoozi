@@ -67,7 +67,8 @@ export interface QueueReadinessLogger {
 
 /**
  * Reports registry queues missing from pg-boss: an error log and a heartbeat problem while any is
- * missing, re-checked every `intervalMs` until they appear. An unreadable table is unknown, not missing.
+ * missing, re-checked every `intervalMs` until they appear. An unreadable table is unknown, not
+ * missing, and is retried on the same interval.
  */
 export async function startQueueReadiness(options: {
   db: Executor;
@@ -77,6 +78,13 @@ export async function startQueueReadiness(options: {
 }): Promise<QueueReadiness> {
   let missing: string[] = [];
   let timer: NodeJS.Timeout | undefined;
+  let stopped = false;
+  const retry = (): void => {
+    if (!stopped && timer === undefined) {
+      timer = setInterval(() => void refresh(), options.intervalMs ?? 30_000);
+      timer.unref();
+    }
+  };
   const refresh = async (): Promise<void> => {
     let now: string[];
     try {
@@ -86,6 +94,7 @@ export async function startQueueReadiness(options: {
         { err: error },
         'pg-boss queues could not be read: queue readiness unknown',
       );
+      retry();
       return;
     }
     const previous = new Set(missing);
@@ -96,9 +105,8 @@ export async function startQueueReadiness(options: {
     } else if (now.length === 0 && previous.size > 0) {
       options.logger.info({}, 'pg-boss queues are present again');
     }
-    if (now.length > 0 && timer === undefined) {
-      timer = setInterval(() => void refresh(), options.intervalMs ?? 30_000);
-      timer.unref();
+    if (now.length > 0) {
+      retry();
     } else if (now.length === 0 && timer !== undefined) {
       clearInterval(timer);
       timer = undefined;
@@ -111,6 +119,7 @@ export async function startQueueReadiness(options: {
       missing.length === 0 ? [] : [{ key: QUEUES_MISSING_KEY, message: missingMessage(missing) }],
     refresh,
     stop() {
+      stopped = true;
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
     },
