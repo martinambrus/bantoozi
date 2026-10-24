@@ -11,7 +11,7 @@ import { adminMe, adminRoutes, unhandledGuard } from './support.js';
 /**
  * D-251: Admin → Settings shows `engine.auto_analysis_daily_cap` in the Decision engine (Jev)
  * group with an integer editor (0..1 000 000), its environment default and a reset. The response
- * carries the new key (value null = the env default, default 1000).
+ * carries the effective value (1000 from the environment unless a value is stored).
  */
 
 const KEY = 'engine.auto_analysis_daily_cap';
@@ -30,7 +30,7 @@ function settingsWithCap(stored: number | null): AdminSettings {
   };
   return {
     ...base,
-    values: { ...base.values, [KEY]: stored },
+    values: { ...base.values, [KEY]: stored ?? 1000 },
     defaults: { ...base.defaults, [KEY]: 1000 },
     sources: { ...base.sources, [KEY]: stored === null ? 'env' : 'stored' },
     stored:
@@ -56,6 +56,7 @@ async function open(stored: number | null = null) {
 
 describe('engine.auto_analysis_daily_cap in Admin → Settings', () => {
   it('sits in the Decision engine group with a number editor starting at the env default', async () => {
+    expect(settingsWithCap(null).values[KEY]).toBe(1000);
     await open();
     const group = screen.getByRole('group', { name: 'Decision engine (Jev)' });
     const key = within(group).getByRole('group', { name: KEY });

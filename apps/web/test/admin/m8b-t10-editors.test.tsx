@@ -9,6 +9,7 @@ import {
   modelServer,
   patchAnswer,
   runtimeRoutes,
+  runtimeSettings,
   type RuntimeFixture,
 } from './m8b-t10-support.js';
 import { T1, adminMe, freshProbes, unhandledGuard } from './support.js';
@@ -61,6 +62,10 @@ async function fill(app: { user: UserEvent }, key: string, text: string, label =
 
 describe('M8b-T10 grouped typed editors', () => {
   it('puts every runtime key in its group, with a typed control that starts at the default', async () => {
+    const settings = runtimeSettings();
+    for (const [key, value] of Object.entries(RUNTIME_DEFAULTS)) {
+      expect(settings.values[key as keyof typeof RUNTIME_DEFAULTS], key).toEqual(value);
+    }
     await open();
 
     const groups: Record<string, string[]> = {
