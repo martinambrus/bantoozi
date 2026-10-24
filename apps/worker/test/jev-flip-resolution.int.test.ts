@@ -61,7 +61,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await resetWorld(h);
+  await resetWorld(h, { model: OLD_MODEL });
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     ['engine.model_watch', 'engine.rating_fingerprints', 'house.progress'],
   ]);
@@ -399,7 +399,7 @@ describe('N8: no restart loop right after boot', () => {
   );
 
   it.each(matrix)('setting %s, row %s, pin %s, probe %s', async (setting, row, pin, answer) => {
-    await resetWorld(h);
+    await resetWorld(h, { model: OLD_MODEL });
     if (pin === 'none') await dropPin();
     if (pin === 'marked') {
       await setSetting(h.owner, 'engine.model_pin', {
