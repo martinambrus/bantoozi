@@ -1,10 +1,12 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useArticleList } from '../../src/features/reader/use-article-list.js';
 import { setOfflineEnabled } from '../../src/offline/cache.js';
 import { failure, json } from '../api/fake-fetch.js';
-import { makeDetail } from '../article/harness.js';
+import { makeDetail, renderReader } from '../article/harness.js';
 import { item, page, rowTitles } from '../reader/support.js';
+import { makeMe } from '../session/fixtures.js';
 import {
   FOR_YOU,
   connection,
@@ -55,15 +57,24 @@ describe('saving the list that was loaded', () => {
 
   it('keeps the first 200 rows of a longer list, in order', async () => {
     await setOfflineEnabled(A, true);
-    const rows = Array.from({ length: 205 }, (_unused, index) => item(index + 1));
+    const rows = Array.from({ length: 201 }, (_unused, index) => item(index + 1));
+    const me = makeMe({ id: A });
+    // Exercise the list's real fetch and save effect without rendering 201 article controls.
+    function LoadedList() {
+      const list = useArticleList({ kind: 'lane', lane: 'for_you' }, me.preferences);
+      return <output>{list.items.at(-1)?.title}</output>;
+    }
+    const app = renderReader(<LoadedList />, {
+      me,
+      routes: { 'GET /articles': () => json(200, page(rows)) },
+    });
 
-    await harness.open(connection(), { path: '/read/for_you', items: rows });
-
-    await screen.findByRole('article', { name: 'Article 205' });
+    await screen.findByText('Article 201');
     const expected = rows.slice(0, 200).map((row) => row.id);
     await viewReaches(idb.factory, expected);
     expect(await storedItem(idb.factory, '200')).toBeDefined();
     expect(await storedItem(idb.factory, '201')).toBeUndefined();
+    expect(app.unhandled).toEqual([]);
   });
 
   it('keeps a view under its own key, not under the key of another', async () => {
