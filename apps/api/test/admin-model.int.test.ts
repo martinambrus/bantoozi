@@ -763,3 +763,23 @@ describe('D-304 second save before alias re-resolution', () => {
     }
   });
 });
+
+it('clears the watch candidate on a concrete save before returning to the alias', async () => {
+  await setRow('engine.typesafe_model', 'jev-latest');
+  await seedModelState(h, {
+    pin: { model: 'jev-1.13.0', alias: 'jev-latest' },
+    resolution: { model: 'jev-1.13.0' },
+    probes: [ok('jev-1.13.0'), { requested: 'jev-latest', answered: 'jev-1.13.0' }],
+  });
+  await setRow('engine.model_candidate', {
+    model: 'jev-1.14.0',
+    firstSeenAt: new Date().toISOString(),
+    count: 1,
+  });
+  const concrete = await setModel('jev-1.13.0');
+  expect(concrete.statusCode, concrete.body).toBe(200);
+  expect(await stored('engine.model_candidate')).toBeNull();
+  const alias = await setModel('jev-latest');
+  expect(alias.statusCode, alias.body).toBe(200);
+  expect(await stored('engine.model_candidate')).toBeNull();
+});

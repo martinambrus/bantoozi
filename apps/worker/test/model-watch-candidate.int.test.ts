@@ -1,3 +1,4 @@
+import { writeSetting } from '@bantoozi/db';
 import { EngineModelWatchSchema as OriginModelWatchSchema } from '../../../packages/shared/test/support/origin-model-watch.js';
 import { startFakeTypeSafe, type FakeTypeSafeServer } from '@bantoozi/testing';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -353,4 +354,26 @@ it('discards an expired candidate on a failed confirmation without scheduling an
   await runWatch(h, { prober: realProber(h, fake, at), now: at, mailer });
   expect(await candidate()).toBeUndefined();
   expect(await h.intents('house.model-watch', { pending: true })).toHaveLength(before.length);
+});
+
+it('discards a candidate when the setting is saved concrete and back between watch runs', async () => {
+  fake.setOptions({ failRate: 0 });
+  await answer(V114);
+  expect(await candidate()).toMatchObject({ model: V114, count: 1 });
+  await h.db.transaction(async (tx) => {
+    await writeSetting(tx, { key: 'engine.typesafe_model', value: V113, updatedBy: null });
+  });
+  await h.db.transaction(async (tx) => {
+    await writeSetting(tx, { key: 'engine.typesafe_model', value: ALIAS, updatedBy: null });
+  });
+  expect(await candidate()).toBeUndefined();
+  await answer(V114, 30 * 60_000);
+  expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
+  expect(await candidate()).toMatchObject({
+    model: V114,
+    count: 1,
+    firstSeenAt: iso(new Date(NOW.getTime() + 30 * 60_000)),
+  });
+  await answer(V114, 40 * 60_000);
+  expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
 });

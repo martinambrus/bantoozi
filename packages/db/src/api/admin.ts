@@ -3,6 +3,7 @@ import {
   BUDGET_EXEMPT_KINDS,
   CandidateValidationSchema,
   DECISION_KINDS,
+  JEV_LATEST_ALIAS,
   type CandidateStatus,
   type CandidateValidation,
   type Provider,
@@ -13,6 +14,7 @@ import type { Executor, Transaction } from '../client.js';
 import { checkUserPlanChoice } from './plans.js';
 import { librarySeedTextHash } from '../library/library-cards.js';
 import type { TenantTx } from '../tenant.js';
+import { updateSettingLocked } from '../settings.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
 /**
@@ -76,11 +78,17 @@ export async function lockSettingRows(
   }));
 }
 
-/** Upsert a validated setting value, attributed to the administrator. */
+/** Upsert a validated setting value, attributed to the administrator; run in a transaction. */
 export async function writeSetting(
   tx: Executor,
   input: { key: string; value: unknown; updatedBy: string | null },
 ): Promise<void> {
+  // Clear in the save transaction: a concrete-and-back round trip between watch runs must
+  // not retain an earlier alias candidate. Match the worker's watch-then-candidate lock order.
+  if (input.key === 'engine.typesafe_model' && input.value !== JEV_LATEST_ALIAS) {
+    await updateSettingLocked<unknown>(tx, 'engine.model_watch', {}, (current) => current);
+    await updateSettingLocked(tx, 'engine.model_candidate', null, () => null);
+  }
   const value = JSON.stringify(input.value);
   await tx.execute(sql`
     INSERT INTO settings (key, value, updated_at, updated_by)
