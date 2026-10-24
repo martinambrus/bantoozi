@@ -330,7 +330,8 @@ describe('choosing articles', () => {
     for (const checkbox of checkboxes) expect(checkbox).toBeChecked();
     expect(screen.getByText('25 selected')).toBeVisible();
     expect(screen.queryByText(/at most/)).toBeNull();
-  });
+    // Rendering 25 rows still takes most of the 30 s default on a loaded CI runner (30.7 s on PR #83).
+  }, 60_000);
 });
 
 describe('select all', () => {

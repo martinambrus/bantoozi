@@ -95,11 +95,12 @@ export async function arrive(
           (state) => state.title === appended.title,
         );
         articleId = found?.id ?? '';
-        return found !== undefined && isExtracted(found);
+        if (found === undefined) return 'not ingested';
+        return isExtracted(found) ? 'extracted' : found.pipelineState;
       },
       { message: `"${appended.title}" is extracted`, timeout: 45_000, intervals: [500, 1_000] },
     )
-    .toBe(true);
+    .toBe('extracted');
   if (pageStatus !== undefined) {
     expect(
       (await requestsFor(control, key, pagePath)).length,

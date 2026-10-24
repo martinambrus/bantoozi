@@ -31,7 +31,11 @@ export function holdExits() {
     }
     realClear(id);
   }) as typeof clearTimeout;
+  // Over fake timers, `vi.useRealTimers()` in the shared afterEach (which runs first) restores the real
+  // functions; putting the captured fake ones back would leave a dead fake clock for the next test.
+  const overFakeTimers = 'clock' in realSet;
   onTestFinished(() => {
+    if (overFakeTimers) return;
     globalThis.setTimeout = realSet;
     globalThis.clearTimeout = realClear;
   });
