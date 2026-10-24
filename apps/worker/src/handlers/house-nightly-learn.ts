@@ -108,6 +108,11 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
         });
       }),
     );
-    deps.logger.info({ job: JOB, examined, learn, failed, estimate }, 'nightly learn enqueued');
+    const summary = { job: JOB, examined, learn, failed, estimate };
+    if (failed > 0) deps.logger.error(summary, 'nightly learn enqueued');
+    else deps.logger.info(summary, 'nightly learn enqueued');
+    if (failed > 0 && failed === examined) {
+      throw new Error('All examined users failed nightly learn');
+    }
   };
 }

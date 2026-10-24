@@ -32,8 +32,8 @@ it('continues past a failing learn reader, sweeps estimates and records completi
     return original(...args);
   });
   const warn = vi.fn();
-  const info = vi.fn();
-  const handlers = h.handlersWith({ logger: { ...h.deps.logger, warn, info } });
+  const errorLog = vi.fn();
+  const handlers = h.handlersWith({ logger: { ...h.deps.logger, warn, error: errorLog } });
   await h.clearOutbox();
   await h.deleteSetting('house.progress');
   await expect(
@@ -55,8 +55,36 @@ it('continues past a failing learn reader, sweeps estimates and records completi
   expect(await h.setting('house.progress')).toMatchObject({
     'house.nightly-learn': { completedAt: expect.any(String) },
   });
-  expect(info).toHaveBeenCalledWith(
+  expect(errorLog).toHaveBeenCalledWith(
     expect.objectContaining({ job: 'house.nightly-learn', examined: 3, learn: 2, failed: 1 }),
     'nightly learn enqueued',
   );
+});
+
+it('fails an entirely broken run only after sweeping estimates and writing progress', async () => {
+  const userId = await w.reader(6, 6);
+  vi.spyOn(learnInputs, 'loadLearnInputs').mockRejectedValue(new Error('systematic failure'));
+  const error = vi.fn();
+  const handlers = h.handlersWith({ logger: { ...h.deps.logger, error } });
+  await h.clearOutbox();
+  await h.deleteSetting('house.progress');
+  await expect(
+    dispatch(
+      handlers,
+      'house.nightly-learn',
+      {},
+      { queue: 'house.nightly-learn', jobId: 'direct' },
+    ),
+  ).rejects.toThrow('All examined users failed nightly learn');
+  expect(await w.pending('user.estimate', userId)).toHaveLength(1);
+  expect(await h.setting('house.progress')).toMatchObject({
+    'house.nightly-learn': { completedAt: expect.any(String) },
+  });
+  expect(error).toHaveBeenCalledWith(
+    expect.objectContaining({ job: 'house.nightly-learn', learn: 0, failed: expect.any(Number) }),
+    'nightly learn enqueued',
+  );
+  const summary = error.mock.calls[0]?.[0] as { examined: number; failed: number };
+  expect(summary.failed).toBeGreaterThan(0);
+  expect(summary.failed).toBe(summary.examined);
 });
