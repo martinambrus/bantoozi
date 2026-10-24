@@ -358,6 +358,11 @@ an assumption until one real Jev answer is recorded.
 - **Response schema.** `RatingResponseSchema.pattern` becomes a union on `kind` (`card` | `feed`). Tabs opened
   before the release reject it until they reload (the D-163 bar), as with D-268.
 
+- **As built (DPF-6…DPF-8, D-320).** Offers are rows of `dislike_pattern_offers` (migration 0036); only an impression
+  (1 s visible) or an answer starts the 14-day cooldown, and an unanswered offer of the same scope from the last 10
+  minutes holds back another. Offer toasts stay sticky (D-270 supersedes the 15 s), one per scope. The feed fallback
+  uses the lowest-id subscribed carrier feed's latest 200 ratings of 30 days; its queries take 2–3 ms on a heavy reader.
+
 ### 4.7 Outage recovery (OPS-1 … OPS-3, dev)
 
 - **OPS-1, done 10-20 13:15 UTC.**
@@ -425,7 +430,7 @@ overlap where they add no migration.
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
 | DPF-6 | Seen-based cooldown: table, offer insert in the rating transaction, `POST /articles/:id/pattern-offer`, the web `seen`/`accepted`/`dismissed` events | — | A | An unseen offer does not block the next one; a seen one blocks its scope for 14 days |
-| DPF-7 | The offer's own toast id and 15 s duration | — | B | A second rating within 15 s leaves the offer visible; the undo toast still updates |
+| DPF-7 | Preserve D-270: own per-rating undo toast id and sticky offer duration | — | B | A later rating leaves the open offer visible and its own undo toast separate; offer buttons close it |
 | DPF-8 | Feed-scoped offers and "Make a Never card from these"; the `pattern` union | DPF-6 | A | A Training-feed dislike that looks like ≥ 2 recent dislikes of the feed returns `kind: 'feed'`, and the editor opens with the three articles and Never selected |
 | DPF-9 | Docs: specs 06 §10, 08 §5.3, 09 §3.3; DECISIONS | all | lead | — |
 

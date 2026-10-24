@@ -26,8 +26,8 @@ describe('route table', () => {
     expect((routes.readyz.response as z.ZodType).parse(response)).toEqual(response);
   });
 
-  it('lists the 119 operations of apps/api/test/expected-operations.txt', () => {
-    expect(EXPECTED_OPERATIONS).toHaveLength(119);
+  it('lists the 120 operations of apps/api/test/expected-operations.txt', () => {
+    expect(EXPECTED_OPERATIONS).toHaveLength(120);
     expect(entries.map(([, route]) => operation(route)).sort()).toEqual(
       [...EXPECTED_OPERATIONS].sort(),
     );

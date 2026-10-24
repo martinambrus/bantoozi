@@ -10736,6 +10736,69 @@
         }
       }
     },
+    "/api/v1/articles/{id}/pattern-offer": {
+      "post": {
+        "summary": "Record a pattern offer impression or answer",
+        "tags": [
+          "articles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "offerId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  },
+                  "event": {
+                    "type": "string",
+                    "enum": [
+                      "seen",
+                      "accepted",
+                      "dismissed"
+                    ]
+                  }
+                },
+                "required": [
+                  "offerId",
+                  "event"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/articles/{id}/rating": {
       "post": {
         "summary": "Rate an article",
@@ -11263,30 +11326,80 @@
                     },
                     "pattern": {
                       "nullable": true,
-                      "type": "object",
-                      "properties": {
-                        "cardId": {
-                          "type": "string"
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "card"
+                              ]
+                            },
+                            "cardId": {
+                              "type": "string"
+                            },
+                            "lowered": {
+                              "type": "boolean"
+                            },
+                            "offerId": {
+                              "nullable": true,
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "offer": {
+                              "nullable": true,
+                              "minItems": 1,
+                              "maxItems": 3,
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "cardId",
+                            "lowered",
+                            "offerId",
+                            "offer"
+                          ],
+                          "additionalProperties": false
                         },
-                        "lowered": {
-                          "type": "boolean"
-                        },
-                        "offer": {
-                          "nullable": true,
-                          "minItems": 1,
-                          "maxItems": 3,
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "feed"
+                              ]
+                            },
+                            "feedId": {
+                              "type": "string"
+                            },
+                            "offer": {
+                              "minItems": 3,
+                              "maxItems": 3,
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "offerId": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "feedId",
+                            "offer",
+                            "offerId"
+                          ],
+                          "additionalProperties": false
                         }
-                      },
-                      "required": [
-                        "cardId",
-                        "lowered",
-                        "offer"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": [

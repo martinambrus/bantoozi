@@ -162,6 +162,8 @@
     "teachYes": "Naučiť „{{title}}“: presne toto",
     "teachNo": "Naučiť „{{title}}“: nie toto",
     "stopSuggesting": "Prestať navrhovať",
+    "makeNeverFromThese": "Vytvoriť z týchto článkov kartu Nikdy",
+    "similarFeedLowered": "Podobné neprečítané články v tomto kanáli budú zoradené nižšie.",
     "fewerLikeThese": "Menej takýchto",
     "notNow": "Teraz nie",
     "fewerTaught": "{{title}} bude ukazovať menej takýchto.",

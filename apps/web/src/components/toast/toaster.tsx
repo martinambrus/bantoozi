@@ -98,6 +98,26 @@ function ToastItem({ toast, onDismiss, onLeave }: ToastItemProps) {
   const { id, actions } = toast;
   const dismiss = useCallback(() => onDismiss(id), [onDismiss, id]);
   useAutoDismiss(toast, hovered || focused, dismiss);
+  useEffect(() => {
+    if (toast.onSeen === undefined) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let sent = false;
+    const visible = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === 'visible' && !sent) {
+        timer = setTimeout(() => {
+          sent = true;
+          toast.onSeen?.();
+        }, 1000);
+      }
+    };
+    document.addEventListener('visibilitychange', visible);
+    visible();
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [toast]);
 
   function close(run?: () => void) {
     const held = root.current?.contains(document.activeElement) === true;

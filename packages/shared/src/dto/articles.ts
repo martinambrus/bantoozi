@@ -412,11 +412,31 @@ export const ArticleItemResponseSchema = z
 export type ArticleItemResponse = z.infer<typeof ArticleItemResponseSchema>;
 
 /** How a dislike relates to the card's recent dislikes (DPF-3): lowered, and what to offer. */
-export const DislikePatternSchema = z
+export const DislikePatternSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('card'),
+      cardId: IdSchema,
+      lowered: z.boolean(),
+      offerId: UuidStringSchema.nullable(),
+      offer: z.array(IdSchema).min(1).max(3).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('feed'),
+      feedId: IdSchema,
+      offer: z.array(IdSchema).length(3),
+      offerId: UuidStringSchema,
+    })
+    .strict(),
+]);
+export type DislikePattern = z.infer<typeof DislikePatternSchema>;
+
+export const PatternOfferEventSchema = z
   .object({
-    cardId: IdSchema,
-    lowered: z.boolean(),
-    offer: z.array(IdSchema).min(1).max(3).nullable(),
+    offerId: UuidStringSchema,
+    event: z.enum(['seen', 'accepted', 'dismissed']),
   })
   .strict();
 

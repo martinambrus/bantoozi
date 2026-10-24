@@ -22,6 +22,7 @@ import {
   readOwnUser,
   readerReleaseClock,
   recordDwell,
+  recordPatternOfferEvent,
   retryBookmarkCapture,
   rankCovered,
   tenantOutbox,
@@ -66,6 +67,7 @@ import {
   MarkReadResponseSchema,
   MuteStoryBodySchema,
   MuteStoryResponseSchema,
+  PatternOfferEventSchema,
   PromptAnswerBodySchema,
   RateBulkBodySchema,
   RatingBodySchema,
@@ -83,6 +85,7 @@ import {
   type MarkReadLane,
   type UserPreferences,
 } from '@bantoozi/shared';
+import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import { queryHash } from '../services/cursor.js';
@@ -621,6 +624,31 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
         return itemOutcome(tx, ctx, id, result, { prompt: result.prompt });
       });
       return reply.code(200).send(outcome.body);
+    },
+  );
+
+  app.post(
+    '/:id/pattern-offer',
+    {
+      schema: {
+        tags: TAGS,
+        summary: 'Record a pattern offer impression or answer',
+        params: ArticleIdParamsSchema,
+        body: PatternOfferEventSchema,
+        response: { 204: z.null() },
+      },
+      config: USER,
+    },
+    async (request, reply) => {
+      await request.mutate(async (tx, ctx) => {
+        await recordPatternOfferEvent(tx, {
+          articleId: request.params.id,
+          ...request.body,
+          now: ctx.now,
+        });
+        return { status: 204, body: null };
+      });
+      return reply.code(204).send(null);
     },
   );
 

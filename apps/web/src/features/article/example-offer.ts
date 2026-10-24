@@ -21,6 +21,7 @@ export interface ExampleOffersEnvironment {
   toast: Pick<ToastApi, 'show'>;
   i18n: I18n;
   accountId: string;
+  openNever: (articles: readonly { id: string; title: string }[]) => void;
 }
 
 export interface ExampleOffers {
@@ -37,7 +38,15 @@ export interface ExampleOffers {
    * its card, or null when the pattern has no offer, the card is not among the ones the person
    * holds or the cards cannot be read.
    */
-  patternActions(pattern: DislikePattern): Promise<readonly ToastAction[] | null>;
+  patternActions(
+    pattern: DislikePattern,
+    articleId: string,
+  ): Promise<readonly ToastAction[] | null>;
+  patternEvent(
+    pattern: DislikePattern,
+    articleId: string,
+    event: 'seen' | 'accepted' | 'dismissed',
+  ): void;
   /** Aborts the requests of the offers taken up and forgets them: nothing more is shown for them. */
   release(): void;
 }
@@ -49,6 +58,7 @@ export function createExampleOffers({
   toast,
   i18n,
   accountId,
+  openNever,
 }: ExampleOffersEnvironment): ExampleOffers {
   const why = i18n.getFixedT(null, 'why');
   const cache = cardCache(queryClient, accountId);
@@ -108,7 +118,41 @@ export function createExampleOffers({
     toast.show({ message: i18n.t('article:toast.suggestionsOff'), tone: 'success' });
   }
 
+  async function makeNever(articleIds: string[]): Promise<void> {
+    const { signal } = controller;
+    const results = await Promise.allSettled(
+      articleIds.map((id) => api.call(routes.articleGet, { params: { id } }, { signal })),
+    );
+    if (signal.aborted) return;
+    const articles = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [{ id: result.value.id, title: result.value.title }] : [],
+    );
+    if (articles.length > 0) {
+      openNever(articles);
+    } else {
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed !== undefined)
+        toast.show({ message: errorMessage(i18n.t, failed.reason), tone: 'error' });
+    }
+  }
+
+  function patternEvent(
+    pattern: DislikePattern,
+    articleId: string,
+    event: 'seen' | 'accepted' | 'dismissed',
+  ): void {
+    if (pattern.offerId === null) return;
+    void api
+      .call(
+        routes.patternOfferEvent,
+        { params: { id: articleId }, body: { offerId: pattern.offerId, event } },
+        { signal: controller.signal },
+      )
+      .catch(() => {});
+  }
+
   return {
+    patternEvent,
     async actionsFor(suggestion, articleId) {
       let cards: CardDto[];
       try {
@@ -139,9 +183,23 @@ export function createExampleOffers({
         },
       ];
     },
-    async patternActions(pattern) {
+    async patternActions(pattern, articleId) {
       const { offer } = pattern;
       if (offer === null) return null;
+      if (pattern.kind === 'feed')
+        return [
+          {
+            label: i18n.t('article:toast.makeNeverFromThese'),
+            onAction: () => {
+              patternEvent(pattern, articleId, 'accepted');
+              void makeNever(offer);
+            },
+          },
+          {
+            label: i18n.t('article:toast.notNow'),
+            onAction: () => patternEvent(pattern, articleId, 'dismissed'),
+          },
+        ];
       let cards: CardDto[];
       try {
         cards = await ensureCards(queryClient, api, accountId);
@@ -154,10 +212,14 @@ export function createExampleOffers({
         {
           label: i18n.t('article:toast.fewerLikeThese'),
           onAction: () => {
+            patternEvent(pattern, articleId, 'accepted');
             void teachFewer(pattern.cardId, offer);
           },
         },
-        { label: i18n.t('article:toast.notNow'), onAction: () => {} },
+        {
+          label: i18n.t('article:toast.notNow'),
+          onAction: () => patternEvent(pattern, articleId, 'dismissed'),
+        },
       ];
     },
     release() {

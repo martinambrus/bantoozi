@@ -373,6 +373,17 @@ const CASES: Record<string, Case> = {
     );
     return r.api.post(`/articles/${id}/dwell`, { ...fence(opened.item), ms: 30_000 });
   },
+  'POST /articles/:id/pattern-offer': async () => {
+    const r = await reader();
+    const id = await article(r.feedId);
+    const offerId = randomUUID();
+    await asTenant(
+      r.user.id,
+      `INSERT INTO dislike_pattern_offers (id, user_id, scope, scope_id, article_ids) VALUES ($1, $2, 'feed', $3, ARRAY[$4::bigint])`,
+      [offerId, r.user.id, r.feedId, id],
+    );
+    return r.api.post(`/articles/${id}/pattern-offer`, { offerId, event: 'seen' });
+  },
   'POST /articles/:id/rating': async () => {
     const r = await reader();
     return r.api.post(`/articles/${await article(r.feedId)}/rating`, {

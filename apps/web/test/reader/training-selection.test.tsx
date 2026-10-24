@@ -1252,6 +1252,46 @@ describe('the selection bar', () => {
     expect(app.calls('POST /cards/:id/examples')).toHaveLength(0);
   });
 
+  it('D2 Dislike all over five rows keeps one feed offer and one batch undo', async () => {
+    holdExits();
+    const rows = numbered(5);
+    const { app } = await openFeed(rows, {
+      routes: {
+        'POST /articles/:id/pattern-offer': () => json(204, null),
+        [RATE]: (_request, params) =>
+          actionResponse(
+            acked(
+              rows.find((row) => row.id === params['id'])!,
+              { rating: -1 },
+            ),
+            {
+              exampleSuggestion: null,
+              pattern: {
+                kind: 'feed',
+                feedId: '7',
+                offer: ['1', '2', '3'],
+                offerId: `a0a00000-0000-4000-8000-00000000000${params['id']}`,
+              },
+            },
+          ),
+      },
+    });
+    await choose(app, ...titles(5));
+    await app.user.click(bulk(/^Dislike 5 selected articles$/));
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(5));
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: 'Make a Never card from these' })).toHaveLength(
+        1,
+      ),
+    );
+    const offer = screen
+      .getByRole('button', { name: 'Make a Never card from these' })
+      .closest('[data-toast-id]');
+    expect(offer).toHaveAttribute('data-toast-id', 'pattern-offer:feed:7');
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1);
+  });
+
   it('uses the shared reason for new dislikes and leaves already disliked articles alone', async () => {
     const { app } = await openFeed([
       item(1, { rating: -1, reason: 'off_topic' }),

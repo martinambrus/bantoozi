@@ -73,6 +73,7 @@ const B = {
   fork: '',
   privateCard: '',
   draft: '',
+  patternOffer: randomUUID(),
   label: '',
   rules: [] as string[],
   cluster: '',
@@ -157,6 +158,7 @@ async function bDigest(): Promise<string> {
        'publication', (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM card_publication_requests p WHERE p.user_id = $1),
        'drafts', (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM card_drafts d WHERE d.user_id = $1),
        'forks', (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM interest_cards c WHERE c.owner_user_id = $1),
+       'patternOffers', (SELECT jsonb_agg(to_jsonb(o) ORDER BY o.id) FROM dislike_pattern_offers o WHERE o.user_id = $1),
        'events', (SELECT count(*) FROM feedback_events e WHERE e.user_id = $1),
        'receipts', (SELECT count(*) FROM api_mutations m WHERE m.user_id = $1),
        'snapshots', (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM article_snapshots s WHERE s.id = ANY($2::bigint[]))
@@ -363,6 +365,11 @@ beforeAll(async () => {
   expect((await json(bApi.get('/library/updates'))).length).toBe(1);
   expect((await json(bApi.get('/cards/publication-requests'))).length).toBe(1);
 
+  await h.owner.query(
+    `INSERT INTO dislike_pattern_offers (id, user_id, scope, scope_id, article_ids) VALUES ($1, $2, 'feed', $3, ARRAY[$4::bigint]) ON CONFLICT DO NOTHING`,
+    [B.patternOffer, b.id, B.sharedFeed, B.sharedArticle],
+  );
+
   B.foreign = [
     b.id,
     b.email,
@@ -380,6 +387,7 @@ beforeAll(async () => {
     B.publicationRequest,
     ...B.snapshots,
     B.ratingMutation,
+    B.patternOffer,
   ];
   // Nothing addressed to B may surface through the test-only last-email route either.
   h.mailer.sent.length = 0;
@@ -683,6 +691,12 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
     'POST /articles/:id/open': notFound(() => aApi.post(`/articles/${p1}/open`, freshFence)),
     'POST /articles/:id/dwell': notFound(() =>
       aApi.post(`/articles/${p1}/dwell`, { ...freshFence, ms: 1000 }),
+    ),
+    'POST /articles/:id/pattern-offer': notFound(() =>
+      aApi.post(`/articles/${B.sharedArticle}/pattern-offer`, {
+        offerId: B.patternOffer,
+        event: 'seen',
+      }),
     ),
     'POST /articles/:id/rating': {
       attempts: [

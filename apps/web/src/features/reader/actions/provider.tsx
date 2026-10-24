@@ -34,6 +34,7 @@ import {
 import { onAccountReset } from '../../../session/reset.js';
 import { createReturnTracker, type ReturnTracker } from '../../article/dwell.js';
 import { createExampleOffers } from '../../article/example-offer.js';
+import { CardEditor } from '../../interests/card-editor.js';
 import { articleKeys } from '../../article/query-keys.js';
 import { subscriptionsKey } from '../../feeds/subscriptions.js';
 import { unreadKeys } from '../queries.js';
@@ -117,12 +118,15 @@ export function focusRestoredRow(articleId: string, from: Element | null): void 
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
+type NeverArticles = readonly { id: string; title: string }[];
+
 interface Environment {
   api: ApiClient;
   queryClient: QueryClient;
   toast: ToastApi;
   i18n: I18n;
   accountId: string;
+  openNever: (articles: NeverArticles) => void;
 }
 
 /** Hears each settled action of the account, after the provider has shown its own toasts. */
@@ -156,7 +160,7 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
   }
 }
 
-function createScope({ api, queryClient, toast, i18n, accountId }: Environment): Scope {
+function createScope({ api, queryClient, toast, i18n, accountId, openNever }: Environment): Scope {
   const toastIds = new Set<string>();
   const listeners = new Set<SettledListener>();
   /** A newer rating context invalidates delayed offers; one selected batch shares a context. */
@@ -176,7 +180,14 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     tracked.show(input);
   }
 
-  const offers = createExampleOffers({ api, queryClient, toast: tracked, i18n, accountId });
+  const offers = createExampleOffers({
+    api,
+    queryClient,
+    toast: tracked,
+    i18n,
+    accountId,
+    openNever,
+  });
 
   async function undo(actionId: string): Promise<UndoResult> {
     const from = document.activeElement;
@@ -229,41 +240,43 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     latestRatingBatchId = handle.ratingBatchId;
     const turn = latestOffer;
     const rated = ratingMessage(i18n, action.rating);
-    const lowered = pattern !== null && pattern.lowered;
-    const message = lowered ? `${rated} ${i18n.t('article:toast.similarLowered')}` : rated;
+    const lowered = pattern?.kind === 'card' && pattern.lowered;
+    const message =
+      pattern?.kind === 'feed' && preferences().estimates === 'on'
+        ? `${rated} ${i18n.t('article:toast.similarFeedLowered')}`
+        : lowered
+          ? `${rated} ${i18n.t('article:toast.similarLowered')}`
+          : rated;
     const undoAction: ToastAction = {
       label: i18n.t('common:actions.undo'),
       onAction: () => {
         void undo(handle.id);
       },
     };
-    const showPlain = () => {
+    const showPlain = (plainMessage = message) => {
       show({
         id: undoToastId(handle),
-        message,
+        message: plainMessage,
         tone: 'success',
         durationMs: UNDO_TOAST_MS,
         action: undoAction,
       });
     };
-    if (lowered && pattern.offer !== null) {
-      void offers.patternActions(pattern).then((offered) => {
+    if (pattern !== null && pattern.offer !== null) {
+      showPlain(rated);
+      void offers.patternActions(pattern, item.id).then((offered) => {
         if (turn !== latestOffer || !isRecent(handle)) return;
         const current = store.view(item);
         if (current.rating !== item.rating || current.reason !== item.reason) return;
         if (offered === null) {
-          showPlain();
           return;
         }
         show({
-          id:
-            handle.ratingBatchId === undefined
-              ? undoToastId(handle)
-              : `rating-offer:${handle.ratingBatchId}:${pattern.cardId}`,
+          id: `pattern-offer:${pattern.kind}:${pattern.kind === 'card' ? pattern.cardId : pattern.feedId}`,
           message,
           tone: 'success',
           durationMs: OFFER_TOAST_MS,
-          action: undoAction,
+          onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
           actions: offered,
         });
       });
@@ -486,6 +499,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
  */
 interface Holder {
   readonly accountId: string;
+  readonly openNever: (articles: NeverArticles) => void;
   scope: Scope | null;
   /** The kept changes are being frozen after the session ended; the scope is released after it. */
   freezing: Promise<void> | null;
@@ -501,8 +515,10 @@ export interface ReaderActionsProviderProps {
 }
 
 function AccountScope({ accountId, children }: ReaderActionsProviderProps) {
+  const [neverArticles, setNeverArticles] = useState<NeverArticles | null>(null);
   const [holder] = useState<Holder>(() => ({
     accountId,
+    openNever: setNeverArticles,
     scope: null,
     freezing: null,
     stopReplaying: null,
@@ -511,6 +527,7 @@ function AccountScope({ accountId, children }: ReaderActionsProviderProps) {
   useEffect(() => {
     const release = () => {
       holder.scope?.release();
+      setNeverArticles(null);
     };
     const unregister = onAccountReset(async (reason) => {
       if (reason === 'unauthorized') {
@@ -531,7 +548,18 @@ function AccountScope({ accountId, children }: ReaderActionsProviderProps) {
     };
   }, [holder]);
 
-  return <HolderContext value={holder}>{children}</HolderContext>;
+  return (
+    <HolderContext value={holder}>
+      {children}
+      {neverArticles === null ? null : (
+        <CardEditor
+          fromArticles={neverArticles}
+          initialStrength="never"
+          onClose={() => setNeverArticles(null)}
+        />
+      )}
+    </HolderContext>
+  );
 }
 
 /**
@@ -579,7 +607,14 @@ function useScope(): Scope {
   if (holder === null) {
     throw new Error('The reader actions need a <ReaderActionsProvider> above them');
   }
-  holder.scope ??= createScope({ api, queryClient, toast, i18n, accountId: holder.accountId });
+  holder.scope ??= createScope({
+    api,
+    queryClient,
+    toast,
+    i18n,
+    accountId: holder.accountId,
+    openNever: holder.openNever,
+  });
   const { scope } = holder;
   useEffect(() => {
     holder.stopReplaying ??= replayOn(scope);
