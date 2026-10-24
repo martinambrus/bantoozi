@@ -95,10 +95,20 @@ export function createToastStore(): ToastStore {
     show(input) {
       counter += 1;
       const actions = actionsOf(input);
+      // The same toast can remount in another outlet; its impression belongs to this showing.
+      let seen = false;
+      const onSeen = input.onSeen;
       const toast: Toast = {
         id: input.id ?? `toast-${counter}`,
         message: input.message,
-        onSeen: input.onSeen,
+        onSeen:
+          onSeen === undefined
+            ? undefined
+            : () => {
+                if (seen) return;
+                seen = true;
+                onSeen();
+              },
         tone: input.tone,
         action: actions[0],
         actions,

@@ -104,6 +104,64 @@ async function press(toast: HTMLElement, name: string, app: ReturnType<typeof re
 }
 
 describe('the offer in the undo toast', () => {
+  it.each(['early', 'late'] as const)(
+    'shows one batch offer toast with Undo when the suggestion arrives %s',
+    async (timing) => {
+      vi.useFakeTimers();
+      const first = makeItem();
+      const second = makeItem({ id: '102' });
+      const list = deferred<Response>();
+      function Batch() {
+        const store = useReaderActions();
+        return (
+          <>
+            <button
+              onClick={() =>
+                store.dispatch(first, { type: 'rate', rating: 1 }, { ratingBatchId: 'batch' })
+              }
+            >
+              First batch rating
+            </button>
+            <button
+              onClick={() =>
+                store.dispatch(second, { type: 'rate', rating: 1 }, { ratingBatchId: 'batch' })
+              }
+            >
+              Next batch rating
+            </button>
+          </>
+        );
+      }
+      const app = renderReader(<Batch />, {
+        routes: {
+          'POST /articles/101/rating': rates(first, YES),
+          'POST /articles/102/rating': rates(second, null),
+          'POST /articles/undo': () => undoResponse(first),
+          'GET /cards': () => (timing === 'early' ? json(200, CARDS) : list.promise),
+        },
+      });
+      apps.push(app);
+      await app.user.click(screen.getByRole('button', { name: 'First batch rating' }));
+      await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
+      if (timing === 'early') await screen.findByRole('button', { name: TEACH_YES });
+      await app.user.click(screen.getByRole('button', { name: 'Next batch rating' }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      if (timing === 'late') {
+        await act(async () => {
+          list.resolve(json(200, CARDS));
+          await vi.advanceTimersByTimeAsync(20);
+        });
+      }
+      expect(screen.getByRole('button', { name: TEACH_YES })).toBeVisible();
+      expect(app.toasts.getSnapshot()).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1);
+      await app.user.click(screen.getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(app.calls('POST', '/articles/undo')).toHaveLength(1));
+    },
+  );
+
   it('stays 8 seconds and adds Teach and Stop suggesting to Undo', async () => {
     const item = makeItem();
     const app = renderRow(item, server(item, YES));
@@ -443,6 +501,7 @@ describe('when there is no offer', () => {
   });
 
   it('keeps an offer that arrives late from covering a newer toast', async () => {
+    vi.useFakeTimers();
     const first = makeItem();
     const second = makeItem({ id: '102', title: 'Another article' });
     const list = deferred<Response>();
@@ -463,21 +522,26 @@ describe('when there is no offer', () => {
     await app.user.click(screen.getAllByRole('button', { name: 'Like' })[0]!);
     await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
     await app.user.click(screen.getAllByRole('button', { name: 'Like' })[1]!);
-    await findToast('Marked as liked');
+    await waitFor(() => expect(app.toasts.getSnapshot()).toHaveLength(2));
 
-    list.resolve(json(200, CARDS));
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      list.resolve(json(200, CARDS));
+      await vi.advanceTimersByTimeAsync(20);
     });
 
-    const toast = await findToast('Marked as liked');
-    expect(names(toast)).toEqual(['Undo', 'Dismiss']);
-    expect(app.toasts.getSnapshot()).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
+    expect(app.toasts.getSnapshot()).toHaveLength(2);
+    expect(app.toasts.getSnapshot().map((toast) => toast.message)).toEqual([
+      'Marked as liked',
+      'Marked as liked',
+    ]);
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
   });
 
   it.each([undefined, 'another-batch'])(
     'drops a delayed batch offer after an unrelated rating from %s',
     async (nextBatchId) => {
+      vi.useFakeTimers();
       const first = makeItem();
       const second = makeItem({ id: '102', title: 'Another article' });
       const list = deferred<Response>();
@@ -517,15 +581,17 @@ describe('when there is no offer', () => {
       await app.user.click(screen.getByRole('button', { name: 'First rating' }));
       await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
       await app.user.click(screen.getByRole('button', { name: 'Next rating' }));
-      await findToast('Marked as liked');
+      await waitFor(() => expect(app.toasts.getSnapshot()).toHaveLength(2));
 
       list.resolve(json(200, CARDS));
       await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await vi.advanceTimersByTimeAsync(20);
       });
 
       expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
-      expect(app.toasts.getSnapshot()).toHaveLength(1);
+      expect(app.toasts.getSnapshot()).toHaveLength(2);
+      expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
+      expect(app.toasts.getSnapshot().every((toast) => toast.durationMs === 5000)).toBe(true);
     },
   );
 
@@ -580,7 +646,9 @@ describe('when there is no offer', () => {
     });
 
     expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
-    expect(app.toasts.getSnapshot()).toHaveLength(1);
+    expect(app.toasts.getSnapshot()).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2);
+    expect(app.toasts.getSnapshot().every((toast) => toast.durationMs === 5000)).toBe(true);
   });
 
   it('shows no offer that arrives after the account was reset', async () => {

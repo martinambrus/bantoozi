@@ -266,14 +266,17 @@ login without leaking the previous account's UI. Slow classification leaves arti
   previous rating/read/archive state with `rating:null`. If a newer device action prevents undo,
   refresh and show that conflict. A failed optimistic update restores only that action's changes,
   not an old whole-query snapshot that could overwrite subsequent successful actions.
-- **Example suggestion:** when a rating response carries `exampleSuggestion` (spec 06 §10), the undo
-  toast stays until closed and adds one action, "Teach *EV battery tech*: this is it" (side `yes`) or "Teach
+- **Example suggestion:** when a rating response carries `exampleSuggestion` (spec 06 §10), the plain
+  confirmation and Undo show at once; once the card lookup returns, the toast stays until closed, its rating changes
+  or is undone (not when the Undo window ends; a batch shows this one toast with Undo, D-330) and adds one action, "Teach *EV battery tech*: this is it" (side `yes`) or "Teach
   *EV battery tech*: not this" (side `no`), plus "Stop suggesting", which sets
   `exampleSuggestions=false`. The action calls `POST /cards/:id/examples {articleId, side}`, swaps
   the cached card id and shows the same confirmation as the Why-this drawer. Ignoring it changes
   nothing. Responses to replayed offline actions never show a suggestion.
-- **Dislike pattern** (D-268): when a dislike's response carries `pattern.offer`, the toast reads
-  "Marked as disliked Similar articles will be ranked lower." until closed with Undo, "Show fewer like
+- **Dislike pattern** (D-268, D-270, D-320, D-330): when a dislike's response carries `pattern.offer`, the rating's
+  plain confirmation with Undo is followed by a separate sticky offer toast (one per scope) that stays until closed, its
+  rating is changed (confirmed) or undone; the server also dismisses that offer if it was never seen, so the same scope
+  can be offered again at once. It reads "Similar articles will be ranked lower." with "Show fewer like
   these" (`POST /cards/:id/examples/batch {articleIds: offer, side: 'no'}`, then "*Card* will show
   fewer like these.") and "Not now"; with `lowered` alone it only adds the sentence. In Why this?,
   `demote:similar` reads "Ranked lower: like N articles you disliked" with "Don't lower these"

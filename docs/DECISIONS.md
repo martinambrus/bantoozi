@@ -3281,7 +3281,7 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   starts the 14-day cooldown of its card family or feed, and an unanswered offer of the same scope from the last 10
   minutes holds back another, so a quick series or "Dislike all" yields one offer; the web keeps one sticky offer toast
   per scope next to each rating's own undo toast. Without a deciding held card the same similarity check runs over the
-  reader's latest 200 ratings of the last 30 days on the lowest-id subscribed carrier feed (quality dislikes excluded)
+  reader's latest 200 ratings of the last 30 days on the lowest-id subscribed carrier feed (D-330: a non-hidden one first) (quality dislikes excluded)
   and offers "Make a Never card from these", which opens the Never editor with the articles that load; "Similar unread
   articles in this feed will be ranked lower." shows only while estimates are on, and no ranking claim is made while
   similar demotion is off. Measured on a heavy reader: 2–3 ms for the two extra queries, existing indexes. Older web
@@ -3384,3 +3384,13 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   404 `{"error":"model '<id>' not found"}`, the shape of Ollama's API error documentation (not a recorded live answer),
   which the LLM fallback adapter maps to `model_unavailable:http_404`. A worker credential lookup that recovers to
   "no row and no environment key" clears the warning dedupe, so the next failure of that provider warns again.
+- D-330: 2026-10-24 (FNF-VL-18, task #40; amends D-320) — Show-fewer offer lifecycle, no migration. `house.purge-auth`
+  deletes offers 14 days after `seen_at`, or after `offered_at` while unseen, in bounded batches. A rating's plain
+  confirmation and Undo always show, even while an offer lookup is pending or a newer rating settles first. A sticky offer
+  stays until closed, its originating rating changes (once the change is confirmed; a failed optimistic change leaves it)
+  or is undone; the end of the Undo window does not close it; a batch shows one offer toast with Undo. Undo and any
+  change of the originating rating mark its unseen, unanswered offer `dismissed` in the same transaction (the API's
+  UPDATE grant), so a "dislike, Undo, dislike again" can offer again at once; seen offers keep their 14-day cooldown.
+  One `seen` per toast showing, also across modal remounts. Feed-scope offers use the lowest-id non-hidden subscribed
+  carrier, falling back to hidden ones (the rating request carries no feed). When the offer toast is not shown, the
+  plain toast keeps "Similar articles will be ranked lower.".

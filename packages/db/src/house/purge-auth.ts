@@ -65,6 +65,11 @@ export const PURGE_AUTH_RULES = {
     keys: 'ctid',
     where: (now) => sql`expires_at <= ${now.toISOString()}::timestamptz`,
   },
+  dislikePatternOffers: {
+    table: 'dislike_pattern_offers',
+    keys: 'ctid',
+    where: (now) => sql`coalesce(seen_at, offered_at) <= ${at(now, 14)}::timestamptz`,
+  },
   feedAutoAdmissions: {
     table: 'feed_auto_admissions',
     keys: 'ctid',

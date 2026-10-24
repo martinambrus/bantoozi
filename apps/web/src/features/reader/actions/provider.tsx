@@ -21,8 +21,8 @@ import { meKey } from '../../../api/query-keys.js';
 import { retryLaterMs } from '../../../api/retry-later.js';
 import { routes } from '../../../api/routes.js';
 import { errorMessage } from '../../../components/error-message.js';
-import { useToast, type ToastApi } from '../../../components/toast/toast-provider.js';
-import type { ToastAction, ToastInput } from '../../../components/toast/toast-store.js';
+import { useToastStore, type ToastApi } from '../../../components/toast/toast-provider.js';
+import type { ToastAction, ToastInput, ToastStore } from '../../../components/toast/toast-store.js';
 import { isHandedBack } from '../../../components/toast/toaster.js';
 import { setRecordsState } from '../../../offline/queue.js';
 import {
@@ -125,7 +125,7 @@ type NeverArticles = readonly { id: string; title: string }[];
 interface Environment {
   api: ApiClient;
   queryClient: QueryClient;
-  toast: ToastApi;
+  toast: ToastStore;
   i18n: I18n;
   accountId: string;
   openNever: (articles: NeverArticles) => void;
@@ -164,6 +164,13 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
 
 function createScope({ api, queryClient, toast, i18n, accountId, openNever }: Environment): Scope {
   const toastIds = new Set<string>();
+  const ratingOffers = new Map<string, { handle: ActionHandle; item: ArticleListItem }>();
+  const stopTrackingOffers = toast.subscribe(() => {
+    const active = new Set(toast.getSnapshot().map((entry) => entry.id));
+    for (const id of ratingOffers.keys()) {
+      if (!active.has(id)) ratingOffers.delete(id);
+    }
+  });
   const listeners = new Set<SettledListener>();
   /** A newer rating context invalidates delayed offers; one selected batch shares a context. */
   let latestOffer = 0;
@@ -198,6 +205,17 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
     const filtered = entry?.kind === 'markReadFilter';
     const single = !filtered && entry?.articleIds.length === 1 ? entry.articleIds[0] : undefined;
     const result = await store.undo(actionId);
+    if (
+      result.status === 'undone' ||
+      result.status === 'cancelled' ||
+      result.status === 'conflict'
+    ) {
+      for (const [id, { handle }] of ratingOffers) {
+        if (handle.id !== actionId) continue;
+        ratingOffers.delete(id);
+        toast.dismiss(id);
+      }
+    }
     if (result.status === 'undone' || result.status === 'conflict') {
       void queryClient.invalidateQueries({
         queryKey: filtered ? articleKeys.all(accountId) : articleKeys.counts(accountId),
@@ -226,6 +244,11 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
   }
 
   const isRecent = (handle: ActionHandle) => store.recent().some((entry) => entry.id === handle.id);
+
+  function showRatingOffer(input: ToastInput, handle: ActionHandle, item: ArticleListItem): void {
+    const id = tracked.show(input);
+    ratingOffers.set(id, { handle, item });
+  }
 
   function offerUndo(
     handle: ActionHandle,
@@ -256,6 +279,8 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       },
     };
     const showPlain = (plainMessage = message) => {
+      // Later acknowledgements in a selection keep its existing teaching offer and Undo.
+      if (handle.ratingBatchId !== undefined && ratingOffers.has(undoToastId(handle))) return;
       show({
         id: undoToastId(handle),
         message: plainMessage,
@@ -267,20 +292,39 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
     if (pattern !== null && pattern.offer !== null) {
       showPlain(rated);
       void offers.patternActions(pattern, item.id).then((offered) => {
-        if (turn !== latestOffer || !isRecent(handle)) return;
-        const current = store.view(item);
-        if (current.rating !== item.rating || current.reason !== item.reason) return;
-        if (offered === null) {
+        const current = store.confirmed(item);
+        if (
+          turn !== latestOffer ||
+          !isRecent(handle) ||
+          current.rating !== item.rating ||
+          current.reason !== item.reason ||
+          offered === null
+        ) {
+          const plain = toast.getSnapshot().find((entry) => entry.id === undoToastId(handle));
+          // Keep the server's ranking explanation and the original confirmation's remaining time.
+          if (plain?.action?.onAction === undoAction.onAction) {
+            show({
+              id: plain.id,
+              message,
+              tone: plain.tone,
+              actions: plain.actions,
+              durationMs: toast.resume(plain.id),
+            });
+          }
           return;
         }
-        show({
-          id: `pattern-offer:${pattern.kind}:${pattern.kind === 'card' ? pattern.cardId : pattern.feedId}`,
-          message,
-          tone: 'success',
-          durationMs: OFFER_TOAST_MS,
-          onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
-          actions: offered,
-        });
+        showRatingOffer(
+          {
+            id: `pattern-offer:${pattern.kind}:${pattern.kind === 'card' ? pattern.cardId : pattern.feedId}`,
+            message,
+            tone: 'success',
+            durationMs: OFFER_TOAST_MS,
+            onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
+            actions: offered,
+          },
+          handle,
+          item,
+        );
       });
       return;
     }
@@ -288,27 +332,26 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       showPlain();
       return;
     }
+    showPlain();
     void offers.actionsFor(suggestion, handle.articleId).then((offered) => {
       // A later acknowledgement in the same selection must not swallow its teaching offer.
-      // Batch offers have their own toast, so they never replace a newer rating's undo toast.
+      // Different batches have distinct ids, so a newer rating keeps its own undo toast.
       if (turn !== latestOffer || !isRecent(handle)) return;
-      const current = store.view(item);
+      const current = store.confirmed(item);
       if (current.rating !== item.rating || current.reason !== item.reason) return;
-      if (offered === null) {
-        if (turn === latestOffer) showPlain();
-        return;
-      }
-      show({
-        id:
-          handle.ratingBatchId === undefined
-            ? undoToastId(handle)
-            : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
-        message,
-        tone: 'success',
-        durationMs: OFFER_TOAST_MS,
-        action: undoAction,
-        actions: offered,
-      });
+      if (offered === null) return;
+      showRatingOffer(
+        {
+          id: undoToastId(handle),
+          message,
+          tone: 'success',
+          durationMs: OFFER_TOAST_MS,
+          action: undoAction,
+          actions: offered,
+        },
+        handle,
+        item,
+      );
     });
   }
 
@@ -465,6 +508,15 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
 
   // A change sent from the page, not by a replay, can be left waiting too.
   store.subscribe(retryLater);
+  store.subscribe(() => {
+    for (const [id, { item }] of ratingOffers) {
+      const current = store.confirmed(item);
+      if (current.rating !== item.rating || current.reason !== item.reason) {
+        ratingOffers.delete(id);
+        toast.dismiss(id);
+      }
+    }
+  });
 
   return {
     store,
@@ -489,6 +541,8 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
       stopRetrying();
       latestOffer += 1;
       offers.release();
+      stopTrackingOffers();
+      ratingOffers.clear();
       reasonBar.close();
       store.reset();
       queue.close();
@@ -608,7 +662,7 @@ function useScope(): Scope {
   const holder = useContext(HolderContext);
   const api = useApi();
   const queryClient = useQueryClient();
-  const toast = useToast();
+  const toast = useToastStore();
   const { i18n } = useTranslation();
   if (holder === null) {
     throw new Error('The reader actions need a <ReaderActionsProvider> above them');

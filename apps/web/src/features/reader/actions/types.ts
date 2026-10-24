@@ -371,6 +371,8 @@ export interface ReaderActions {
    * item object return the same result object until `getVersion()` changes.
    */
   view<T extends ArticleListItem>(item: T): T;
+  /** Newest server-confirmed state, without pending optimistic changes. */
+  confirmed<T extends ArticleListItem>(item: T): T;
   dispatch(item: ArticleListItem, action: ReaderAction, options?: DispatchOptions): ActionHandle;
   /** Finalize a held action (e.g. the chosen reason, SHIFT-hide) and queue it for sending. */
   release(actionId: string, patch?: { reason?: RatingReason; hide?: boolean }): void;

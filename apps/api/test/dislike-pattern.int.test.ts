@@ -120,6 +120,109 @@ async function dislike(
 }
 
 describe('rating pattern (DPF-3)', () => {
+  it.each([false, true])(
+    'undo dismisses only the unseen originating offer (seen=%s)',
+    async (seen) => {
+      const w = await world();
+      const target = await candidate(w, TARGET);
+      const response = await w.api.post(`/articles/${target}/rating`, {
+        ...freshFence,
+        rating: -1,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const body = response.json();
+      const offerId = body.pattern.offerId;
+      if (seen) {
+        expect(
+          (await w.api.post(`/articles/${target}/pattern-offer`, { offerId, event: 'seen' }))
+            .statusCode,
+        ).toBe(204);
+      }
+      const undo = await w.api.post('/articles/undo', { mutationId: body.mutationId });
+      expect(undo.statusCode, undo.body).toBe(200);
+      const rows = await h.owner.query(
+        'SELECT answer, answered_at, seen_at FROM dislike_pattern_offers WHERE id = $1',
+        [offerId],
+      );
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0].answer).toBe(seen ? null : 'dismissed');
+      expect(rows.rows[0].answered_at === null).toBe(seen);
+      expect(rows.rows[0].seen_at === null).toBe(!seen);
+      const again = await w.api.post(`/articles/${target}/rating`, {
+        stateVersion: undo.json().items[0].stateVersion,
+        contentRevision: '1',
+        rating: -1,
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json().pattern?.offerId != null).toBe(!seen);
+      if (seen) {
+        await h.owner.query(
+          "UPDATE dislike_pattern_offers SET seen_at = now() - interval '14 days', offered_at = now() - interval '14 days' WHERE id = $1",
+          [offerId],
+        );
+        expect((await dislike(w, await candidate(w, D3))).pattern?.offerId).toBeTruthy();
+      }
+    },
+  );
+
+  it.each(['change', 'remove', 'prompt', 'batch'] as const)(
+    'dismisses an unseen offer on a confirmed rating %s',
+    async (kind) => {
+      const w = await world();
+      const target = await candidate(w, TARGET);
+      const response = await w.api.post(`/articles/${target}/rating`, {
+        ...freshFence,
+        rating: -1,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const body = response.json();
+      const fence = { stateVersion: body.item.stateVersion, contentRevision: '1' };
+      const changed =
+        kind === 'batch'
+          ? await w.api.post('/articles/rate-bulk', {
+              targets: [{ id: target, ...fence }],
+              rating: 1,
+            })
+          : kind === 'prompt'
+            ? await w.api.post(`/articles/${target}/prompt-answer`, { ...fence, liked: true })
+            : await w.api.post(`/articles/${target}/rating`, {
+                ...fence,
+                rating: kind === 'remove' ? null : 1,
+              });
+      expect(changed.statusCode, changed.body).toBe(200);
+      const rows = await h.owner.query(
+        'SELECT answer, seen_at FROM dislike_pattern_offers WHERE id = $1',
+        [body.pattern.offerId],
+      );
+      expect(rows.rows[0]).toEqual({ answer: 'dismissed', seen_at: null });
+    },
+  );
+
+  it.each(['visible', 'hidden-only'] as const)(
+    'selects the %s subscribed carrier when the rating DTO has no feed context',
+    async (scenario) => {
+      const w = await world({}, 'training');
+      await h.owner.query('DELETE FROM user_cards WHERE user_id = $1', [w.user.id]);
+      const other = await subscribedFeed(h, w.user.id, { mode: 'training' });
+      for (const title of [D1, D2])
+        await rate(w.user.id, await carriedArticle(h, [other], { title }), -1, 1);
+      await h.owner.query(
+        'UPDATE subscriptions SET hidden = true WHERE user_id = $1 AND feed_id = $2',
+        [w.user.id, w.feed],
+      );
+      if (scenario === 'hidden-only')
+        await h.owner.query('UPDATE subscriptions SET hidden = true WHERE user_id = $1', [
+          w.user.id,
+        ]);
+      const target = await carriedArticle(h, [w.feed, other], { title: TARGET });
+      const body = await dislike(w, target);
+      expect(body.pattern).toMatchObject({
+        kind: 'feed',
+        feedId: scenario === 'hidden-only' ? w.feed : other,
+      });
+    },
+  );
+
   it('P1 two prior similar dislikes lower the card and offer three examples', async () => {
     const w = await world();
     const target = await candidate(w, TARGET);

@@ -40,6 +40,31 @@ async function exists(sql: string, value: unknown): Promise<boolean> {
 // ── house.purge-auth ─────────────────────────────────────────────────────────────────────────
 
 describe('house.purge-auth', () => {
+  it('prunes unseen pattern offers by offered time and seen offers by impression time', async () => {
+    const user = await h.user();
+    const offer = async (offeredAt: Date, seenAt: Date | null) => {
+      const id = randomUUID();
+      await h.owner.query(
+        `INSERT INTO dislike_pattern_offers (id, user_id, scope, scope_id, article_ids, offered_at, seen_at)
+         VALUES ($1, $2, 'feed', 1, '{1}', $3, $4)`,
+        [id, user, offeredAt, seenAt],
+      );
+      return id;
+    };
+    const oldUnseen = await offer(before(14 * DAY + MINUTE), null);
+    const newUnseen = await offer(before(14 * DAY - MINUTE), null);
+    const oldSeen = await offer(before(30 * DAY), before(14 * DAY + MINUTE));
+    const newSeen = await offer(before(30 * DAY), before(14 * DAY - MINUTE));
+    const boundary = await offer(before(14 * DAY), null);
+    await w.run('house.purge-auth', NOW);
+    const has = (id: string) => exists('SELECT 1 FROM dislike_pattern_offers WHERE id = $1', id);
+    expect(await has(oldUnseen)).toBe(false);
+    expect(await has(oldSeen)).toBe(false);
+    expect(await has(boundary)).toBe(false);
+    expect(await has(newUnseen)).toBe(true);
+    expect(await has(newSeen)).toBe(true);
+  });
+
   async function loginCode(expiresAt: Date): Promise<string> {
     const email = `code-${randomUUID()}@example.test`;
     await h.owner.query(
