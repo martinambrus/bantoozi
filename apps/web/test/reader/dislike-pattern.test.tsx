@@ -168,6 +168,8 @@ describe('the dislike pattern in the undo toast', () => {
   });
 
   it('DPF-6 hidden time does not count and closing before one second records no seen event', async () => {
+    // Written against the real clock: it waits real time for the 1 s impression window.
+    vi.useRealTimers();
     setVisibility('hidden');
     const app = await dislike(OFFER);
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
@@ -224,6 +226,8 @@ describe('the dislike pattern in the undo toast', () => {
   });
 
   it('D2 two quick same-scope offers replace in place and keep each rating undo', async () => {
+    // Written against the real clock: it waits real time for the 1 s impression window.
+    vi.useRealTimers();
     holdExits();
     const items = [makeItem(), makeItem({ id: '102' })];
     const app = renderReader(
