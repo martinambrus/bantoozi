@@ -3,78 +3,97 @@ ALTER TABLE "user_learning_history" ADD COLUMN "reason" text;--> statement-break
 -- Unknown activation or turn-on provenance is false for compatibility with older readers.
 -- Existing PRG rows were appended in the training transaction (normally at trained_at).
 -- The interval also recognises older appenders whose history clock followed the insert.
-WITH models AS (
-  SELECT *, lag(version) OVER w AS previous_version, lag(metrics) OVER w AS previous_metrics,
-    count(*) OVER prior AS previous_count,
-    count(*) FILTER (WHERE metrics->>'status' IN ('rejected', 'superseded')) OVER prior AS previous_rejections
-  FROM user_models WINDOW w AS (PARTITION BY user_id ORDER BY version),
-    prior AS (w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
-), estimates AS (
-  SELECT *, lag(version) OVER w AS previous_version, lag(spec) OVER w AS previous_spec
-  FROM user_estimate_models WINDOW w AS (PARTITION BY user_id ORDER BY version)
-), runs AS (
-  SELECT user_id, trained_at AS at, 'model'::text AS kind, n_labels AS n,
+WITH model_values AS MATERIALIZED (
+  SELECT user_id, version, trained_at, n_labels AS n,
+    weights ? 'features' AS fitted, metrics->>'status' AS status,
     CASE WHEN jsonb_typeof(metrics->'cvAuc') = 'number'
       THEN (metrics->>'cvAuc')::double precision END AS auc,
     CASE WHEN jsonb_typeof(metrics->'baselineAuc') = 'number'
       THEN (metrics->>'baselineAuc')::double precision END AS baseline_auc,
-    CASE WHEN metrics->>'status' = 'activated' OR active THEN true
-      ELSE false END AS activated,
-    CASE WHEN jsonb_typeof(metrics->'turnedOn') = 'boolean' THEN (metrics->>'turnedOn')::boolean
-      WHEN metrics->>'status' IN ('rejected', 'superseded') THEN false
-      WHEN (metrics->>'status' = 'activated' OR active)
-        AND previous_count = version - 1 AND previous_rejections = previous_count THEN true
-      WHEN (metrics->>'status' = 'activated' OR active) AND previous_version = version - 1
-        AND previous_metrics->>'status' = 'activated'
-        AND previous_metrics->>'deactivatedAt' IS NULL THEN false ELSE false END AS turned_on,
+    coalesce(metrics->>'status' = 'activated' OR active, false) AS activated,
+    CASE WHEN jsonb_typeof(metrics->'turnedOn') = 'boolean'
+      THEN (metrics->>'turnedOn')::boolean END AS recorded_turned_on,
     CASE WHEN jsonb_typeof(metrics->'engineModel') = 'string'
       THEN nullif(metrics->>'engineModel', '') END AS engine_model,
     CASE WHEN jsonb_typeof(metrics->'reason') = 'string'
-      THEN nullif(metrics->>'reason', '') END AS reason,
+      THEN nullif(metrics->>'reason', '') END AS reason
+  FROM user_models
+), models AS (
+  -- Keep unfitted/superseded versions here: they still establish activation provenance.
+  SELECT user_id, version, trained_at, n, fitted, status, auc, baseline_auc, activated,
+    recorded_turned_on, engine_model, reason, count(*) OVER prior AS previous_count,
+    count(*) FILTER (WHERE status IN ('rejected', 'superseded')) OVER prior AS previous_rejections
+  FROM model_values WINDOW prior AS (PARTITION BY user_id ORDER BY version
+    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+), estimate_values AS MATERIALIZED (
+  SELECT user_id, version, trained_at, spec, n,
+    CASE WHEN jsonb_typeof(metrics->'auc') = 'number'
+      THEN (metrics->>'auc')::double precision END AS auc,
+    CASE WHEN jsonb_typeof(metrics->'turnedOn') = 'boolean'
+      THEN (metrics->>'turnedOn')::boolean END AS recorded_turned_on
+  FROM user_estimate_models
+), estimates AS (
+  SELECT user_id, version, trained_at, spec, n, auc, recorded_turned_on,
+    lag(version) OVER w AS previous_version, lag(spec) OVER w AS previous_spec
+  FROM estimate_values WINDOW w AS (PARTITION BY user_id ORDER BY version)
+), runs AS (
+  SELECT user_id, version, trained_at AS at, 'model'::text AS kind, n, auc, baseline_auc, activated,
+    CASE WHEN NOT activated THEN false
+      WHEN recorded_turned_on IS NOT NULL THEN recorded_turned_on
+      WHEN previous_count = version - 1 AND previous_rejections = previous_count THEN true
+      ELSE false END AS turned_on, engine_model, reason,
     min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
       GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS next_at
   FROM models
-  WHERE weights ? 'features' AND coalesce(metrics->>'status', '') <> 'superseded'
+  WHERE fitted AND coalesce(status, '') <> 'superseded'
   UNION ALL
-  SELECT user_id, trained_at, 'estimate', n,
-    CASE WHEN jsonb_typeof(metrics->'auc') = 'number' THEN (metrics->>'auc')::double precision END,
-    NULL::double precision, false,
-    CASE WHEN jsonb_typeof(metrics->'turnedOn') = 'boolean' THEN (metrics->>'turnedOn')::boolean
+  SELECT user_id, version, trained_at, 'estimate', n, auc, NULL::double precision, false,
+    CASE WHEN recorded_turned_on IS NOT NULL THEN recorded_turned_on
       WHEN version = 1 THEN true
       WHEN previous_version = version - 1 THEN previous_spec <> spec ELSE false END,
     NULL::text, NULL::text,
     min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
       GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING)
   FROM estimates
-), numbered AS (
-  SELECT runs.*, row_number() OVER (PARTITION BY user_id, kind, at, n, auc ORDER BY at) AS occurrence
+), retained AS (
+  SELECT user_id, version, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model,
+    reason, next_at,
+    row_number() OVER (PARTITION BY user_id, kind ORDER BY at DESC, version DESC) AS position
   FROM runs
-), missing AS (
-  SELECT r.* FROM numbered r
-  WHERE (
+), numbered AS (
+  -- Cap sources too, so replay cannot reinsert a pruned lower version at the same timestamp.
+  SELECT user_id, version, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model,
+    reason, next_at,
+    row_number() OVER (PARTITION BY user_id, kind, at, n, auc ORDER BY version) AS occurrence
+  FROM retained WHERE position <= 200
+)
+INSERT INTO user_learning_history
+  (user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason)
+SELECT user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason
+FROM numbered r
+WHERE (
     SELECT count(*) FROM user_learning_history h
     WHERE h.user_id = r.user_id AND h.kind = r.kind AND h.n = r.n
       AND h.auc IS NOT DISTINCT FROM r.auc
       AND h.at >= r.at AND (r.next_at IS NULL OR h.at < r.next_at)
   ) < r.occurrence
-)
-INSERT INTO user_learning_history
-  (user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason)
-SELECT user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason
-FROM missing ORDER BY user_id, kind, at;
+ORDER BY user_id, kind, at, version;
 --> statement-breakpoint
 -- Restore reasons with the same training interval/count/AUC match used above.
 -- Count every matching fitted run, including those without a reason; ambiguity stays NULL.
-WITH model_runs AS (
+WITH model_run_values AS MATERIALIZED (
   SELECT user_id, trained_at, n_labels,
     CASE WHEN jsonb_typeof(metrics->'cvAuc') = 'number'
       THEN (metrics->>'cvAuc')::double precision END AS auc,
     CASE WHEN jsonb_typeof(metrics->'reason') = 'string'
-      THEN nullif(metrics->>'reason', '') END AS reason,
-    min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
-      GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS next_at
+      THEN nullif(metrics->>'reason', '') END AS reason
   FROM user_models
   WHERE weights ? 'features' AND coalesce(metrics->>'status', '') <> 'superseded'
+), model_runs AS (
+  SELECT user_id, trained_at, n_labels, auc, reason,
+    min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
+      GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS next_at
+  FROM model_run_values
 ), matches AS (
   SELECT h.id, m.reason, count(*) OVER (PARTITION BY h.id) AS candidates
   FROM user_learning_history h JOIN model_runs m

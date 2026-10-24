@@ -50,6 +50,8 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   const firstActivation = await createUser(owner);
   const excluded = await createUser(owner);
   const delayed = await createUser(owner);
+  const ordering = await createUser(owner);
+  const tiedRetention = await createUser(owner);
   const seed = async (userId: string, versions: number) =>
     owner.query(
       `
@@ -81,6 +83,17 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
     [excluded.id],
   );
   await seed(delayed.id, 2);
+  for (const [account, versions] of [
+    [ordering.id, 4],
+    [tiedRetention.id, 202],
+  ] as const) {
+    await seed(account, versions);
+    await owner.query(
+      `UPDATE user_models SET trained_at = '2026-04-01', n_labels = $2 - version,
+        metrics = '{"status":"rejected","reason":"low_auc"}' WHERE user_id = $1`,
+      [account, versions + 1],
+    );
+  }
   await owner.query(
     `UPDATE user_models SET metrics = CASE WHEN version < 3 THEN '{"status":"rejected"}'::jsonb ELSE '{"status":"activated"}'::jsonb END WHERE user_id = $1`,
     [firstActivation.id],
@@ -133,6 +146,10 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
     owner.query(`SELECT id, user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason
     FROM user_learning_history ORDER BY user_id, kind, at, id`);
   const first = (await read()).rows;
+  expect.soft(first.filter((r) => r.user_id === ordering.id).map((r) => r.n)).toEqual([4, 3, 2, 1]);
+  expect
+    .soft(first.filter((r) => r.user_id === tiedRetention.id).map((r) => r.n))
+    .toEqual(Array.from({ length: 200 }, (_, index) => 200 - index));
   expect.soft(first.filter((r) => r.user_id === excluded.id).map((r) => r.n)).toEqual([3, 4]);
   expect.soft(first.find((r) => r.user_id === excluded.id && r.n === 3)?.turned_on).toBe(true);
   expect.soft(first.find((r) => r.id === exactPrg.rows[0].id)?.reason).toBe('low_auc');
