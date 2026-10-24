@@ -3581,9 +3581,11 @@
                             "type": "number"
                           },
                           "activated": {
+                            "nullable": true,
                             "type": "boolean"
                           },
                           "turnedOn": {
+                            "nullable": true,
                             "type": "boolean"
                           },
                           "engineModel": {
