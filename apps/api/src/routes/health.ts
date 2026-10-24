@@ -24,7 +24,7 @@ const ReadyResponseSchema = z.object({
     migrations: ReadyCheckSchema,
     queues: ReadyCheckSchema,
   }),
-  missingQueues: z.array(z.string()),
+  missingQueueCount: z.number().int().nonnegative(),
 });
 
 /**
@@ -89,6 +89,8 @@ export async function healthRoutes(
         try {
           missingQueues = await checkQueues();
           queues = missingQueues.length === 0 ? 'ok' : 'pending';
+          if (missingQueues.length > 0)
+            request.log.warn({ missingQueues }, 'readiness: queues missing; run the migrate job');
         } catch (error) {
           request.log.warn({ err: error }, 'readiness: queue check failed');
           queues = 'unreachable';
@@ -101,7 +103,7 @@ export async function healthRoutes(
         .send({
           status: ready ? 'ready' : 'not_ready',
           checks: { database, migrations, queues },
-          missingQueues,
+          missingQueueCount: missingQueues.length,
         });
     },
   );

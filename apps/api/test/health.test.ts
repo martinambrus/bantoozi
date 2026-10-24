@@ -62,10 +62,20 @@ describe('readiness queue query cache', () => {
     queries.queues.mockResolvedValueOnce(['user.estimate']);
     expect((await probe()).json()).toMatchObject({
       checks: { queues: 'pending' },
-      missingQueues: ['user.estimate'],
+      missingQueueCount: 1,
     });
     expect((await probe()).statusCode).toBe(200);
     expect(queries.queues).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns only a missing count to an unauthenticated caller', async () => {
+    queries.queues.mockResolvedValue(['house.alerts', '__pgboss__send-it']);
+    const response = await probe();
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ missingQueueCount: 2 });
+    expect(response.body).not.toContain('house.alerts');
+    expect(response.body).not.toContain('__pgboss__send-it');
+    expect(response.json()).not.toHaveProperty('missingQueues');
   });
 
   it('does not cache errors or reuse an expired success after an error', async () => {
@@ -85,7 +95,7 @@ it('reports queue readiness as unknown when the database cannot be reached', asy
   expect(response.json()).toEqual({
     status: 'not_ready',
     checks: { database: 'unreachable', migrations: 'pending', queues: 'unknown' },
-    missingQueues: [],
+    missingQueueCount: 0,
   });
   expect(queries.queues).not.toHaveBeenCalled();
 });

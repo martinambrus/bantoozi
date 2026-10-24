@@ -49,7 +49,7 @@ afterAll(async () => {
 
 describe('health (spec 08 §10)', () => {
   it.each(['user.estimate', PG_BOSS_CRON_QUEUE])(
-    'is 503 naming missing queue %s with current migrations, then recovers after migrate',
+    'is 503 counting missing queue %s with current migrations, then recovers after migrate',
     async (queue) => {
       await expect(appPool.query('SELECT name FROM pgboss.queue')).rejects.toThrow(
         /permission denied/u,
@@ -62,7 +62,7 @@ describe('health (spec 08 §10)', () => {
         expect(res.json()).toMatchObject({
           status: 'not_ready',
           checks: { database: 'ok', migrations: 'ok', queues: 'pending' },
-          missingQueues: [queue],
+          missingQueueCount: 1,
         });
         expect(res.headers['cache-control']).toBe('no-store');
       } finally {
@@ -70,7 +70,7 @@ describe('health (spec 08 §10)', () => {
       }
       const healed = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
       expect(healed.statusCode).toBe(200);
-      expect(healed.json()).toMatchObject({ checks: { queues: 'ok' }, missingQueues: [] });
+      expect(healed.json()).toMatchObject({ checks: { queues: 'ok' }, missingQueueCount: 0 });
     },
   );
 
@@ -81,7 +81,7 @@ describe('health (spec 08 §10)', () => {
       expect(res.statusCode).toBe(503);
       expect(res.json()).toMatchObject({
         checks: { database: 'ok', migrations: 'ok', queues: 'unreachable' },
-        missingQueues: [],
+        missingQueueCount: 0,
       });
       expect(res.body).not.toContain('permission denied');
     } finally {
@@ -102,7 +102,7 @@ describe('health (spec 08 §10)', () => {
     expect(res.json()).toEqual({
       status: 'ready',
       checks: { database: 'ok', migrations: 'ok', queues: 'ok' },
-      missingQueues: [],
+      missingQueueCount: 0,
     });
   });
 
@@ -119,7 +119,7 @@ describe('health (spec 08 §10)', () => {
       expect(res.json()).toEqual({
         status: 'not_ready',
         checks: { database: 'ok', migrations: 'pending', queues: 'ok' },
-        missingQueues: [],
+        missingQueueCount: 0,
       });
     } finally {
       await ownerPool.query(
@@ -143,7 +143,7 @@ describe('health (spec 08 §10)', () => {
       expect(res.json()).toEqual({
         status: 'ready',
         checks: { database: 'ok', migrations: 'ok', queues: 'ok' },
-        missingQueues: [],
+        missingQueueCount: 0,
       });
     } finally {
       await ownerPool.query('DELETE FROM drizzle.__drizzle_migrations WHERE id = $1', [
@@ -170,7 +170,7 @@ describe('health (spec 08 §10)', () => {
       expect(res.json()).toEqual({
         status: 'not_ready',
         checks: { database: 'unreachable', migrations: 'pending', queues: 'unknown' },
-        missingQueues: [],
+        missingQueueCount: 0,
       });
       expect(res.body).not.toContain('bantoozi_app');
     } finally {
