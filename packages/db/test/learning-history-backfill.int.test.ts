@@ -48,12 +48,13 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   const tied = await createUser(owner);
   const replacement = await createUser(owner);
   const firstActivation = await createUser(owner);
+  const excluded = await createUser(owner);
   const seed = async (userId: string, versions: number) =>
     owner.query(
       `
     INSERT INTO user_models (user_id, version, feature_spec_sha, n_labels, n_pos, n_neg,
       weights, intercept, scaler, calibration, metrics, active, trained_at)
-    SELECT $1, g, 'v1', g, g, 0, '{}', 0, '{}', '{}',
+    SELECT $1, g, 'v1', g, g, 0, '{"features":[],"weights":[]}', 0, '{}', '{}',
       CASE WHEN g = 1 THEN '{"status":"activated","cvAuc":0.75,"baselineAuc":0.65,"engineModel":"jev-old"}'::jsonb
            WHEN g = 2 THEN '{"status":"rejected","reason":"low_auc","cvAuc":0.51}'::jsonb ELSE '{}'::jsonb END,
       false, '2026-01-01'::timestamptz + g * interval '1 minute'
@@ -69,6 +70,15 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
   );
   await seed(replacement.id, 2);
   await seed(firstActivation.id, 3);
+  await seed(excluded.id, 4);
+  await owner.query(
+    `UPDATE user_models SET weights = CASE WHEN version = 1 THEN '{}'::jsonb ELSE weights END,
+      metrics = CASE WHEN version = 1 THEN '{"status":"rejected","reason":"insufficient_explicit"}'::jsonb
+        WHEN version = 2 THEN '{"status":"superseded","reason":"inputs_changed"}'::jsonb
+        WHEN version = 3 THEN '{"status":"activated"}'::jsonb
+        ELSE '{"status":"rejected","reason":"low_auc"}'::jsonb END WHERE user_id = $1`,
+    [excluded.id],
+  );
   await owner.query(
     `UPDATE user_models SET metrics = CASE WHEN version < 3 THEN '{"status":"rejected"}'::jsonb ELSE '{"status":"activated"}'::jsonb END WHERE user_id = $1`,
     [firstActivation.id],
@@ -106,6 +116,8 @@ it('upgrades seeded 0036 runs, preserves existing history, caps each kind and is
     owner.query(`SELECT id, user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason
     FROM user_learning_history ORDER BY user_id, kind, at, id`);
   const first = (await read()).rows;
+  expect.soft(first.filter((r) => r.user_id === excluded.id).map((r) => r.n)).toEqual([3, 4]);
+  expect.soft(first.find((r) => r.user_id === excluded.id && r.n === 3)?.turned_on).toBe(true);
   const models = first.filter((r) => r.user_id === user.id && r.kind === 'model');
   const estimates = first.filter((r) => r.user_id === user.id && r.kind === 'estimate');
   expect(estimates).toHaveLength(200);

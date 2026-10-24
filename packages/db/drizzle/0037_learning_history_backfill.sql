@@ -36,6 +36,7 @@ WITH models AS (
     min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
       GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS next_at
   FROM models
+  WHERE weights ? 'features' AND coalesce(metrics->>'status', '') <> 'superseded'
   UNION ALL
   SELECT user_id, trained_at, 'estimate', n,
     CASE WHEN jsonb_typeof(metrics->'auc') = 'number' THEN (metrics->>'auc')::double precision END,
