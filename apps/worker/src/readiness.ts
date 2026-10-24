@@ -56,6 +56,7 @@ export interface QueueReadiness {
   missing(): string[];
   problems(): { key: string; message: string; missingQueues: string[] }[];
   refresh(): Promise<void>;
+  reportMissing(queue: string): void;
   stop(): void;
 }
 
@@ -135,6 +136,14 @@ export async function startQueueReadiness(options: {
             },
           ],
     refresh,
+    reportMissing(queue) {
+      if (stopped || missing.includes(queue)) return;
+      missing = [...missing, queue];
+      options.logger.error({ missing }, missingMessage(missing));
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(() => void refresh(), options.intervalMs ?? 30_000);
+      timer.unref();
+    },
     stop() {
       stopped = true;
       if (timer !== undefined) clearTimeout(timer);

@@ -1,4 +1,10 @@
-import { QUEUES, safeParseJobPayload, type QueueName } from '@bantoozi/shared';
+import {
+  FEED_SCHEDULE_CRON,
+  HOUSE_CRON_SCHEDULES,
+  QUEUES,
+  safeParseJobPayload,
+  type QueueName,
+} from '@bantoozi/shared';
 import PgBoss, { type ConstructorOptions } from 'pg-boss';
 
 import { dispatch, isStageAvailable, type HandlerMap } from './handlers/index.js';
@@ -91,4 +97,48 @@ export async function registerHandlers(
     registration.consuming.push(queue);
   }
   return registration;
+}
+
+/** Missing cron destinations must not stop unrelated consumers. Retry after the migrate job repairs them. */
+export async function startWorkerSchedules(
+  boss: Pick<PgBoss, 'schedule'>,
+  consuming: readonly QueueName[],
+  reportMissing: (queue: string) => void,
+  logger: RelayLogger,
+): Promise<{ stop(): void }> {
+  const pending = new Map<string, string>(
+    [
+      ['feed.schedule', FEED_SCHEDULE_CRON],
+      ...Object.entries(HOUSE_CRON_SCHEDULES).map(
+        ([queue, schedule]) => [queue, schedule.cron] as const,
+      ),
+    ].filter(([queue]) => consuming.includes(queue as QueueName)) as [string, string][],
+  );
+  let timer: NodeJS.Timeout | undefined;
+  let stopped = false;
+  const attempt = async (startup: boolean): Promise<void> => {
+    for (const [queue, cron] of pending) {
+      if (stopped) return;
+      try {
+        await boss.schedule(queue, cron, {}, { tz: 'UTC' });
+        pending.delete(queue);
+      } catch (error) {
+        if (error instanceof Error && error.message === `Queue ${queue} not found`) {
+          reportMissing(queue);
+        } else if (startup) throw error;
+        else logger.error({ err: error, queue }, 'cron schedule retry failed');
+      }
+    }
+    if (!stopped && pending.size > 0) {
+      timer = setTimeout(() => void attempt(false), 30_000);
+      timer.unref();
+    }
+  };
+  await attempt(true);
+  return {
+    stop() {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+    },
+  };
 }

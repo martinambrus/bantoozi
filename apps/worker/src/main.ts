@@ -6,16 +6,10 @@ import {
   createPgOriginLimiter,
   createPool,
 } from '@bantoozi/db';
-import {
-  FEED_SCHEDULE_CRON,
-  HOUSE_CRON_SCHEDULES,
-  type HouseCronQueue,
-  type HouseCronSchedule,
-} from '@bantoozi/shared';
 import { createLogger, createMailer, loadConfig } from '@bantoozi/shared/server';
 
 import { createLibreTranslateProbe } from './alerts/probe.js';
-import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
+import { createBoss, pgBossBroker, registerHandlers, startWorkerSchedules } from './boss.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
 import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
 import { CpuPool, cpuPoolSize } from './cpu-pool.js';
@@ -167,6 +161,7 @@ let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
 let health: HealthServer | undefined;
 const processId = `${hostname()}:${process.pid}`;
+let schedules: Awaited<ReturnType<typeof startWorkerSchedules>> | undefined;
 let stopped: Promise<void> | undefined;
 function shutdown(signal: string): Promise<void> {
   stopped ??= stop(signal);
@@ -176,6 +171,7 @@ async function stop(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   if (settingsTimer !== undefined) clearInterval(settingsTimer);
+  schedules?.stop();
   try {
     // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
     // removed only after the relay and the queue consumers have stopped.
@@ -249,18 +245,12 @@ try {
     boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
     await boss.start();
     const registration = await registerHandlers(boss, handlers, workerQueues, logger);
-    if (registration.consuming.includes('feed.schedule')) {
-      // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
-      await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
-    }
-    const houseSchedules = Object.entries(HOUSE_CRON_SCHEDULES) as Array<
-      [HouseCronQueue, HouseCronSchedule]
-    >;
-    for (const [queue, schedule] of houseSchedules) {
-      if (registration.consuming.includes(queue)) {
-        await boss.schedule(queue, schedule.cron, {}, { tz: 'UTC' });
-      }
-    }
+    schedules = await startWorkerSchedules(
+      boss,
+      registration.consuming,
+      (queue) => queueReadiness.reportMissing(queue),
+      logger,
+    );
     // Runs missed while no worker was up (spec 11 §6); the relay below delivers them.
     const overdue = await enqueueOverdueHousekeeping(
       db,

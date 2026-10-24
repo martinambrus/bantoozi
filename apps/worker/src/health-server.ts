@@ -1,6 +1,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 
+import { PG_BOSS_CRON_QUEUE } from '@bantoozi/db';
+
 import { fingerprintCounters } from './learn/fingerprints.js';
 
 /** A heartbeat older than this makes `/healthz` answer 503 (spec 11 §2). */
@@ -84,6 +86,10 @@ export async function startHealthServer(options: HealthServerOptions): Promise<H
           ...(age === undefined
             ? []
             : [`bantoozi_worker_heartbeat_age_seconds ${Math.floor(age / 1000)}`]),
+          '# TYPE bantoozi_worker_queue_missing gauge',
+          ...[...new Set([...options.queues, PG_BOSS_CRON_QUEUE, ...missing])].map(
+            (q) => `bantoozi_worker_queue_missing{queue="${q}"} ${missing.has(q) ? 1 : 0}`,
+          ),
           '# TYPE bantoozi_worker_queue_consumed gauge',
           ...options.queues.map(
             (q) => `bantoozi_worker_queue_consumed{queue="${q}"} ${missing.has(q) ? 0 : 1}`,

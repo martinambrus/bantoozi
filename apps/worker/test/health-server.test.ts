@@ -54,6 +54,16 @@ describe('worker health server', () => {
     expect(await scrape()).toContain('bantoozi_worker_queue_consumed{queue="house.alerts"} 1');
   });
 
+  it('exposes missing alert and cron queues independently of the alert consumer', async () => {
+    const base = await start(NOW, () => ['house.alerts', '__pgboss__send-it']);
+    const response = await fetch(`${base}/metrics`, {
+      headers: { authorization: 'Bearer secret-token' },
+    });
+    const metrics = await response.text();
+    expect(metrics).toContain('bantoozi_worker_queue_missing{queue="house.alerts"} 1');
+    expect(metrics).toContain('bantoozi_worker_queue_missing{queue="__pgboss__send-it"} 1');
+  });
+
   it('answers /healthz 200 with a fresh heartbeat', async () => {
     const base = await start(new Date(NOW.getTime() - 30_000));
     const res = await fetch(`${base}/healthz`);
