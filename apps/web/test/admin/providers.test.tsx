@@ -211,7 +211,7 @@ describe('provider accounts (spec 09 §8)', () => {
     ],
     [
       'keyring_unavailable',
-      'The worker cannot open stored keys because its keyring is unavailable. Check the worker keyring configuration, then validate again.',
+      'The worker cannot open stored keys because its key store is unavailable. Follow the instructions in the key store banner above, then validate again.',
     ],
     [
       'lookup_failed',
@@ -259,11 +259,11 @@ describe('provider accounts (spec 09 §8)', () => {
   it.each([
     [
       'keyring_unavailable',
-      'Worker nemôže otvoriť uložené kľúče, pretože jeho zväzok kľúčov nie je dostupný. Skontrolujte konfiguráciu zväzku kľúčov workera a potom overte znova.',
+      'Worker nemôže otvoriť uložené kľúče, pretože jeho úložisko kľúčov nie je dostupné. Postupujte podľa pokynov v upozornení na úložisko kľúčov vyššie a potom overte znova.',
     ],
     [
       'lookup_failed',
-      'Worker nedokázal načítať prihlasovací údaj z databázy. Overte znova neskôr.',
+      'Worker nedokázal načítať prístupový údaj z databázy. Overte znova neskôr.',
     ],
   ])('explains %s in Slovak', async (code, explanation) => {
     await render({
