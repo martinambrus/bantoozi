@@ -185,7 +185,7 @@ it.each(['title', 'excerpt'] as const)(
   },
 );
 
-it('adding a lower subscribed carrier wakes raters even when publisher text stays unchanged', async () => {
+it('adding a carrier wakes only explicit raters of that article subscribed to the new feed', async () => {
   const low = await createFeed(ctx.owner);
   const high = await createFeed(ctx.owner);
   const input = item(high.id);
@@ -194,6 +194,16 @@ it('adding a lower subscribed carrier wakes raters even when publisher text stay
   await rate(user.id, article.articleId);
   await createSubscription(ctx.owner, { userId: user.id, feedId: low.id });
   await createSubscription(ctx.owner, { userId: user.id, feedId: high.id });
+  const unsubscribed = await createUser(ctx.owner);
+  await rate(unsubscribed.id, article.articleId, -1);
+  await createSubscription(ctx.owner, { userId: unsubscribed.id, feedId: high.id });
+  const implicit = await createUser(ctx.owner);
+  await rate(implicit.id, article.articleId, null);
+  await createSubscription(ctx.owner, { userId: implicit.id, feedId: low.id });
+  const unrelated = await createUser(ctx.owner);
+  const otherArticle = await createArticle(ctx.owner, { feedIds: [low.id] });
+  await rate(unrelated.id, otherArticle.id);
+  await createSubscription(ctx.owner, { userId: unrelated.id, feedId: low.id });
   await ingest({ ...input, feedId: low.id });
   expect(await pending()).toEqual([user.id]);
   expect((await loadEstimateRatings(ctx.worker, user.id, new Date(0)))[0]?.feedId).toBe(low.id);

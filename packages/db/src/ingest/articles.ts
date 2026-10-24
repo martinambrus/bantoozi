@@ -2,7 +2,7 @@ import type { JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
-import { recordArticleEstimateIntents } from '../estimate/intents.js';
+import { recordArticleEstimateIntents, recordFeedEstimateIntents } from '../estimate/intents.js';
 import { admitArrival } from './auto-cap.js';
 import { upsertArticleBody, type ArticleBodyInput } from './bodies.js';
 import { applyMediaSignals, assertImageCount, type MediaSignalUpdate } from './media.js';
@@ -480,7 +480,18 @@ async function ingestFound(
   const guid = outcome === 'identity_conflict' ? null : input.guid;
   const newAssociation = await insertAssociation(tx, input.feedId, articleId, guid);
   if (newAssociation) {
-    await recordArticleEstimateIntents(tx, sender, [articleId]);
+    // Only explicit raters subscribed to this new carrier can gain a different f: feature.
+    const raters = await tx.execute<{ user_id: string }>(sql`
+      SELECT ua.user_id::text AS user_id FROM user_article ua
+        JOIN subscriptions s ON s.user_id = ua.user_id AND s.feed_id = ${input.feedId}::bigint
+       WHERE ua.article_id = ${articleId}::bigint AND ua.rating IN (1, -1)
+       ORDER BY ua.user_id`);
+    await recordFeedEstimateIntents(
+      tx,
+      sender,
+      [input.feedId],
+      raters.rows.map((r) => r.user_id),
+    );
     await admitArrival(
       tx,
       input.feedId,
