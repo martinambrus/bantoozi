@@ -259,6 +259,7 @@ async function deriveAnalysis(db: Executor, userId: string, ids: string[]): Prom
       : undefined;
     cacheAnalysis(row.id, {
       inputSha: row.input_sha,
+      ...(typeof model.model === 'string' ? { model: model.model } : {}),
       facets: features as Record<string, number> | null,
       cardP,
       ...(frozen === undefined ? {} : { frozen }),

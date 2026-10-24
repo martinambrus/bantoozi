@@ -1078,6 +1078,24 @@ describe('derived snapshots from a frozen request (spec 06 §8.2)', () => {
     });
   });
 
+  it('keeps answering-model provenance when deriving a selected snapshot', async () => {
+    const { s, a, at, request } = await setup();
+    await s.insertRating(
+      a,
+      {
+        analysisRequestId: request.requestId,
+        inputSha: request.inputSha,
+        ratingSha: RATING_SHA,
+        analysisRatingModel: 'fixture-model-next',
+        features: null,
+      },
+      { at },
+    );
+    const features = only(await s.samples()).features;
+    expect(features).not.toBeNull();
+    expect(Reflect.get(features!, 'staleAnswers')).toBe(true);
+  });
+
   it('a mismatching input sha, or a missing rating sha, leaves the features null', async () => {
     const { s, a, at, request } = await setup();
     await s.insertRating(

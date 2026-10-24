@@ -141,13 +141,14 @@ interface Stored {
 }
 
 interface Snapshot {
+  staleAnswers?: boolean;
   ratingSha: string;
   cards: { id: string; p: number | null; engine: string | null }[];
   values: { facets: Record<string, number> | null; facetsEngine: string | null };
 }
 
 /** Rates a fresh Active-feed article under `pin` whose stored facets and card answer carry `stored`. */
-async function captured(pin: string, stored: Stored): Promise<Snapshot> {
+async function captured(pin: string, stored: Stored, refresh = false): Promise<Snapshot> {
   await pinTo(pin);
   const [matchSet, enrichSet] = await Promise.all(
     (
@@ -203,7 +204,20 @@ async function captured(pin: string, stored: Stored): Promise<Snapshot> {
   const res = await r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 });
   expect(res.statusCode, res.body).toBe(200);
   const [event] = await events(h, r.user.id, article);
-  return event!.value['features'] as Snapshot;
+  const initial = event!.value['features'] as Snapshot;
+  if (!refresh) return initial;
+  expect(initial.staleAnswers).toBe(true);
+  await h.owner.query('UPDATE article_facets SET model = $2 WHERE article_id = $1', [article, pin]);
+  await h.owner.query('UPDATE card_answers SET model = $2 WHERE article_id = $1', [article, pin]);
+  // Complete snapshots are immutable: re-rating after the rebuild captures the refreshed answers.
+  const again = await r.api.post(`/articles/${article}/rating`, {
+    ...freshFence,
+    stateVersion: '1',
+    rating: 1,
+  });
+  expect(again.statusCode, again.body).toBe(200);
+  const history = await events(h, r.user.id, article);
+  return history.at(-1)!.value['features'] as Snapshot;
 }
 
 const exactSha = (model: string): Promise<string> =>
@@ -218,6 +232,7 @@ describe('an answer of another release of the pinned Jev major counts as current
     const features = await captured(V114, { facetsModel: V113 });
     expect(features.values.facets).toEqual({ time_sensitive: 0.9 });
     expect(features.values.facetsEngine).toBe('typesafe');
+    expect(features.staleAnswers).toBe(true);
   });
 
   it('C1-b keeps a card answer of the older release', async () => {
@@ -225,6 +240,7 @@ describe('an answer of another release of the pinned Jev major counts as current
     expect(features.cards).toHaveLength(1);
     expect(features.cards[0]!.p).toBeCloseTo(0.7, 5);
     expect(features.cards[0]!.engine).toBe('typesafe');
+    expect(features.staleAnswers).toBe(true);
   });
 
   it('C1-c keeps both and stamps the exact fingerprint of the current pin', async () => {
@@ -235,12 +251,29 @@ describe('an answer of another release of the pinned Jev major counts as current
     expect(features.cards[0]!.p).toBeCloseTo(0.7, 5);
     expect(features.ratingSha).toBe(await exactSha(V114));
     expect(features.ratingSha).not.toBe(olderSha);
+    expect(features.staleAnswers).toBe(true);
+  });
+
+  it('clears the marker on a refreshed snapshot of the same rating after re-analysis', async () => {
+    const features = await captured(V114, { facetsModel: V113, cardModel: V113 }, true);
+    expect(features.staleAnswers).not.toBe(true);
+    expect(features.ratingSha).toBe(await exactSha(V114));
+    expect(features.cards[0]!.p).toBeCloseTo(0.7, 5);
+    expect(features.values.facets).not.toBeNull();
+  });
+
+  it('all-current answers have no stale marker', async () => {
+    const features = await captured(V114, { facetsModel: V114, cardModel: V114 });
+    expect(features.staleAnswers).not.toBe(true);
+    expect(features.cards[0]!.p).toBeCloseTo(0.7, 5);
+    expect(features.values.facets).not.toBeNull();
   });
 
   it('keeps a newer release under an older pin after a rollback', async () => {
     const features = await captured(V113, { facetsModel: V114, cardModel: V114 });
     expect(features.values.facets).toEqual({ time_sensitive: 0.9 });
     expect(features.cards[0]!.p).toBeCloseTo(0.7, 5);
+    expect(features.staleAnswers).toBe(true);
   });
 });
 
@@ -279,5 +312,6 @@ describe('answers of any other model still drop from the snapshot', () => {
     });
     expect(features.values.facets).toBeNull();
     expect(features.cards[0]).toMatchObject({ p: null, engine: null });
+    expect(features.staleAnswers).not.toBe(true);
   });
 });

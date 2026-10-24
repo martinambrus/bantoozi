@@ -886,6 +886,10 @@ async function captureFeatures(
     features: {
       specSha: FEATURE_SNAPSHOT_SPEC_SHA,
       ratingSha,
+      ...((facetsCurrent && row.facets_model !== model) ||
+      cards.rows.some((card) => usable(card) && card.model !== model)
+        ? { staleAnswers: true }
+        : {}),
       cards: cards.rows.map((card) => ({
         id: card.id,
         strength: card.strength,
@@ -1733,6 +1737,14 @@ async function applyRating(
     request === null
       ? null
       : await requestRatingSha(tx, request.snapshot, options.matchFingerprint?.defaults);
+  // Freeze the comparison model with the event: a linked request may complete after another pin change.
+  const analysisRatingModel =
+    request === null
+      ? null
+      : effectiveModel(
+          await readRatingSettingsLocked(tx, options.matchFingerprint?.defaults),
+          options.matchFingerprint?.defaults ?? NO_DEFAULTS,
+        );
   const ratingSha = capture.features === null ? analysisRatingSha : null;
   const row = article.row;
   const patch: ReaderPatch =
@@ -1762,7 +1774,12 @@ async function applyRating(
       ...(target.fence.snapshotId === undefined ? {} : { snapshotId: target.fence.snapshotId }),
       ...(request === null
         ? {}
-        : { analysisRequestId: request.id, inputSha: request.inputSha, analysisRatingSha }),
+        : {
+            analysisRequestId: request.id,
+            inputSha: request.inputSha,
+            analysisRatingSha,
+            analysisRatingModel,
+          }),
       ...(ratingSha === null ? {} : { ratingSha }),
       signalOrigin: 'explicit',
       learningConsent: learningConsent(lock.prefs),

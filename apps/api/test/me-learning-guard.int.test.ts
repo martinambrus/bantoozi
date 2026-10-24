@@ -236,6 +236,19 @@ describe('GET /me/learning after the upgrade guard', () => {
     expect(body.feeds[0]).toMatchObject({ likes: 6, dislikes: 6 });
   });
 
+  it('strict progress excludes stale answers', async () => {
+    const { user, fp } = await scenario(10, 6);
+    await setSetting(REGISTRY, { [fp.old.sha]: fp.old.entry, [fp.current.sha]: fp.current.entry });
+    await h.owner.query(
+      `UPDATE feedback_events SET value =
+      jsonb_set(value, '{features,staleAnswers}', 'true'::jsonb)
+      WHERE user_id = $1 AND value->'features'->>'ratingSha' = $2 AND value->>'rating' = '1'`,
+      [user.id, fp.current.sha],
+    );
+    await storeAttempt(user, attempt({ strictRatingSha: fp.current.sha }));
+    expect((await status(user)).model.counts).toEqual({ explicit: 6, likes: 0, dislikes: 6 });
+  });
+
   it('CONTROL: the same attempt without the marker counts the registered same-family ratings too', async () => {
     const { user, fp } = await scenario(10, 6);
     await setSetting(REGISTRY, { [fp.old.sha]: fp.old.entry });

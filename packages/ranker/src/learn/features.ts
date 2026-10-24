@@ -20,6 +20,8 @@ import { murmur3 } from './murmur3.js';
 export interface RawFeatureSnapshot {
   specSha: string;
   ratingSha: string;
+  /** At least one included answer differs from the exact rating-time pin; absent means legacy/current. */
+  staleAnswers?: boolean;
   snapshotAt: string;
   cards: readonly {
     id: string;
