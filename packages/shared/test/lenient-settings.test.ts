@@ -323,3 +323,26 @@ it('ignores a future housekeeping job key while strict writers reject it and wri
   expect(() => parseSetting('house.progress', row)).toThrow();
   expect(preserveUnknownFields(SETTINGS['house.progress'].schema, row, read)).toEqual(row);
 });
+
+it('drops future heartbeat value classes on read while keeping heartbeat writes strict', () => {
+  const future = {
+    worker: {
+      at,
+      queues: ['feed.fetch', 'future.queue'],
+      evalIngestOnly: false,
+      envCredentials: ['typesafe', 'ollama', 'future-provider'],
+    },
+  };
+  expect(readSetting('worker.heartbeat', future, env)).toEqual({
+    worker: {
+      at,
+      queues: ['feed.fetch'],
+      evalIngestOnly: false,
+      envCredentials: ['typesafe', 'ollama'],
+    },
+  });
+  expect(() => parseSetting('worker.heartbeat', future)).toThrow();
+  expect(() =>
+    readSetting('worker.heartbeat', { worker: { ...future.worker, queues: [42] } }, env),
+  ).toThrow();
+});

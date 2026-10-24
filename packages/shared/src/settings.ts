@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { readerSchema } from './setting-readers.js';
+import { readerSchema, withStoredReader } from './setting-readers.js';
 
 import { IdSchema, UuidSchema } from './ids.js';
 import { HOUSE_PROGRESS_JOBS, isQueueName } from './jobs.js';
@@ -219,12 +219,26 @@ export const WorkerHeartbeatSchema = z.record(
       at: iso,
       /** When this worker process started: the grace anchor of the overdue-housekeeping alert (R5). */
       startedAt: iso.optional(),
-      queues: z
-        .array(z.string())
-        .max(100)
-        .refine((qs) => qs.every(isQueueName), 'unknown queue'),
+      // A newer worker can advertise new value classes. Readers retain the known names;
+      // writers continue to reject typos and unsupported queue/provider names.
+      queues: withStoredReader(
+        z
+          .array(z.string())
+          .max(100)
+          .refine((qs) => qs.every(isQueueName), 'unknown queue'),
+        z
+          .array(z.string())
+          .max(100)
+          .transform((qs) => qs.filter(isQueueName)),
+      ),
       evalIngestOnly: z.boolean(),
-      envCredentials: z.array(z.enum(['typesafe', 'ollama'])).max(2),
+      envCredentials: withStoredReader(
+        z.array(z.enum(['typesafe', 'ollama'])).max(2),
+        z
+          .array(z.string())
+          .transform((names) => names.filter((name) => name === 'typesafe' || name === 'ollama'))
+          .pipe(z.array(z.enum(['typesafe', 'ollama'])).max(2)),
+      ),
       /** The worker's database pool at the beat: clients in total, idle and waiting for a connection (S17). */
       pool: z
         .object({

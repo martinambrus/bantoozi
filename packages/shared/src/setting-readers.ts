@@ -2,6 +2,15 @@ import { z } from 'zod';
 
 const readers = new WeakMap<z.ZodType, z.ZodType>();
 
+/** Explicit value-class compatibility for a schema whose writer remains strict. Register before deriving parents. */
+export function withStoredReader<S extends z.ZodType>(
+  writer: S,
+  reader: z.ZodType<z.output<S>>,
+): S {
+  readers.set(writer, reader);
+  return writer;
+}
+
 /** Derive a stored-value reader without changing writer constraints or refinements. */
 export function readerSchema<S extends z.core.$ZodType>(input: S): S {
   // Publish only a completely derived graph. A failed derivation must not poison the cache.
