@@ -949,7 +949,7 @@ authorship policy, not a forged user approval.
 ## 10. Health and metrics
 
 - `GET /healthz`: liveness, always `200` while the process runs.
-- `GET /readyz`: `200` if the DB is reachable and every migration the release bundles is applied (newer ones from a later release are fine, so a rollback over the expanded schema is ready, D-207), otherwise `503`.
+- `GET /readyz`: `200` if the DB is reachable and every migration the release bundles is applied (newer ones from a later release are fine, so a rollback over the expanded schema is ready, D-207) and every pg-boss queue the release's registry names, plus the internal cron queue, exists (`checks.queues`, `missingQueues`; a healthy queue check is cached 60 s, D-317), otherwise `503`.
 - `GET /dev/last-email`: **only when `NODE_ENV=test`** (the route is not registered otherwise). Returns the last email captured by `MAIL_TRANSPORT=log`, for E2E tests.
 - `GET /metrics`: Prometheus text, protected by an admin session **or** a `METRICS_TOKEN` bearer.
   - Counters and histograms: HTTP requests, latency, errors by code.
