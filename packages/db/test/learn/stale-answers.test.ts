@@ -10,6 +10,7 @@ function reduced(
   model: string,
   features: ReturnType<typeof snapshot> | null,
   ratingModel: unknown = 'jev-1.14.0',
+  missingCardAnswer = false,
 ) {
   const event: LearnEvent = {
     id: '1',
@@ -30,7 +31,7 @@ function reduced(
     {
       inputSha: 'input',
       facets: { topic: 0.5 },
-      cardP: new Map([['501', 0.8]]),
+      cardP: new Map(missingCardAnswer ? [] : [['501', 0.8]]),
       frozen: {
         feedId: '2',
         cards: [{ id: '501', strength: 'love' }],
@@ -79,14 +80,30 @@ describe('selected analysis snapshot completion', () => {
     expect(Reflect.get(refreshed!, 'staleAnswers')).not.toBe(true);
     expect(refreshed?.values.facets).toEqual({ topic: 0.5 });
   });
-  it('keeps the marker if the linked result also used the older release', () => {
-    const features = Object.assign(
-      snapshot({
-        cards: [{ id: '99', strength: 'love', p: 0.2, engine: 'typesafe' }],
-        values: { facets: { old: 0.1 }, facetsEngine: 'typesafe', clusterId: null },
-      }),
-      { ratingSha: sha, staleAnswers: true },
-    );
-    expect(reduced('jev-1.13.0', features)?.features).toMatchObject({ staleAnswers: true });
-  });
+  it.each([false, true])(
+    'keeps the entire captured snapshot if the linked result is stale (missing card answer: %s)',
+    (missingCardAnswer) => {
+      const features = Object.assign(
+        snapshot({
+          cards: [{ id: '99', strength: 'love', p: 0.2, engine: 'typesafe' }],
+          values: {
+            facets: { old: 0.1 },
+            facetsEngine: 'typesafe',
+            clusterId: 'captured-cluster',
+            clusterSize: 8,
+            ageHours: 12,
+          },
+          sourceManifest: {
+            contentRevision: '1',
+            mediaRevision: '1',
+            inferenceFeedIds: ['2', '3'],
+          },
+        }),
+        { ratingSha: sha, staleAnswers: true },
+      );
+      const sample = reduced('jev-1.13.0', features, 'jev-1.14.0', missingCardAnswer);
+      expect(sample?.features).toEqual(features);
+      expect(sample?.groupId).toBe('captured-cluster');
+    },
+  );
 });

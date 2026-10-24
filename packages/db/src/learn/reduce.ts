@@ -155,9 +155,13 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
             features.values.facets === null ||
             features.cards.some((card) => card.p === null))
         ) {
-          features =
-            derive(result, analysisSha, source.createdAt, source.value.analysisRatingModel) ??
-            features;
+          const derived = derive(
+            result,
+            analysisSha,
+            source.createdAt,
+            source.value.analysisRatingModel,
+          );
+          if (derived !== null && derived.staleAnswers !== true) features = derived;
         }
       }
       if (features === null) {
