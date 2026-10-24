@@ -546,7 +546,8 @@ headroom (section 6).
    passed, then confirm. The API answers `409 confirmation_required` to a change made without that
    acknowledgement. Under **Applied by workers** the screen lists the live workers and how many still wait for
    a restart. **The workers restart themselves**: each one drains its current jobs and exits within about 10 s of
-   noticing the change (`WORKER_SELF_RESTART`, default on in production) and compose brings it back with the new
+   noticing the change, or up to 100 s while it finishes a running job (D-319) (`WORKER_SELF_RESTART`, default on in
+   production), and compose brings it back with the new
    model. Nothing needs to be run. If `WORKER_SELF_RESTART=false`, or a worker still shows "pending restart", run
    `dc up -d --no-deps --force-recreate worker`. (Setting the value in `$BANTOOZI_ENV` instead still works,
    needs `dc up -d --no-deps --force-recreate worker api`, and is overridden by any value stored in Settings; a
