@@ -1664,6 +1664,30 @@ async function requestRatingSha(
   return ratingShaOf(stored, defaults);
 }
 
+/** Release only an unseen, unanswered offer belonging to the rating being replaced or undone. */
+async function dismissUnseenRatingOffer(
+  tx: TenantTx,
+  lock: ReaderLock,
+  articleId: string,
+  now: Date,
+): Promise<void> {
+  const ratedAt = locked(lock, articleId).row?.ratedAt;
+  if (ratedAt == null) return;
+  await tx.execute(sql`
+    UPDATE dislike_pattern_offers o
+       SET answer = 'dismissed', answered_at = ${now.toISOString()}::timestamptz
+     WHERE o.user_id = ${lock.user}::uuid AND o.article_ids[1] = ${articleId}::bigint
+       AND o.seen_at IS NULL AND o.answer IS NULL
+       AND o.offered_at = ${ratedAt.toISOString()}::timestamptz
+       AND o.id::text = coalesce((
+         SELECT e.value #>> '{dislikePattern,offerId}' FROM feedback_events e
+          WHERE e.user_id = ${lock.user}::uuid AND e.article_id = ${articleId}::bigint
+            AND e.kind IN ('rate', 'prompt_answer')
+            AND e.created_at = ${ratedAt.toISOString()}::timestamptz
+          ORDER BY e.id DESC LIMIT 1
+       ), o.id::text)`);
+}
+
 /** Apply one rating under an existing lock; returns its undo target. */
 async function applyRating(
   tx: TenantTx,
@@ -1789,6 +1813,7 @@ export async function rateArticle(
 > {
   const lock = await lockFenced(tx, [input], true);
   const article = locked(lock, input.articleId);
+  await dismissUnseenRatingOffer(tx, lock, input.articleId, input.now);
   const config = await readRankerConfig(tx);
   const reason = input.rating === -1 ? input.reason : null;
   const suggestion =
@@ -1867,6 +1892,7 @@ export async function answerPrompt(
   },
 ): Promise<ActionResult> {
   const lock = await lockFenced(tx, [input], true);
+  await dismissUnseenRatingOffer(tx, lock, input.articleId, input.now);
   const config = await readRankerConfig(tx);
   const changes: ReaderRankChange[] = [];
   const demotionBefore = await demotionProbe(tx, lock, config, input.now);
@@ -1928,6 +1954,7 @@ export async function rateArticlesBulk(
   const changes: ReaderRankChange[] = [];
   const demotionBefore = await demotionProbe(tx, lock, config, input.now);
   for (const target of sorted) {
+    await dismissUnseenRatingOffer(tx, lock, target.articleId, input.now);
     targets.push(
       await applyRating(
         tx,
@@ -2388,6 +2415,9 @@ export async function undoArticleMutation(
       await tx.execute(sql`
         SELECT 1 FROM restore_bookmark_snapshot(${target.articleId}::bigint,
                                                 ${input.mutationId}::uuid)`);
+    }
+    if ('rating' in target.before || 'reason' in target.before || 'ratedAt' in target.before) {
+      await dismissUnseenRatingOffer(tx, lock, target.articleId, input.now);
     }
     const restore = restorePatch(target.before);
     changes.push(changeOf(locked(lock, target.articleId), restore));
