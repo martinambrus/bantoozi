@@ -61,7 +61,8 @@ beforeEach(async () => {
 
 async function answer(model: string, elapsed = 0) {
   const at = new Date(NOW.getTime() + elapsed);
-  fake.setOptions({ models: fakeTable(model) });
+  const current = (await resolutionRow(h.owner))?.model;
+  fake.setOptions({ models: fakeTable(model, ...(current === undefined ? [] : [current])) });
   return runWatch(h, { prober: realProber(h, fake, at), now: at, mailer });
 }
 
@@ -117,6 +118,35 @@ describe('JEV-8: alias flap controls', () => {
     expect(await resolutionRow(h.owner)).toMatchObject({ model: next });
     expect(mailer.sent).toHaveLength(1);
     if (current === 'jev-2.0.0') expect(mailer.sent[0]!.text).toContain('major change');
+  });
+
+  it('confirms a lower release when the current concrete model is retired', async () => {
+    await storeResolution(h.owner, V114, STORED_AT);
+    fake.setOptions({ models: { [ALIAS]: V113, [V113]: V113 } });
+    for (const elapsed of [0, GAP]) {
+      const at = new Date(NOW.getTime() + elapsed);
+      await runWatch(h, { prober: realProber(h, fake, at), now: at, mailer });
+      expect(await resolutionRow(h.owner)).toMatchObject({ model: elapsed === 0 ? V114 : V113 });
+      if (elapsed === 0) expect(await candidate()).toMatchObject({ model: V113 });
+    }
+    expect(mailer.sent).toHaveLength(1);
+    expect(await candidate()).toBeUndefined();
+  });
+
+  it('keeps the never-lower rule when checking the current model fails transiently', async () => {
+    await storeResolution(h.owner, V114, STORED_AT);
+    const prober = {
+      probe: async (requested: string) =>
+        requested === ALIAS
+          ? { requested, answered: V113, ok: true, at: iso(NOW) }
+          : { requested, ok: false, at: iso(NOW), error: 'timeout' },
+    };
+    for (const elapsed of [0, GAP]) {
+      await runWatch(h, { prober, now: new Date(NOW.getTime() + elapsed), mailer });
+    }
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+    expect(await candidate()).toBeUndefined();
+    expect(mailer.sent).toHaveLength(0);
   });
 
   it('rolls back the candidate if its delayed intent cannot be written', async () => {

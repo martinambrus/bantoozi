@@ -134,7 +134,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     );
   };
 
-  const probeAlias = async (alias: string): Promise<EngineModelProbe> => {
+  const probeModel = async (alias: string): Promise<EngineModelProbe> => {
     try {
       return await prober.probe(alias, { signal: AbortSignal.timeout(MODEL_PROBE_DEADLINE_MS) });
     } catch (error) {
@@ -154,7 +154,7 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
       return;
     }
 
-    const probe = await probeAlias(alias);
+    const probe = await probeModel(alias);
     await recordModelProbe(db, probe, logger);
     const answered = probe.answered;
     if (!probe.ok || answered === undefined || !isConcreteJevModel(answered)) {
@@ -183,10 +183,14 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     }
     if (stored !== null && stored.alias === alias && stored.model !== answered) {
       if (isOlderSameMajorRelease(answered, stored.model)) {
-        logger.warn({ job: JOB, current: stored.model, answered }, 'older Jev release ignored');
-        await checkedWithoutCandidate();
-        await recordHouseProgress({ db }, JOB, now(), true);
-        return;
+        const currentProbe = await probeModel(stored.model);
+        await recordModelProbe(db, currentProbe, logger);
+        if (currentProbe.ok || currentProbe.error !== 'model_unavailable') {
+          logger.warn({ job: JOB, current: stored.model, answered }, 'older Jev release ignored');
+          await checkedWithoutCandidate();
+          await recordHouseProgress({ db }, JOB, now(), true);
+          return;
+        }
       }
       if (!(await observeModelCandidate(db, answered, now()))) {
         logger.info({ job: JOB, model: answered }, 'Jev release awaits confirmation');
