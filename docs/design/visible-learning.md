@@ -131,8 +131,9 @@ an assumption until one real Jev answer is recorded.
   `{alias: 'jev-latest', model: 'jev-1.13.0', resolvedAt, checkedAt, previous?: {model, until}}`.
 - **Worker start.**
   - A concrete setting works as today.
-  - With the alias, the worker uses the stored resolution when its alias matches. Otherwise it runs a
-    blocking probe with a 30 s timeout.
+  - With the alias, the worker uses the stored resolution when its alias matches and it is in force; a
+    dormant one (the pin is not alias-marked, names another model, and the row is older than 10 minutes) is
+    not used (as built, D-304). Otherwise it runs a blocking probe with a 30 s timeout.
   - With no resolution, classification handlers defer as under an open breaker, and the probe retries every
     5 minutes.
   - Production traffic never sends the alias. The process model, `engine.model_pin.model` and every request

@@ -254,9 +254,9 @@ strictly (the API answers 500 on ratings and Analyze, the worker cannot start). 
 **Changing the Jev model in Admin → Settings (D-294…D-297).** Save first asks Jev whether it serves the value (it
 needs a live worker and a working Jev key); a refusal names the id Jev answered. `409 model_probe_required` means the
 check is older than 10 minutes: save again. The dialog states the impact; the "I ran eval replay" tick appears only
-when personal models restart (another major). Check now works only while the setting is `jev-latest`. Known hazard:
-switching a concrete id to `jev-latest` while an older `engine.model_resolution` is stored makes a restarting worker
-pin that release first (one extra rebuild) before the watch adopts Jev's answer. An older release ignores
+when personal models restart (another major). Check now works only while the setting is `jev-latest`. Switching a concrete id to `jev-latest` makes the
+restarting worker ask Jev first when the stored `engine.model_resolution` is dormant (a leftover of an earlier alias
+period), so the pin moves at most once, to what Jev answers now, with no mail (D-304). An older release ignores
 `engine.model_impact`.
 **A queue is missing (D-300).** A worker started on a database where `pnpm db:migrate` was not run after a queue was
 added logs one error naming the queue, reports `queues.missing` in its heartbeat problems (raw in
