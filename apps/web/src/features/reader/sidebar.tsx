@@ -5,12 +5,11 @@ import {
   type LearningFeedAgreement,
   type Subscription,
 } from '@bantoozi/shared';
-import { useQueryClient, type RefetchOptions } from '@tanstack/react-query';
+import type { RefetchOptions } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { invalidateCoalesced } from '../../api/coalesced-invalidate.js';
 import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
@@ -32,7 +31,7 @@ import {
 import { Tooltip } from '../../components/tooltip.js';
 import { useOnline } from '../../components/states/use-online.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
-import { useAccountId, useMe } from '../../session/context.js';
+import { useMe } from '../../session/context.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
 import { FeedFavicon } from '../feeds/feed-favicon.js';
@@ -43,9 +42,8 @@ import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.
 import { useSubscriptions } from '../feeds/subscriptions.js';
 import { CardEditor } from '../interests/card-editor.js';
 import { useDismissCardHint } from '../learning/use-dismiss-card-hint.js';
-import { learningKey, useLearning } from '../learning/use-learning.js';
+import { useLearning } from '../learning/use-learning.js';
 import { useReconnect } from '../offline/use-connection.js';
-import { useSettledActions } from './actions/provider.js';
 import { FeedFilter } from './feed-filter.js';
 import type { Lane } from './lanes.js';
 import { useEverythingOpen, useFeedFilter } from './reader-state.js';
@@ -226,14 +224,9 @@ function suggestsNever(agreement: LearningFeedAgreement | undefined): boolean {
 function useTrainingFeeds(
   subscriptions: readonly Subscription[],
 ): Map<string, LearningFeedAgreement> {
-  const queryClient = useQueryClient();
-  const accountId = useAccountId();
   const training = subscriptions.some((subscription) => subscription.inferenceMode === 'training');
   const learning = useLearning(training);
-  useSettledActions((handle) => {
-    if (handle.action.type !== 'rate' || !training) return;
-    invalidateCoalesced(queryClient, learningKey(accountId));
-  });
+
   return useMemo(() => {
     const trainingIds = new Set(
       subscriptions

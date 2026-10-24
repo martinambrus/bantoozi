@@ -18,7 +18,11 @@ import {
 import { SET_INFERENCE, makeSubscription } from '../feeds/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
-import { createReaderHarness } from './support.js';
+import { createReaderHarness, item } from './support.js';
+import { holdExits } from './exit-hold.js';
+import { ratingResponse } from '../article/harness.js';
+import { acked } from './actions/fake-transport.js';
+import { failure } from '../api/fake-fetch.js';
 
 const { open } = createReaderHarness();
 
@@ -500,3 +504,32 @@ describe('the chip for assistive technology', () => {
     expect(group).toHaveTextContent(/paused|Rate 4 more|starting/);
   });
 });
+
+// One shared action handler owns learning refreshes even with both observers mounted.
+it.each([true, false])(
+  'one settled rating refreshes learning once only on success (%s)',
+  async (success) => {
+    holdExits();
+    const story = item(1, { feed: { id: '1', title: 'Verge', iconUrl: null } });
+    const { app } = await open({
+      path: '/read/feed/1',
+      items: [story],
+      subscriptions: [sub('training')],
+      routes: {
+        [LEARNING]: learningRoute(() => makeLearning()),
+        'POST /articles/:id/rating': () =>
+          success ? ratingResponse(acked(story, { rating: 1 })) : failure(500, 'INTERNAL_ERROR'),
+      },
+    });
+    await screen.findByRole('group', { name: NAME.en });
+    const before = app.calls(LEARNING).length;
+    await app.user.click(
+      within(screen.getByRole('article', { name: 'Article 1' })).getByRole('button', {
+        name: 'Like',
+      }),
+    );
+    await settle();
+    await settle();
+    expect(app.calls(LEARNING)).toHaveLength(before + (success ? 1 : 0));
+  },
+);
