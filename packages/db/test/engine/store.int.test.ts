@@ -640,6 +640,63 @@ describe('budget admission (spec 04 §6, spec 02 §3.3)', () => {
 });
 
 describe('budget alert crossings (spec 04 §6, spec 11 §6)', () => {
+  it.each(['known', 'reconciled'] as const)(
+    'does not mark crossings on an eval settlement (%s)',
+    async (mode) => {
+      const demand = await automaticDemand();
+      const s = store(1);
+      const day = freshDay();
+      // Leave production above 80 % but remove its admission alert. An unconditional
+      // markBudgetCrossings on eval would now write it, even though eval is excluded in SQL.
+      await s.reserveSpend(reserveInput(day, demand.authorization, { estimateUsd: 0.85 }));
+      const id = (await s.reserveSpend(
+        reserveInput(
+          day,
+          { type: 'eval', runId: 'settlement-control' },
+          {
+            kind: 'eval',
+            estimateUsd: 2,
+          },
+        ),
+      ))!;
+      const call = callRow({ kind: 'eval', costUsd: 3 });
+      const usage = usageRow(day, { kind: 'eval', costUsd: 3 });
+      if (mode === 'reconciled') await s.settleReservation(id, call, usage, 'uncertain');
+      await ctx.owner.query("DELETE FROM settings WHERE key = 'engine.budget_alerts'");
+      await s.settleReservation(id, call, usage, 'known');
+      expect(await setting('engine.budget_alerts')).toBeUndefined();
+      expect(await reservation(id)).toMatchObject({ status: 'settled', actual_usd: '3.00000000' });
+    },
+  );
+
+  it.each(['known', 'reconciled'] as const)(
+    'marks exactly one 80 % crossing on production settlement (%s)',
+    async (mode) => {
+      const demand = await automaticDemand();
+      const s = store(1);
+      const day = freshDay();
+      const id = (await s.reserveSpend(
+        reserveInput(day, demand.authorization, { estimateUsd: 0.1 }),
+      ))!;
+      const call = callRow({ costUsd: 0.85 });
+      const usage = usageRow(day, { costUsd: 0.85 });
+      if (mode === 'reconciled') await s.settleReservation(id, call, usage, 'uncertain');
+      expect(await setting('engine.budget_alerts')).toBeUndefined();
+      await s.settleReservation(id, call, usage, 'known');
+      const alert = await setting('engine.budget_alerts');
+      expect(alert).toEqual({ day, p80At: expect.any(String) });
+      await s.settleReservation(id, call, usage, 'known');
+      expect(await setting('engine.budget_alerts')).toEqual(alert);
+      expect(
+        (
+          await ctx.owner.query(
+            "SELECT count(*)::int AS n FROM settings WHERE key = 'engine.budget_alerts'",
+          )
+        ).rows,
+      ).toEqual([{ n: 1 }]);
+    },
+  );
+
   it('records 80 % and 100 % once per UTC day in engine.budget_alerts, without email', async () => {
     const demand = await automaticDemand();
     const s = store(1);
