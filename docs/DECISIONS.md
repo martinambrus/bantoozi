@@ -3401,3 +3401,13 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   registry sets is written, an omitted one is reset to the installed pg-boss schema's column `DEFAULT` (no copied
   constants, so a pg-boss upgrade keeps its own defaults). Retention and dead-letter settings, and queues outside the
   registry, are untouched. A test checks an existing database equals a fresh one after an option is removed.
+- D-331: 2026-10-24 (FNF-VL-19, task #43; extends D-304/D-305, D-322, D-323) — Flip-safety, third pass. (1) Save-time
+  model planning (`concreteModelOf`, Admin model editor, API) applies the D-304 dormancy rule with an explicit clock, so
+  a leftover alias resolution no longer feeds the current model, impact or eval acknowledgement; the editor display and
+  the save plan share one "resolution counts" test. (2) Outbox: a worker insert (delayed or immediate) that meets an
+  identical row under a live relay lease re-arms it so it stays pending after that delivery; an expired lease keeps the
+  earliest due time (D-322); the backlog age ignores rows not yet due. An API intent (INSERT only) still coalesces with
+  an in-flight identical row — an accepted limit. (3) `engine.model_candidate` expires after 24 h and is discarded when
+  the `engine.typesafe_model` row was saved after its first sighting (worker-side; the API never writes the watch or
+  candidate keys). (4) `lastCheck` reports success only after the outgoing fingerprint is registered; a failure is
+  recorded as `fingerprint_registration`, so Admin's "Check now" ends with the error.

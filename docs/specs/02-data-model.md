@@ -847,7 +847,10 @@ CREATE UNIQUE INDEX job_outbox_dedupe_idx ON job_outbox (queue, dedupe_key)
 - `dedupe_key` may collapse **identical pending work only**; use a fingerprint of the complete
   validated payload and revision. A full rank or force-tier2 request cannot be consumed by a weaker
   request. NULL is allowed where coalescing is unnecessary. Lease/in-flight work cannot swallow a
-  later revision; serialize the producer's conflict handling and relay completion on the outbox row.
+  later revision; serialize the producer's conflict handling and relay completion on the outbox row. A worker
+  insert that meets an identical row under a LIVE relay lease re-arms it so it stays pending after that delivery (an
+  expired lease keeps the earliest due time); the API role is INSERT-only, so an identical API intent still coalesces
+  with an in-flight row (D-331).
 - A worker relay claims due rows in a short `FOR UPDATE SKIP LOCKED` transaction, writes a random
   token and expiry, commits, sends the job, then marks delivered **only with that token**. Expired
   leases are reclaimable; no database transaction spans network/queue waiting. Failed sends retain
