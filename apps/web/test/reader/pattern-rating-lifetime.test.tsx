@@ -1,7 +1,8 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useReaderActions } from '../../src/features/reader/actions/provider.js';
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { json } from '../api/fake-fetch.js';
 import { actionResponse, bodyOf, makeItem, renderReader } from '../article/harness.js';
@@ -28,6 +29,51 @@ beforeEach(() => {
 });
 
 describe('an offer bound to its rating', () => {
+  it('keeps a sticky offer after the undo window expires and unrelated store activity occurs', async () => {
+    const item = makeItem();
+    const unrelated = makeItem({ id: '102' });
+    function Activity() {
+      const store = useReaderActions();
+      return (
+        <button
+          onClick={() => {
+            expect(store.recent()).toHaveLength(0);
+            store.observe([{ ...unrelated, stateVersion: '2', readAt: READ_AT }]);
+          }}
+        >
+          Unrelated activity
+        </button>
+      );
+    }
+    const app = renderReader(
+      <>
+        <Row item={item} />
+        <Activity />
+      </>,
+      {
+        routes: {
+          'GET /cards': () => json(200, [CARD]),
+          'GET /subscriptions': () => json(200, []),
+          'POST /articles/:id/rating': () =>
+            actionResponse(acked(item, { rating: -1, reason: 'off_topic', readAt: READ_AT }), {
+              pattern,
+              exampleSuggestion: null,
+            }),
+          'POST /articles/:id/pattern-offer': () => new Response(null, { status: 204 }),
+        },
+      },
+    );
+    await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+    await screen.findByRole('button', { name: 'Show fewer like these' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000 + 1);
+    });
+    await app.user.click(screen.getByRole('button', { name: 'Unrelated activity' }));
+    expect(screen.getByRole('button', { name: 'Show fewer like these' })).toBeVisible();
+    expect(app.unhandled).toEqual([]);
+  });
+
   it.each(['Like', 'Dislike'])(
     'dismisses the sticky offer when the row uses %s to change or remove its rating',
     async (button) => {

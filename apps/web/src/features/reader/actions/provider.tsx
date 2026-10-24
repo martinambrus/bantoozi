@@ -199,6 +199,17 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
     const filtered = entry?.kind === 'markReadFilter';
     const single = !filtered && entry?.articleIds.length === 1 ? entry.articleIds[0] : undefined;
     const result = await store.undo(actionId);
+    if (
+      result.status === 'undone' ||
+      result.status === 'cancelled' ||
+      result.status === 'conflict'
+    ) {
+      for (const [id, { handle }] of ratingOffers) {
+        if (handle.id !== actionId) continue;
+        ratingOffers.delete(id);
+        toast.dismiss(id);
+      }
+    }
     if (result.status === 'undone' || result.status === 'conflict') {
       void queryClient.invalidateQueries({
         queryKey: filtered ? articleKeys.all(accountId) : articleKeys.counts(accountId),
@@ -478,9 +489,9 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
   // A change sent from the page, not by a replay, can be left waiting too.
   store.subscribe(retryLater);
   store.subscribe(() => {
-    for (const [id, { handle, item }] of ratingOffers) {
+    for (const [id, { item }] of ratingOffers) {
       const current = store.view(item);
-      if (!isRecent(handle) || current.rating !== item.rating || current.reason !== item.reason) {
+      if (current.rating !== item.rating || current.reason !== item.reason) {
         ratingOffers.delete(id);
         toast.dismiss(id);
       }
