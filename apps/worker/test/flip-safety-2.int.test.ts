@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import * as db from '@bantoozi/db';
-import { parseJobPayload } from '@bantoozi/shared';
+import { parseJobPayload, QUEUES } from '@bantoozi/shared';
 import { startFakeOllama, type FakeOllamaServer } from '@bantoozi/testing';
 import { createOllamaTranslator, type OllamaTranslator } from '@bantoozi/translate';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
@@ -48,12 +48,30 @@ beforeEach(async () => {
 async function boot(model = OLD_MODEL) {
   const runtime = await startRuntime({
     db: h.db,
-    config: baseConfig('production', { typesafeModel: model }),
+    config: baseConfig('production', {
+      typesafeModel: model,
+      providerHostAllowlist: ['api.typesafe.ai', 'ollama.com', 'libretranslate'],
+    }),
     recorder: recorder(),
     selfRestart: false,
   });
   runtimes.push(runtime);
   return runtime;
+}
+
+function draftTranslation() {
+  return {
+    libretranslate: undefined as never,
+    ollama: translator,
+    credentials: createWorkerCredentialResolver({
+      db: h.db,
+      masterKeyId: undefined,
+      masterKeys: undefined,
+      envKeys: { ollama: 'draft-test-key' },
+    }),
+    modelFast: 'glm-5.3-flash',
+    modelStrong: 'glm-5.3',
+  };
 }
 
 it.each(['pin', 'restart'] as const)(
@@ -97,7 +115,12 @@ it.each(['pin', 'restart'] as const)(
   },
 );
 
-it('defers card.draft with its pending work intact on a stale worker', async () => {
+it.each([
+  ['engine.ollama_max_concurrency', 2],
+  ['engine.ollama_base_url', 'https://ollama.com/v2'],
+  ['engine.ollama_models', { fast: 'glm-5.3', strong: 'glm-5.3' }],
+  ['translate.libretranslate_url', 'http://libretranslate:5001'],
+] as const)('defers card.draft with pending work intact after %s changes', async (key, value) => {
   const old = await boot();
   const userId = await h.user();
   const articleId = await h.article({ feedIds: [] });
@@ -106,7 +129,8 @@ it('defers card.draft with its pending work intact on a stale worker', async () 
     'INSERT INTO card_drafts (id, user_id, article_ids, locale) VALUES ($1, $2, $3::bigint[], $4)',
     [draftId, userId, [articleId], 'en'],
   );
-  await setSetting(h.owner, 'engine.ollama_max_concurrency', 2);
+  await setSetting(h.owner, key, value);
+  expect(await old.check()).toMatchObject({ pendingRestart: true });
   await h.clearOutbox();
   const router = new ScriptedRouter(h.db, old.processModel);
   await expect(
@@ -242,12 +266,12 @@ it.each(['repair', 'completion'] as const)(
       const result = await call(input);
       expect(result.ok).toBe(phase === 'completion');
       await setSetting(h.owner, 'engine.ollama_models', {
-        fast: 'glm-5.4-flash',
-        strong: 'glm-5.4',
+        fast: 'glm-5.3',
+        strong: 'glm-5.3',
       });
       await setSetting(h.owner, 'engine.model_pin', {
         model: OLD_MODEL,
-        llm: { fast: 'glm-5.4-flash', strong: 'glm-5.4' },
+        llm: { fast: 'glm-5.3', strong: 'glm-5.3' },
       });
       return result;
     });
@@ -259,18 +283,7 @@ it.each(['repair', 'completion'] as const)(
           classification: {
             ...old.models.classification,
             router,
-            translation: {
-              libretranslate: undefined as never,
-              ollama: translator,
-              credentials: createWorkerCredentialResolver({
-                db: h.db,
-                masterKeyId: undefined,
-                masterKeys: undefined,
-                envKeys: { ollama: 'draft-test-key' },
-              }),
-              modelFast: 'glm-5.3-flash',
-              modelStrong: 'glm-5.3',
-            },
+            translation: draftTranslation(),
           },
         }),
         'card.draft',
@@ -291,3 +304,46 @@ it.each(['repair', 'completion'] as const)(
     expect(await h.intents('card.draft', { pending: true })).toHaveLength(1);
   },
 );
+
+it.each(['pin', 'engine.typesafe_base_url', 'engine.llm_fallback_enabled'] as const)(
+  'completes card.draft immediately after a Jev-only %s change',
+  async (change) => {
+    const old = await boot();
+    const userId = await h.user();
+    const articleId = await h.article({ feedIds: [] });
+    const draftId = randomUUID();
+    await h.owner.query(
+      'INSERT INTO card_drafts (id, user_id, article_ids, locale) VALUES ($1, $2, $3::bigint[], $4)',
+      [draftId, userId, [articleId], 'en'],
+    );
+    if (change === 'pin') await boot(NEW_MODEL);
+    else
+      await setSetting(
+        h.owner,
+        change,
+        change === 'engine.llm_fallback_enabled' ? true : 'https://api.typesafe.ai/v2',
+      );
+    if (change !== 'pin') expect(await old.check()).toMatchObject({ pendingRestart: true });
+    await h.clearOutbox();
+    await dispatch(
+      h.handlersWith({
+        classification: {
+          ...old.models.classification,
+          router: new ScriptedRouter(h.db, old.processModel),
+          translation: draftTranslation(),
+        },
+      }),
+      'card.draft',
+      { draftId },
+      { queue: 'card.draft', jobId: 'draft-jev-only' },
+    );
+    expect(
+      (await h.owner.query('SELECT status, source FROM card_drafts WHERE id = $1', [draftId])).rows,
+    ).toEqual([{ status: 'complete', source: 'llm' }]);
+    expect(await h.intents('card.draft', { pending: true })).toEqual([]);
+  },
+);
+
+it('keeps the interactive card.draft retry immediate', () => {
+  expect(QUEUES['card.draft'].options.retryDelay).toBeUndefined();
+});

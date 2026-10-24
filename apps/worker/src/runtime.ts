@@ -88,6 +88,20 @@ export interface RuntimeLogger {
   error(obj: object, msg: string): void;
 }
 
+/** The restart settings used by translation, independent of Jev and its fallback switch. */
+function translationRestartFingerprint(values: RuntimeSettingsValues): string {
+  return createHash('sha256')
+    .update(
+      canonicalJson({
+        ollamaModels: values.ollamaModels,
+        ollamaBaseUrl: values.ollamaBaseUrl,
+        ollamaMaxConcurrency: values.ollamaMaxConcurrency,
+        libretranslateUrl: values.libretranslateUrl,
+      }),
+    )
+    .digest('hex');
+}
+
 /** The hash of exactly the restart-class values; every other field is ignored. */
 export function restartFingerprint(values: RuntimeSettingsValues): string {
   return createHash('sha256')
@@ -432,6 +446,15 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   models.classification.currentness = {
     fingerprint,
     pin: processPin,
+    translation: {
+      fingerprint: translationRestartFingerprint(values),
+      async restartFingerprint(executor) {
+        const cache =
+          executor === undefined ? guardCache : createWorkerSettingsCache(executor, config);
+        cache.invalidate();
+        return translationRestartFingerprint((await cache.get()).values);
+      },
+    },
     async restartFingerprint(executor) {
       // Inside a completion transaction the values are read through it (under its share locks).
       const cache =

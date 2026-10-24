@@ -300,6 +300,7 @@ describe('jobs registry (spec 03 §2)', () => {
   });
 
   it('retries a guarded stage job after the stale-worker delay, flat', () => {
+    expect(QUEUES['card.draft'].options.retryDelay).toBeUndefined();
     expect(STALE_WORKER_RETRY_DELAY_SECONDS).toBe(30);
     for (const queue of STALE_GUARDED_QUEUES) {
       const options: QueueCreateOptions = QUEUES[queue].options;
