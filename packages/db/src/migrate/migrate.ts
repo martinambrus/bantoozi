@@ -14,7 +14,8 @@ import pg from 'pg';
  *    the pg-boss grants.
  * 3. Every queue of `packages/shared` jobs.ts via pg-boss `createQueue(name, options)` (then
  *    `updateQueue`, so changed options converge), so the per-queue partitions are owner-created.
- *    pg-boss's own cron queue ({@link PG_BOSS_CRON_QUEUE}) is created by migration 0017 instead.
+ *    pg-boss's own cron queue ({@link PG_BOSS_CRON_QUEUE}), introduced by migration 0017, is
+ *    also repaired on every run.
  *
  * Every step is idempotent and the whole job holds a session advisory lock, so concurrent or repeated
  * runs converge. Every wait is bounded (spec 11 §3): a held lock or a hung statement fails the job

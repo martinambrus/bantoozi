@@ -89,7 +89,7 @@ describe("pg-boss's internal cron queue", () => {
         readiness.stop();
       }
     } finally {
-      // Migration 0017 created it (the migrate job does not create it again).
+      // Restore directly for isolation; the migrate job also repairs this queue on every run.
       await owner.query(
         `SELECT pgboss.create_queue('${PG_BOSS_CRON_QUEUE}', '{"policy":"standard"}'::json)`,
       );
