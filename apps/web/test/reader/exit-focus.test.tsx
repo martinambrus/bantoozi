@@ -44,7 +44,7 @@ function newerEachTime(): Record<string, ApiRouteHandler> {
 
 describe('a row that comes back after its rating was undone', () => {
   it('leaves again the way it first left, and hands the focus to the next row', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     await open({
       path: '/read/for_you',
       items: [item(1), item(2), item(3)],
@@ -73,7 +73,7 @@ describe('a row that comes back after its rating was undone', () => {
 
 describe('the only row of a list', () => {
   it('hands the focus to the main landmark when it leaves', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     await open({ path: '/read/for_you', items: [item(1)] });
     await screen.findByRole('article', { name: 'Article 1' });
     likeOf('Article 1').focus();

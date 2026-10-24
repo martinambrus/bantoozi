@@ -545,7 +545,7 @@ describe('closing the expanded article', () => {
 
 describe('leaving the list', () => {
   it('moves a rated article out of an unread list after 400 ms', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     await open({ path: '/read/for_you', items: [item(1), item(2)] });
     const like = within(await screen.findByRole('article', { name: 'Article 1' })).getByRole(
       'button',
@@ -584,7 +584,7 @@ describe('leaving the list', () => {
   });
 
   it('keeps an article whose rating the reader took back in time', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     await open({ path: '/read/for_you', items: [item(1)] });
     const like = within(await screen.findByRole('article', { name: 'Article 1' })).getByRole(
       'button',
