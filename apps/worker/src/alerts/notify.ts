@@ -6,9 +6,9 @@ import { safeText, type Condition, type SeenKind } from './types.js';
 export const ALERT_RESEND_MS = 6 * 60 * 60_000;
 /** The `alerts.state` entry that remembers the latest `backup_ok`: its `firstAt` is that time, it is never active. */
 export const BACKUP_MEMO_KEY = 'memo.backup_ok';
-/** The `alerts.state` entry of the pool streak: `firstAt` is the last counted run, `streak` the run count; never active. */
 /** The `alerts.state` entry of the latest `backup_failed`, `restore_ok` or `restore_failed` seen: `firstAt` is that time; never active. */
 export const seenMemoKey = (kind: SeenKind): string => `memo.seen.${kind}`;
+/** The `alerts.state` entry of the pool streak: `firstAt` is the last counted run, `streak` the run count; never active. */
 export const POOL_MEMO_KEY = 'memo.pool_waiting';
 /** The emails one run sends are bounded: a digest lists at most this many conditions. */
 const DIGEST_MAX = 20;

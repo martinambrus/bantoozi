@@ -7,11 +7,11 @@ import {
   POOL_MEMO_KEY,
   alertEmail,
   applyRun,
-  planNotifications,
   planWithQueueGrace,
   recoveryEmail,
   seenMemoKey,
   type MailOutcome,
+  type NotificationPlan,
 } from '../alerts/notify.js';
 import { ALERT_RULES } from '../alerts/rules.js';
 import {
@@ -78,7 +78,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
       }
     }
 
-    let plan = planNotifications(state, conditions, skipped, now);
+    let plan!: NotificationPlan;
     // The first absent observation and the recovery decision must commit together, or a restart
     // could lose the grace window and re-arm a still-open queue incident.
     await retryTransaction(deps.db, (tx) =>
