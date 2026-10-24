@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { ASK_KINDS, CALL_KIND_PROFILES, type AskCallKind } from '../src/call-kinds.js';
+import { ASK_KINDS, CALL_KINDS, CALL_KIND_PROFILES, type AskCallKind } from '../src/call-kinds.js';
 import type { ExternalCall } from '../src/ports.js';
 
 // Eval can enter either API; its invocation router records both as eval.
@@ -26,6 +26,7 @@ describe('call kind routing', () => {
       card_draft: 'external',
       model_probe: 'external',
     } as const;
+    expect(Object.keys(routes).sort()).toEqual([...CALL_KINDS].sort());
     for (const [kind, route] of Object.entries(routes)) {
       expect(CALL_KIND_PROFILES[kind as keyof typeof routes], kind).toHaveProperty('route', route);
     }
