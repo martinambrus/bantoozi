@@ -63,15 +63,27 @@ INSERT INTO user_learning_history
 SELECT user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason
 FROM missing ORDER BY user_id, kind, at;
 --> statement-breakpoint
--- Restore rejection reasons on matching PRG rows as well as on the inserted runs.
-UPDATE user_learning_history h SET reason = nullif(m.metrics->>'reason', '')
-FROM user_models m
-WHERE h.user_id = m.user_id AND h.kind = 'model' AND h.n = m.n_labels
-  AND h.at = m.trained_at AND h.reason IS NULL
-  AND jsonb_typeof(m.metrics->'reason') = 'string'
-  AND (SELECT count(*) FROM user_models candidate
-       WHERE candidate.user_id = m.user_id AND candidate.trained_at = m.trained_at
-         AND candidate.n_labels = m.n_labels) = 1;
+-- Restore reasons with the same training interval/count/AUC match used above.
+-- Count every matching fitted run, including those without a reason; ambiguity stays NULL.
+WITH model_runs AS (
+  SELECT user_id, trained_at, n_labels,
+    CASE WHEN jsonb_typeof(metrics->'cvAuc') = 'number'
+      THEN (metrics->>'cvAuc')::double precision END AS auc,
+    CASE WHEN jsonb_typeof(metrics->'reason') = 'string'
+      THEN nullif(metrics->>'reason', '') END AS reason,
+    min(trained_at) OVER (PARTITION BY user_id ORDER BY trained_at
+      GROUPS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS next_at
+  FROM user_models
+  WHERE weights ? 'features' AND coalesce(metrics->>'status', '') <> 'superseded'
+), matches AS (
+  SELECT h.id, m.reason, count(*) OVER (PARTITION BY h.id) AS candidates
+  FROM user_learning_history h JOIN model_runs m
+    ON h.user_id = m.user_id AND h.n = m.n_labels AND h.auc IS NOT DISTINCT FROM m.auc
+      AND h.at >= m.trained_at AND (m.next_at IS NULL OR h.at < m.next_at)
+  WHERE h.kind = 'model' AND h.reason IS NULL
+)
+UPDATE user_learning_history h SET reason = m.reason
+FROM matches m WHERE h.id = m.id AND m.candidates = 1 AND m.reason IS NOT NULL;
 --> statement-breakpoint
 DELETE FROM user_learning_history WHERE id IN (
   SELECT id FROM (
