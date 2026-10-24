@@ -191,6 +191,39 @@ describe('user.estimate', () => {
     expect(await w.versions(userId)).toEqual([1, 2]);
   });
 
+  it('rebuilds an estimate-v2 model with learning rate 0.3 once with unchanged ratings', async () => {
+    const userId = await w.reader(6, 6);
+    await estimate(userId);
+    const ratings = await loadEstimateRatings(h.db, userId, new Date(0));
+    const oldOptions = { ...ESTIMATE_OPTIONS, seed: 'estimate-v2', learningRate: 0.3 };
+    await h.owner.query(
+      `UPDATE user_estimate_models SET metrics = metrics || $2::jsonb WHERE user_id = $1`,
+      [
+        userId,
+        JSON.stringify({ inputSha: estimateInputSha(ratings, oldOptions), options: oldOptions }),
+      ],
+    );
+    expect(ESTIMATE_OPTIONS.seed).toBe(oldOptions.seed);
+    expect(estimateInputSha(ratings, oldOptions)).not.toBe(
+      estimateInputSha(ratings, ESTIMATE_OPTIONS),
+    );
+    const { trainer, run } = spied();
+    await h.clearOutbox();
+    const mark = await h.mark();
+    await run(userId);
+    expect(trainer).toHaveBeenCalledTimes(1);
+    const models = await w.models(userId);
+    expect(models.map((model) => model.version)).toEqual([1, 2]);
+    expect(models[1]!.metrics['inputSha']).toBe(estimateInputSha(ratings, ESTIMATE_OPTIONS));
+    expect(models[1]!.metrics['fromRatings']).toBe(false);
+    expect(await estimateRanks(userId, mark)).toHaveLength(1);
+
+    await run(userId);
+    expect(trainer).toHaveBeenCalledTimes(1);
+    expect(await w.versions(userId)).toEqual([1, 2]);
+    expect(await estimateRanks(userId, mark)).toHaveLength(1);
+  });
+
   it('(6) keeps only the two newest versions after three trainings', async () => {
     const userId = await w.reader(6, 6);
     await estimate(userId);

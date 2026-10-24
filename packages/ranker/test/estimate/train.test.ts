@@ -101,15 +101,15 @@ describe('trainEstimateModel', () => {
     expect(JSON.stringify(must([...dup].reverse()))).toBe(JSON.stringify(must(dup)));
   });
 
-  it('pins the trained model: when this hash changes, give DEFAULT_ESTIMATE_OPTIONS.seed a new revision', () => {
+  it('pins the trained model: intentional changes must also change the effective default options', () => {
     // The input hash of a stored model covers the options but not the trainer's code. When the arithmetic of
-    // training changes on purpose, a new default seed (estimate-v3, ...) makes every stored model retrain once;
-    // then replace the hash below.
+    // training changes on purpose, change an effective default option to rebuild stored models once, then
+    // replace the hash below. Tail averaging keeps estimate-v2; learningRate changes from 0.3 to 0.15.
     const rounded = JSON.stringify(must(corpus(80)), (_key, value: unknown) =>
       typeof value === 'number' ? Number(value.toFixed(6)) : value,
     );
     expect(createHash('sha256').update(rounded).digest('hex')).toBe(
-      '68affe3b0e6cb20756dc0a93a347b0dd9b372dea06450b233bc64841dd1594d2',
+      '226b827dea6f3504c9465a2102e8ac90e90f91105cab36eb84ed913f63a2ef85',
     );
   });
 

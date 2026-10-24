@@ -21,8 +21,9 @@ export interface EstimateOptions {
   minRatings: number;
   /** The gate: at least this many of each class. */
   minEachClass: number;
-  /** Adagrad passes over the samples in a hashed order. */
+  /** Adagrad passes in a hashed order; post-update iterates over the last half are averaged. */
   epochs: number;
+  /** Initial rate, divided by sqrt(epoch + 1) on each pass. */
   learningRate: number;
   /** L2 strength, applied to the weights an example touches. */
   l2: number;
@@ -33,8 +34,8 @@ export interface EstimateOptions {
   /** A feed gets metrics from this many scored ratings, both classes present. */
   feedMetricMinRatings: number;
   /**
-   * Seeds the order in which every fit visits the samples (hashed per sample and epoch). The default names the trainer revision: the
-   * input hash of a stored model covers the options, so a new revision rebuilds every stored model once.
+   * Seeds the order in which every fit visits the samples (hashed per sample and epoch). The input
+   * hash of a stored model covers all effective options; changing the defaults rebuilds it once.
    */
   seed: string;
 }
@@ -43,7 +44,7 @@ export const DEFAULT_ESTIMATE_OPTIONS: Readonly<EstimateOptions> = {
   minRatings: 10,
   minEachClass: 3,
   epochs: 8,
-  learningRate: 0.3,
+  learningRate: 0.15,
   l2: 1e-4,
   folds: 5,
   maxWeights: 20_000,

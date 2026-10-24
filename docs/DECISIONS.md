@@ -3340,3 +3340,14 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   Estimates are never `activated`, as in the live writer. The web table shows the reason through the existing
   `learning.reasons` dictionary; the shared reader action handler refreshes the learning queries after each rating
   and prompt answer; classification controls keep focus while saving (`aria-disabled`) and ignore a repeated choice.
+- D-326: 2026-10-24 (design item #32; amends D-271, D-301; owner decision) — Word estimates average the iterates.
+  `fitLogistic` averages the weights and bias over every post-update iterate of the last half of the epochs (4 of 8,
+  sparse weighted deltas, no dense scan) and the learning rate falls as 0.15 / sqrt(epoch + 1); pruning and Platt use
+  the averaged model. The seed stays `estimate-v2`; the options hash changes with the learning rate, so each stored
+  model retrains once at its next trigger (on the owner's ratings 58.5 % of unseen articles move by ≥ 0.01 and 8.4 %
+  change tier, once). Measured paired on five seeds (new − old, mean ± sd): owner day of ageing −2.8 ± 2.2 points of
+  rows moved and −1.1 ± 0.8 of tier changes, sliding window −4.7 / −1.4, one added rating −0.75 / −0.18, one flipped
+  rating −2.1 / −0.35; synthetic ageing −6.6 / −0.75. Every scenario improves on every seed (one owner seed's ageing
+  tier change +0.09). The design target (≤ 10 % rows, ≤ 2 % tiers after a day of ageing) is not reached by any trainer
+  variant that keeps the EST-1 quality gate (lower rates failed it): ageing changes the evidence itself. Quality (C1,
+  8 seeds), determinism and timing (idle A/B 278 → 276 ms for 4,946 ratings) pass.
