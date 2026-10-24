@@ -180,7 +180,7 @@ export const QUEUES = {
   'article.enrich.laya': spec({
     payload: enrichPayload,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
     layaOnly: true,
   }),
   'article.cluster': spec({
