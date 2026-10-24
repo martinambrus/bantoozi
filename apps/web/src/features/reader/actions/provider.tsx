@@ -292,10 +292,25 @@ function createScope({ api, queryClient, toast, i18n, accountId, openNever }: En
     if (pattern !== null && pattern.offer !== null) {
       showPlain(rated);
       void offers.patternActions(pattern, item.id).then((offered) => {
-        if (turn !== latestOffer || !isRecent(handle)) return;
         const current = store.confirmed(item);
-        if (current.rating !== item.rating || current.reason !== item.reason) return;
-        if (offered === null) {
+        if (
+          turn !== latestOffer ||
+          !isRecent(handle) ||
+          current.rating !== item.rating ||
+          current.reason !== item.reason ||
+          offered === null
+        ) {
+          const plain = toast.getSnapshot().find((entry) => entry.id === undoToastId(handle));
+          // Keep the server's ranking explanation and the original confirmation's remaining time.
+          if (plain?.action?.onAction === undoAction.onAction) {
+            show({
+              id: plain.id,
+              message,
+              tone: plain.tone,
+              actions: plain.actions,
+              durationMs: toast.resume(plain.id),
+            });
+          }
           return;
         }
         showRatingOffer(
