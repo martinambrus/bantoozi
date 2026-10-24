@@ -123,11 +123,15 @@ export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
  * `settings['engine.model_watch']`, written only by the worker's `house.model-watch`,
  * `requestModelWatch` and `writePendingNotice` (visible-learning §4.1): when the retired-model
  * trigger last queued a check (its 10-minute rate
- * limit), how the newest check ended, and the adoption whose mail is still to be delivered
+ * limit), the release awaiting confirmation, how the newest check ended, and the adoption whose mail is still to be delivered
  * (`major`: the new release is of another major, so personal models restart).
  */
 export const EngineModelWatchSchema = z
   .object({
+    candidate: z
+      .object({ model: concreteJevModel, firstSeenAt: iso, count: z.number().int().min(1) })
+      .strict()
+      .optional(),
     triggeredAt: iso.optional(),
     lastCheck: z
       .object({ at: iso, ok: z.boolean(), error: z.string().min(1).max(200).optional() })

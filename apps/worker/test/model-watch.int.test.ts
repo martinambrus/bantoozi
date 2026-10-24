@@ -118,6 +118,14 @@ async function twoAdmins(): Promise<void> {
   await addAdmin(h.owner, ADMIN_B);
 }
 
+/** Adoption-specific controls start with a prior observation; lifecycle probes live in the candidate suite. */
+async function confirmNext(model: string, at: Date = NOW): Promise<void> {
+  await setSetting(h.owner, 'engine.model_watch', {
+    ...(await watchRow(h.owner)),
+    candidate: { model, firstSeenAt: iso(new Date(at.getTime() - 10 * 60_000)), count: 1 },
+  });
+}
+
 const noticeOf = async () => (await watchRow(h.owner)).notice;
 
 describe('fixtures (sanity: these pass without the implementation)', () => {
@@ -195,6 +203,7 @@ describe('fixtures (sanity: these pass without the implementation)', () => {
 
 describe('W1: a same-major flip on the fake server', () => {
   it('adopts 1.14.0 with previous, records the probe, mails each admin once, leaves no notice; a second run changes only checkedAt', async () => {
+    await confirmNext(V114);
     await twoAdmins();
     flipTo(V114);
     const mailer = new WatchMailer();
@@ -264,6 +273,7 @@ describe('W1: a same-major flip on the fake server', () => {
 
 describe('W2: a major flip on the fake server', () => {
   it('mails the major-change text, never the same-major sentence, and records major in the notice while it is pending', async () => {
+    await confirmNext(V2);
     await twoAdmins();
     flipTo(V2);
     const mailer = new WatchMailer();
@@ -367,6 +377,7 @@ describe('W3: a failed probe keeps the resolution', () => {
     const prober = scriptedProber(failedProbe('timeout'), okProbe(V114));
     await runWatch(h, { prober, mailer });
     expect(mailer.attempts).toBe(0);
+    await confirmNext(V114, LATER);
     await runWatch(h, { prober, mailer, now: LATER });
     expect(await resolutionRow(h.owner)).toMatchObject({ model: V114, resolvedAt: iso(LATER) });
     expect(mailer.sent).toHaveLength(2);
@@ -427,6 +438,7 @@ describe('W5: the outgoing rating fingerprint is registered before the resolutio
     expect(await registryStamp(h)).toBeNull();
 
     flipTo(V114);
+    await confirmNext(V114, LATER);
     await runWatch(h, {
       prober: realProber(h, fake, LATER),
       mailer: new WatchMailer(),
@@ -448,6 +460,7 @@ describe('W5: the outgoing rating fingerprint is registered before the resolutio
   });
 
   it('an already registered sha is not written again on a flip', async () => {
+    await confirmNext(V114);
     await twoAdmins();
     await dropRegistry(h);
     const exact = await exactShaOf(h);
@@ -458,6 +471,7 @@ describe('W5: the outgoing rating fingerprint is registered before the resolutio
     // A second flip from 1.14.0: the pin is still 1.13.0 (no worker restarted), so the sha of the
     // pin is the one already registered and the registry is not rewritten.
     flipTo(V115);
+    await confirmNext(V115, LATER);
     await runWatch(h, {
       prober: realProber(h, fake, LATER),
       mailer: new WatchMailer(),
@@ -468,6 +482,7 @@ describe('W5: the outgoing rating fingerprint is registered before the resolutio
   });
 
   it('a registry write that fails leaves the resolution, the notice and the mail untouched', async () => {
+    await confirmNext(V114);
     await twoAdmins();
     await dropRegistry(h);
     await h.owner.query(`
@@ -492,6 +507,7 @@ describe('W5: the outgoing rating fingerprint is registered before the resolutio
 
 describe('W6: notice delivery', () => {
   it('a failing mailer logs the delivery trouble under the house.model-watch job', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
@@ -501,6 +517,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('a failing mailer keeps the notice pending (attempts 1) after adopting the release; the next run delivers one mail and clears it; the third sends none', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
@@ -563,6 +580,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('two admins where the first address rejects and the second accepts count as delivered', async () => {
+    await confirmNext(V114);
     await twoAdmins();
     const mailer = new WatchMailer();
     mailer.rejecting.add(ADMIN_A);
@@ -581,6 +599,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('gives up after MODEL_NOTICE_MAX_ATTEMPTS failed deliveries: the notice is cleared, an error is logged, and no further mail is tried', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
@@ -611,6 +630,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('with no admin and no ADMIN_EMAILS the notice is cleared with a warning and the run does not throw', async () => {
+    await confirmNext(V114);
     const mailer = new WatchMailer();
     const rec = recorder();
     await expect(
@@ -625,6 +645,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('with no mailer the notice is cleared with a warning', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const rec = recorder();
     await runWatch(h, { prober: scriptedProber(okProbe(V114)), mailer: null, rec });
@@ -634,6 +655,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('ADMIN_EMAILS is the recipient list only while there is no active admin', async () => {
+    await confirmNext(V114);
     const fallback = new WatchMailer();
     await runWatch(h, {
       prober: scriptedProber(okProbe(V114)),
@@ -644,6 +666,7 @@ describe('W6: notice delivery', () => {
     expect(fallback.sent).toHaveLength(1);
 
     await storeResolution(h.owner, V113, STORED_AT);
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const active = new WatchMailer();
     await runWatch(h, {
@@ -656,6 +679,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('two flips while delivery fails leave one merged notice from the earliest release to the latest', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
@@ -671,6 +695,7 @@ describe('W6: notice delivery', () => {
     expect(middle.attempts).toBeGreaterThanOrEqual(2);
 
     const third = new Date(NOW.getTime() + 120_000);
+    await confirmNext(V115, third);
     await runWatch(h, { prober: scriptedProber(okProbe(V115, third)), mailer, now: third });
     const merged = (await noticeOf())!;
     expect(merged).toMatchObject({ from: V113, to: V115, at: iso(third), major: false });
@@ -689,12 +714,14 @@ describe('W6: notice delivery', () => {
   });
 
   it('1.13 to 1.14 to 2.0.0 while delivery fails merges into one major notice', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
     await runWatch(h, { prober: scriptedProber(okProbe(V114)), mailer });
     expect((await noticeOf())!.major).toBe(false);
 
+    await confirmNext(V2, LATER);
     await runWatch(h, { prober: scriptedProber(okProbe(V2, LATER)), mailer, now: LATER });
     expect(await noticeOf()).toMatchObject({ from: V113, to: V2, major: true });
 
@@ -706,10 +733,12 @@ describe('W6: notice delivery', () => {
   });
 
   it('major is sticky: 1.13 to 2.0.0 and back to 1.14.0 before delivery is still a major notice', async () => {
+    await confirmNext(V2);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
     await runWatch(h, { prober: scriptedProber(okProbe(V2)), mailer });
+    await confirmNext(V114, LATER);
     await runWatch(h, { prober: scriptedProber(okProbe(V114, LATER)), mailer, now: LATER });
     expect(await noticeOf()).toMatchObject({ from: V113, to: V114, major: true });
     mailer.failing = false;
@@ -719,6 +748,7 @@ describe('W6: notice delivery', () => {
   });
 
   it('the notice is written in the same transaction as the resolution (never a resolution without its notice)', async () => {
+    await confirmNext(V114);
     await addAdmin(h.owner, ADMIN_A);
     const mailer = new WatchMailer();
     mailer.failing = true;
