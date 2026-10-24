@@ -27,6 +27,7 @@ import {
   MODEL_WATCH_KEY,
   isOlderSameMajorRelease,
   observeModelCandidate,
+  retryModelCandidate,
   upgradeMail,
   watchStateOf,
   writePendingNotice,
@@ -71,11 +72,13 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
   const updateState = (
     change: (state: EngineModelWatch) => EngineModelWatch,
     clearCandidate = false,
+    retryCandidate = false,
   ): Promise<void> =>
     retryTransaction(db, async (tx) => {
       await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) =>
         change(watchStateOf(current)),
       );
+      if (retryCandidate) await retryModelCandidate(tx, now());
       if (clearCandidate) {
         await updateSettingLocked(tx, MODEL_CANDIDATE_KEY, null, () => null);
       }
@@ -156,10 +159,11 @@ export function createModelWatchHandler(deps: ModelWatchDeps): QueueHandler<type
     const answered = probe.answered;
     if (!probe.ok || answered === undefined || !isConcreteJevModel(answered)) {
       const error = (probe.error ?? 'not_concrete').slice(0, 200);
-      await updateState((state) => ({
-        ...state,
-        lastCheck: { at: now().toISOString(), ok: false, error },
-      }));
+      await updateState(
+        (state) => ({ ...state, lastCheck: { at: now().toISOString(), ok: false, error } }),
+        false,
+        true,
+      );
       logger.warn({ job: JOB, model: alias, error }, 'jev-latest probe failed; keeping the model');
       await recordHouseProgress({ db }, JOB, now(), true);
       return;

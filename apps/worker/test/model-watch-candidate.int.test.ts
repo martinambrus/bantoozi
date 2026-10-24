@@ -142,12 +142,42 @@ describe('JEV-8: alias flap controls', () => {
     expect(intents.at(-1)!.availableAt.getTime()).toBe(NOW.getTime() + GAP);
   });
 
+  it('retries an early confirmation with a distinct delayed intent', async () => {
+    await answer(V114);
+    await answer(V114, GAP - 1);
+    const intents = await h.intents('house.model-watch', { pending: true });
+    expect(intents).toHaveLength(2);
+    expect(intents[1]!.availableAt.getTime()).toBeGreaterThan(NOW.getTime() + GAP - 1);
+    await answer(V114, GAP + 60_000);
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+    expect(await h.intents('house.model-watch', { pending: true })).toHaveLength(2);
+  });
+
+  it('retries failed confirmations at most three times and still permits later adoption', async () => {
+    await answer(V114);
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      fake.setOptions({ failRate: 1, failStatus: 503 });
+      const at = new Date(NOW.getTime() + GAP + attempt * 60_000);
+      await runWatch(h, { prober: realProber(h, fake, at), now: at, mailer });
+      const intents = await h.intents('house.model-watch', { pending: true });
+      expect(intents).toHaveLength(Math.min(1 + attempt, 4));
+      expect(await candidate()).toMatchObject({ model: V114, firstSeenAt: iso(NOW) });
+    }
+    const revisions = await h.owner.query(`SELECT count(DISTINCT dedupe_key)::int AS n
+      FROM job_outbox WHERE queue = 'house.model-watch' AND delivered_at IS NULL`);
+    expect(revisions.rows[0].n).toBe(4);
+    fake.setOptions({ failRate: 0 });
+    await answer(V114, GAP * 2);
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+    expect(mailer.sent).toHaveLength(1);
+  });
+
   it('a failed probe keeps a candidate and later confirmation still adopts', async () => {
     await answer(V114);
     const before = await candidate();
     fake.setOptions({ failRate: 1, failStatus: 503 });
     await runWatch(h, { prober: realProber(h, fake, NOW), now: NOW, mailer });
-    expect(await candidate()).toEqual(before);
+    expect(await candidate()).toEqual({ ...before, count: 2 });
     fake.setOptions({ failRate: 0 });
     await answer(V114, GAP);
     expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
@@ -172,7 +202,7 @@ describe('JEV-8: alias flap controls', () => {
     await answer(V114, GAP - 1);
     expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
     expect(await candidate()).toMatchObject({ model: V114, firstSeenAt: iso(NOW), count: 2 });
-    expect(await h.intents('house.model-watch', { pending: true })).toHaveLength(1);
+    expect(await h.intents('house.model-watch', { pending: true })).toHaveLength(2);
     await answer(V114, GAP);
     const adopted = await resolutionRow(h.owner);
     expect(adopted).toMatchObject({
