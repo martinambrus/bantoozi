@@ -16,6 +16,7 @@ export interface NewLearningHistoryRow {
   activated?: boolean;
   turnedOn?: boolean;
   engineModel?: string | null;
+  reason?: string | null;
   at?: Date;
 }
 
@@ -28,6 +29,7 @@ export interface LearningHistoryRow {
   activated: boolean | null;
   turnedOn: boolean | null;
   engineModel: string | null;
+  reason: string | null;
 }
 
 const finiteOrNull = (v: number | null | undefined): number | null =>
@@ -40,10 +42,10 @@ export async function appendLearningHistory(
 ): Promise<void> {
   await tx.execute(sql`
     INSERT INTO user_learning_history
-      (user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model)
+      (user_id, at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason)
     VALUES (${row.userId}::uuid, COALESCE(${row.at ?? null}::timestamptz, now()), ${row.kind},
             ${row.n}, ${finiteOrNull(row.auc)}, ${finiteOrNull(row.baselineAuc)},
-            ${row.activated ?? false}, ${row.turnedOn ?? false}, ${row.engineModel ?? null})`);
+            ${row.activated ?? false}, ${row.turnedOn ?? false}, ${row.engineModel ?? null}, ${row.reason ?? null})`);
   await tx.execute(sql`
     DELETE FROM user_learning_history
      WHERE user_id = ${row.userId}::uuid AND kind = ${row.kind}
@@ -66,8 +68,9 @@ export async function loadLearningHistory(
     activated: boolean | null;
     turned_on: boolean | null;
     engine_model: string | null;
+    reason: string | null;
   }>(sql`
-    SELECT at, kind, n, auc, baseline_auc, activated, turned_on, engine_model
+    SELECT at, kind, n, auc, baseline_auc, activated, turned_on, engine_model, reason
       FROM user_learning_history
      WHERE user_id = ${userId}::uuid
      ORDER BY at ASC, id ASC`);
@@ -80,6 +83,7 @@ export async function loadLearningHistory(
     activated: r.activated,
     turnedOn: r.turned_on,
     engineModel: r.engine_model,
+    reason: r.reason,
   }));
   const count = (kind: LearningHistoryKind) => rows.filter((r) => r.kind === kind).length;
   return {

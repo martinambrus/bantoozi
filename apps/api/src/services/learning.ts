@@ -299,6 +299,7 @@ export async function loadLearningHistoryStatus(tx: TenantTx): Promise<LearningH
       activated: row.activated,
       turnedOn: row.turnedOn,
       engineModel: row.engineModel,
+      reason: row.reason,
     })),
     truncated,
   };

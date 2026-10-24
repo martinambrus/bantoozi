@@ -204,6 +204,7 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
             n: result.metrics.nExplicit,
             auc: result.metrics.cvAuc,
             baselineAuc: result.metrics.baselineAuc,
+            reason: decision.activate ? null : decision.reasons.join(',') || null,
             activated: decision.activate,
             turnedOn: decision.activate && current.active === null,
             engineModel: typeof pinned === 'string' && pinned !== '' ? pinned : null,
