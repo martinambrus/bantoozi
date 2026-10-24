@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { BUDGET_EXEMPT_KINDS, CALL_KINDS, CALL_KIND_PROFILES } from '../src/call-kinds.js';
 
 describe('call kind budget exemption', () => {
+  it('requires every budget-exempt kind to have its own authorization', () => {
+    for (const kind of CALL_KINDS) {
+      const profile = CALL_KIND_PROFILES[kind];
+      if (profile.budgetExempt)
+        expect(profile, kind).toHaveProperty('authorization', expect.any(String));
+    }
+  });
   it('exempts only eval, while non-live probes still consume the production budget', () => {
     expect(BUDGET_EXEMPT_KINDS).toEqual(['eval']);
     for (const kind of CALL_KINDS) {
