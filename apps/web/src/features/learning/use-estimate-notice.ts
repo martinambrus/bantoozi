@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
 
 import { useApi } from '../../api/context.js';
+import { useOnline } from '../../components/states/use-online.js';
 import { useAccountId } from '../../session/context.js';
 import { useSettledActions } from '../reader/actions/provider.js';
 import {
@@ -53,11 +54,12 @@ export function useEstimateNoticeState(): EstimateNoticeControl {
   const [state, dispatch] = useReducer(reduce, INITIAL_ESTIMATE_RUN);
   const { armedUntil, notice } = state;
   const waiting = armedUntil !== null;
+  const online = useOnline();
   // Asking at once gives the status the refresh will be compared with before it can finish.
   const query = useQuery({
     ...learningEstimatesQueryOptions(api, accountId),
-    enabled: waiting,
-    refetchInterval: waiting ? POLL_MS : false,
+    enabled: waiting && online,
+    refetchInterval: waiting && online ? POLL_MS : false,
   });
   const { data, dataUpdatedAt } = query;
 
