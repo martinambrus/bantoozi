@@ -46,6 +46,10 @@ describe('estimateInputSha', () => {
     expect(estimateInputSha(samples)).not.toBe(estimateInputSha(base));
   });
 
+  it('changes with the trainer revision, so models of the previous one are retrained once', () => {
+    expect(estimateInputSha(base)).not.toBe(estimateInputSha(base, { seed: 'estimate-v1' }));
+  });
+
   it.each([
     ['the gate', { minRatings: 11 }],
     ['the epochs', { epochs: 9 }],

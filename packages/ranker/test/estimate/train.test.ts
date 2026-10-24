@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -99,6 +101,18 @@ describe('trainEstimateModel', () => {
     expect(JSON.stringify(must([...dup].reverse()))).toBe(JSON.stringify(must(dup)));
   });
 
+  it('pins the trained model: when this hash changes, give DEFAULT_ESTIMATE_OPTIONS.seed a new revision', () => {
+    // The input hash of a stored model covers the options but not the trainer's code. When the arithmetic of
+    // training changes on purpose, a new default seed (estimate-v3, ...) makes every stored model retrain once;
+    // then replace the hash below.
+    const rounded = JSON.stringify(must(corpus(80)), (_key, value: unknown) =>
+      typeof value === 'number' ? Number(value.toFixed(6)) : value,
+    );
+    expect(createHash('sha256').update(rounded).digest('hex')).toBe(
+      '68affe3b0e6cb20756dc0a93a347b0dd9b372dea06450b233bc64841dd1594d2',
+    );
+  });
+
   it('carries the spec and sorted keys', () => {
     const m = must(corpus(60));
     expect(m.spec).toBe(ESTIMATE_SPEC);
@@ -112,8 +126,16 @@ describe('trainEstimateModel', () => {
     const full = must(s, { maxWeights: 1_000_000 });
     expect(Object.keys(full.weights).length).toBeGreaterThan(5);
     expect(Object.keys(must(s, { maxWeights: 7 }).weights).length).toBeLessThanOrEqual(7);
+    const support = new Map<string, number>();
+    for (const sample of s) {
+      for (const feature of new Set(estimateFeatures(sample))) {
+        support.set(feature, (support.get(feature) ?? 0) + 1);
+      }
+    }
+    const contribution = ([name, w]: [string, number]) =>
+      Math.abs(w) * Math.sqrt(support.get(name) as number);
     const top = Object.entries(full.weights)
-      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || (a[0] < b[0] ? -1 : 1))
+      .sort((a, b) => contribution(b) - contribution(a) || (a[0] < b[0] ? -1 : 1))
       .slice(0, 5)
       .map(([k]) => k)
       .sort();

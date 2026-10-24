@@ -3069,3 +3069,33 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   it). The worker never creates queues and never refuses to start, production included (refusing like
   `assertProductionReady` does for stubs would stop every queue for one missing one; an owner choice); a missing
   CRON queue still aborts the start at `boss.schedule()` ("Queue X not found"), now after the readiness error.
+- D-301: 2026-10-23 (FNF-VL-4, task #29; amends D-271 and the "Known, not changed" note of D-300) — Stable word-estimate retrains. No migration, no worker change.
+  (1) **Cause.** `fitLogistic` shuffled every epoch with a Fisher–Yates over n, so one rating more or less reordered every sample, and `pruneWeights` kept the 20,000
+  largest `|w|`, a cut inside a cluster of about 6,500 weights at `|w|` ≈ the learning rate (features seen once get the first-touch step 0.3) with 100-280 mid-frequency words
+  swapping at every retrain. Measured with a harness outside the repository (`.claude/tmp/visible-learning/est-stable/harness/stability`: the owner's 4,946 ratings with a seeded 15 %
+  holdout of 747 unseen articles, and a synthetic set of 5,000 ratings, 12,700 unseen articles and 40 feeds; 24 trials per scenario; the metric is what the refresh writes, |dP| >= 0.01 or a
+  different tier): one added, removed or aged-out rating moved 67 % (owner) and 86-87 % (synthetic) of the unseen articles and changed the tier of 15-16 % and 28-29 %; the stored per-feed
+  out-of-fold AUCs changed by 0.057 on average per rating. (2) **Change.** Each sample's place in an epoch is the rank of `mix32(murmur3(articleId) ^ salt(seed, epoch))`, ties by canonical
+  position, so it depends on that sample, the seed and the epoch only; the weights kept are those with the largest `|w| * sqrt(support)` (the root-mean-square effect on the logits
+  of the rows the weight was trained on) instead of the largest `|w|`; the default seed is `estimate-v2`. The order change alone brought an added rating to 5.8 % / 1.0 % on the owner's data
+  (the target is 5 % / 1 %); the prune change is what made the cut stable (tie-breaks by recency or by support inside a tolerance band did not help, the ranking did): 2.7 % / 0.4 %.
+  An exponent of 1 instead of 0.5 gave 3.0 % / 0.6 % but would rank a word present in thousands of rows with a near-zero weight above a rare strong one; 0.25 gave 4.4 % / 1.1 %.
+  (3) **Result** (mean of 24 trials, moved >= 0.01 / changed tier): owner add one 2.7 / 0.4 %, remove one 0.9 / 0.1 %, age out the oldest 3.9 / 0.6 %; synthetic 1.5 / 0.5, 1.6 / 0.4, 3.2 / 0.7
+  (before 67 / 15, 67 / 15, 67 / 16 and 87 / 29, 86 / 28, 86 / 29). Re-rating one article moves 6.6 / 1.0 % (before 13.8 / 1.8; the permutation was fixed there already); one day of 29 ratings
+  aged out moves 36-42 % / 6 % (before 70-88 / 17-32 %, 3 trials). (4) **Folds and Platt** were checked and left alone: with the new order a new Platt alone moves at most 0.6 % of the articles by >= 0.01
+  (tier <= 0.12 %), a one-rating change moves 0-4 of the ~5,000 ratings to the neighbouring fold (each boundary moves by at most one rating), and removing the prune entirely would only lower the one-rating
+  figures by 0.3-1.6 points (decomposition in `evidence/after-ablate-table.txt`).
+  (5) **Quality.** The EST-1 8-seed equivalence check (D-271) passes unchanged, with the same reference (the prototype, 24 runs): every gated cell within max(0.05, 3 SE), Bazos "all later" -0.0008
+  against the oracle; the closest cell is Space.com "ratings 11-60" at +0.042 (tolerance 0.050; 16 seeds +0.044), an improvement: the 4,124-rating model that scores it keeps more common words
+  (14 of 16 seeds improve, +0.019 on average). The pooled out-of-fold AUC of the owner's ratings is 0.9054 (old 0.9051); the per-feed AUCs agree within the seed noise (40 seeds). Because the check is
+  two-sided, a later trainer that improves that cell further would fail it: make it one-sided or take a new reference from the accepted trainer when it is reused. Training 4,946 ratings takes 285 ms
+  (old 265 ms). (6) **Pickup.** The input hash of `user.estimate` covers the options, so a changed default seed rebuilds every stored model at its reader's next trigger (a rating, a restore, a
+  `prefs.estimates` change, the rank self-heal, and since D-300 the first nightly sweep, which wakes every model holder once); until then the stored model keeps scoring (`ESTIMATE_SPEC` is not bumped:
+  features and scoring are unchanged); a unit test that pins the trained model of a fixed corpus makes the next arithmetic change give the seed a new revision. That first retrain of each reader rewrites most estimates once (old trainer's model against the new one on the same ratings: 68.0 % of the unseen articles move by >= 0.01 and 16.5 % change tier, 59 up and
+  64 down of 747, `evidence/quality/rollout-churn.txt`) and its `lastRun.movedUp/movedDown` is large once; later retrains write a few rows. (7) **Not changed / open.** The remaining movement is the Adagrad path itself; a day of aging still moves a third of
+  the articles, which would need a different fit (averaged iterates, more epochs) and a new quality check. The EST-1 harness and the stability harness live outside the repository (paths in the notes).
+
+D-300, last sentence of its first paragraph: replace "Known, not changed: every retrain moves most scores because `fitLogistic` reshuffles by sample count (a trainer property that rating bursts already trigger);"
+by "Retrains used to move most scores because `fitLogistic` reshuffled by sample count; fixed by D-301;" (the rest of the sentence, from "the admin PATCH of `ranker.thresholds`", stays).
+
+D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample and the kept weights are ranked by contribution; the equivalence check passes unchanged.)"

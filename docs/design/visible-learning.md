@@ -236,9 +236,11 @@ an assumption until one real Jev answer is recorded.
   All are binary presence features.
 - **Training data.** Explicit ratings within `model.historyDays`, read from `user_article` (current truth), with
   each article's title and excerpt and its lowest-id subscribed carrier feed.
-- **Fitting.** Class-balanced weights; Adagrad, 8 epochs in a seeded order; L2 1e-4. Platt scaling is fitted on
+- **Fitting.** Class-balanced weights; Adagrad, 8 epochs, each rating at a place that depends only on the seed, the epoch
+  and its article id (D-301: one rating more or less keeps the path of all others); L2 1e-4. Platt scaling is fitted on
   out-of-fold scores from 5 folds in time order: 5 contiguous blocks of the ratings ordered by (rated time, article
-  id), each scored by a model trained on the other four. The 20,000 largest weights by absolute value are kept.
+  id), each scored by a model trained on the other four. The 20,000 weights with the largest contribution (`|w|` times the root of the number of ratings containing the
+  feature) are kept (D-301).
   Equal inputs give byte-equal models. `ESTIMATE_SPEC` hashes the feature definition; a stored model of another spec
   is never scored (EST-1, D-271).
 - **Metrics.** Out-of-fold AUC overall and per feed (feeds with at least 10 ratings and both classes), plus counts.

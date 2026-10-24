@@ -21,18 +21,21 @@ export interface EstimateOptions {
   minRatings: number;
   /** The gate: at least this many of each class. */
   minEachClass: number;
-  /** Adagrad passes over the shuffled samples. */
+  /** Adagrad passes over the samples in a hashed order. */
   epochs: number;
   learningRate: number;
   /** L2 strength, applied to the weights an example touches. */
   l2: number;
   /** Out-of-fold folds, contiguous in time order. */
   folds: number;
-  /** The largest absolute weights that are kept. */
+  /** The weights with the largest contribution (|w| times the root of the ratings containing the feature) that are kept. */
   maxWeights: number;
   /** A feed gets metrics from this many scored ratings, both classes present. */
   feedMetricMinRatings: number;
-  /** Seeds the example order of every fit. */
+  /**
+   * Seeds the order in which every fit visits the samples (hashed per sample and epoch). The default names the trainer revision: the
+   * input hash of a stored model covers the options, so a new revision rebuilds every stored model once.
+   */
   seed: string;
 }
 
@@ -45,7 +48,7 @@ export const DEFAULT_ESTIMATE_OPTIONS: Readonly<EstimateOptions> = {
   folds: 5,
   maxWeights: 20_000,
   feedMetricMinRatings: 10,
-  seed: 'estimate-v1',
+  seed: 'estimate-v2',
 };
 
 export interface EstimateFeedMetrics {
