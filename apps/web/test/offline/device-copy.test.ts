@@ -1,6 +1,8 @@
 import type { ArticleListItem } from '@bantoozi/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { listItemOf } from '../../src/features/offline/saved-copy.js';
 import { createReaderActions } from '../../src/features/reader/actions/store.js';
 import { READER_FIELDS, type ReaderState } from '../../src/features/reader/actions/types.js';
@@ -71,7 +73,7 @@ const stored = async (id: string) => (await storedItems())[id]?.item;
 const eventually = (check: () => Promise<void> | void) => vi.waitFor(check, { timeout: 4000 });
 
 /** Lets what must not happen have its chance to. */
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 100));
+const settle = () => vi.advanceTimersByTimeAsync(1100);
 
 /** The transactions that write saved rows, from now on. */
 function watchRowWrites(): () => number {
@@ -232,6 +234,7 @@ describe('the saved rows of the articles the store learns more about', () => {
   });
 
   it('are left as they are while the account has not chosen offline reading, and taken once it has', async () => {
+    useFakeClock();
     const { store } = page();
     const [one, two] = [article('1'), article('2')] as const;
     await keep(one, two);
@@ -254,6 +257,7 @@ describe('the saved rows of the articles the store learns more about', () => {
   });
 
   it('never show a change that waits for a connection, and take the state of the server under it', async () => {
+    useFakeClock();
     const net = { online: true };
     const { store } = page(net);
     const one = article('1');

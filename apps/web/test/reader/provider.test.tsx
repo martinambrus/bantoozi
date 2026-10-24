@@ -7,6 +7,7 @@ import {
   useObserveItems,
   useReaderActions,
   useReaderItem,
+  useSettledActions,
   useUndoAction,
 } from '../../src/features/reader/actions/provider.js';
 import type { ReaderActions } from '../../src/features/reader/actions/types.js';
@@ -445,7 +446,8 @@ describe('the undo other surfaces offer', () => {
 });
 
 describe('reader action toasts', () => {
-  function Row({ item }: { item: ArticleListItem }) {
+  function Row({ item, onSettled }: { item: ArticleListItem; onSettled?: () => void }) {
+    useSettledActions(() => onSettled?.());
     return <ArticleRow item={item} expanded={false} onToggleExpand={() => {}} simple={false} />;
   }
 
@@ -516,25 +518,27 @@ describe('reader action toasts', () => {
 
   it('offers no undo for an action that changed nothing', async () => {
     const item = makeItem();
-    const { user, toasts, calls } = renderReader(<Row item={item} />, {
+    const settled = vi.fn();
+    const { user, toasts, calls } = renderReader(<Row item={item} onSettled={settled} />, {
       routes: { 'POST /articles/:id/rating': () => ratingResponse({ ...item, rating: 1 }) },
     });
     await user.click(like());
     await waitFor(() => expect(calls('POST', '/articles/101/rating')).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await waitFor(() => expect(settled).toHaveBeenCalledOnce());
     expect(toasts.getSnapshot()).toEqual([]);
   });
 
   it('offers no undo toast for a bookmark', async () => {
     const item = makeItem();
-    const { user, toasts, calls } = renderReader(<Row item={item} />, {
+    const settled = vi.fn();
+    const { user, toasts, calls } = renderReader(<Row item={item} onSettled={settled} />, {
       routes: {
         'POST /articles/:id/bookmark': () => actionResponse(acked(item, { bookmarkedAt: READ_AT })),
       },
     });
     await user.click(screen.getByRole('button', { name: 'Bookmark' }));
     await waitFor(() => expect(calls('POST', '/articles/101/bookmark')).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await waitFor(() => expect(settled).toHaveBeenCalledOnce());
     expect(toasts.getSnapshot()).toEqual([]);
   });
 

@@ -1,6 +1,8 @@
 import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { useArticleList } from '../../src/features/reader/use-article-list.js';
 import { setOfflineEnabled } from '../../src/offline/cache.js';
 import { failure, json } from '../api/fake-fetch.js';
@@ -136,6 +138,7 @@ describe('the rows that Refresh starts again', () => {
   });
 
   it('all stay on the screen and on the device when the first page cannot be had', async () => {
+    useFakeClock();
     const app = await openTwoPages(() => failure(503, 'UNAVAILABLE'));
 
     await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -143,7 +146,7 @@ describe('the rows that Refresh starts again', () => {
     expect(await screen.findByRole('alert')).toBeVisible();
     expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await vi.advanceTimersByTimeAsync(1100);
     });
     expect((await storedView(idb.factory, FOR_YOU))?.itemIds).toEqual(['1', '2', '3']);
   });

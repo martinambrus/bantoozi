@@ -2,6 +2,8 @@ import type { ArticleListItem, Me, UserPreferences } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { FOCUS_RING } from '../../src/components/cx.js';
 import {
@@ -193,10 +195,13 @@ describe('the prompt after a dwell', () => {
     });
 
     it('sends no dwell and asks nothing while implicit feedback is off, and does once it is on', async () => {
+      useFakeClock();
       const app = renderPrompt({ me: makeMe() });
       await app.user.click(screen.getByRole('button', { name: readOriginal(FIRST) }));
       leaveAndReturn(90_000);
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(app.calls('POST', '/articles/101/dwell')).toHaveLength(0);
       expect(screen.queryByRole('dialog')).toBeNull();

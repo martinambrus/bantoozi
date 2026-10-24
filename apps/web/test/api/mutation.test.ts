@@ -1,7 +1,9 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { createApiClient } from '../../src/api/client.js';
 import { ApiProvider } from '../../src/api/context.js';
@@ -213,12 +215,15 @@ describe('useApiMutation', () => {
   });
 
   it('does not retry on its own', async () => {
+    useFakeClock();
     const { wrapper, requests } = setup(() => failure(503, 'ENGINE_UNAVAILABLE'));
     const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });
 
     act(() => result.current.mutate(rename));
     await waitFor(() => expect(result.current.isError).toBe(true));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(requests).toHaveLength(1);
   });

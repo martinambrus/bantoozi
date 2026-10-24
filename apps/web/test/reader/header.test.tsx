@@ -1,5 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { meKey } from '../../src/api/query-keys.js';
 import { MarkAllRead } from '../../src/features/reader/mark-all-read.js';
@@ -282,6 +284,7 @@ describe('the tier slider', () => {
 
 describe('a setting that is still being saved', () => {
   it('does not bring the account back when the reader signed out meanwhile', async () => {
+    useFakeClock();
     const saved = deferred<Response>();
     const me = makeMe();
     const { app } = await open({
@@ -299,7 +302,7 @@ describe('a setting that is still being saved', () => {
     });
     saved.resolve(json(200, { ...me, preferences: { ...me.preferences, defaultTier: 4 } }));
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await vi.advanceTimersByTimeAsync(1100);
     });
 
     expect(app.queryClient.getQueryData(meKey())).toBeNull();
@@ -1013,9 +1016,13 @@ describe('Mark all read', () => {
   });
 
   describe('once the sign-in that asked has ended', () => {
-    const later = () => new Promise((resolve) => setTimeout(resolve, 100));
+    const later = () =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
     it('asks for nothing more when the probe of a lane is answered', async () => {
+      useFakeClock();
       const probe = deferred<Response>();
       const { app, server } = await open({
         path: '/read/for_you',
@@ -1038,6 +1045,7 @@ describe('Mark all read', () => {
     });
 
     it('shows no error when the end of the sign-in cancels the count', async () => {
+      useFakeClock();
       const held = deferred<Response>();
       let asking = false;
       const { app, server } = await open({
@@ -1096,6 +1104,7 @@ describe('Mark all read', () => {
       }
 
       it('confirms nothing when the answer comes', async () => {
+        useFakeClock();
         const answer = deferred<Response>();
         const app = renderQuestion(answer.promise);
         await confirmMarking(app);
@@ -1108,6 +1117,7 @@ describe('Mark all read', () => {
       });
 
       it('asks for no new number when the answer is that the list changed', async () => {
+        useFakeClock();
         const answer = deferred<Response>();
         const app = renderQuestion(answer.promise);
         await confirmMarking(app);

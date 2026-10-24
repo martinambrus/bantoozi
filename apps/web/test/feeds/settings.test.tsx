@@ -1,6 +1,8 @@
 import type { Me, Subscription } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -991,6 +993,7 @@ describe('the feed settings', () => {
     });
 
     it('confirms nothing when the answer comes once the sign-in has ended', async () => {
+      useFakeClock();
       const { app, server, sheet } = await openSettings();
       const answer = gate();
       const remove = server.routes[DELETE_FEED]!;
@@ -1006,7 +1009,9 @@ describe('the feed settings', () => {
       server.me = null;
       await act(() => app.session.resetAccountState());
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(screen.queryByText('Unsubscribed from “Alpha”.')).toBeNull();
     });

@@ -1,6 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { json } from '../api/fake-fetch.js';
 import { makeDetail, makeLabel, restoreVisibility, setVisibility } from '../article/harness.js';
 import { makeMe } from '../session/fixtures.js';
@@ -120,6 +122,7 @@ describe('j and k', () => {
   });
 
   it('only move the focus, with no opening and no read request, when markReadOnExpand is off', async () => {
+    useFakeClock();
     const app = await openReader({ me: makeMe({ preferences: { markReadOnExpand: false } }) });
 
     await app.user.keyboard('jj');
@@ -127,7 +130,9 @@ describe('j and k', () => {
     expect(title(2)).toHaveFocus();
     expect(title(2)).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('Select an article to read it here.')).toBeVisible();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(app.calls(READ)).toHaveLength(0);
   });
 
@@ -519,6 +524,7 @@ describe('b, l, w, m and x', () => {
   });
 
   it('l asked of an article whose actions are not there yet is dropped when another one opens', async () => {
+    useFakeClock();
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -550,7 +556,9 @@ describe('b, l, w, m and x', () => {
     await app.user.keyboard('k');
 
     expect(await within(pane()).findByRole('button', { name: 'Labels' })).toBeVisible();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
@@ -1010,6 +1018,7 @@ describe('where the keys do not work', () => {
   });
 
   it('a key that is held acts once', async () => {
+    useFakeClock();
     const app = await openReader({ me: makeMe({ preferences: { markReadOnExpand: false } }) });
     await app.user.keyboard('j');
     expect(title(1)).toHaveFocus();
@@ -1021,7 +1030,9 @@ describe('where the keys do not work', () => {
     fireEvent.keyDown(document.body, { key: 'j', repeat: true });
 
     await waitFor(() => expect(app.calls(READ)).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(app.calls(READ)).toHaveLength(1);
     expect(title(1)).toHaveFocus();
   });
@@ -1119,7 +1130,9 @@ describe('sequences', () => {
     await advance(1100);
     expect(screen.queryByText(/^m pressed\./)).toBeNull();
     await app.user.keyboard('7');
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(app.calls(MUTE)).toHaveLength(0);
   });
 

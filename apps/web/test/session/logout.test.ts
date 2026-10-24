@@ -1,6 +1,8 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { IDBObjectStore as FakeIDBObjectStore, IDBRequest as FakeIDBRequest } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { meKey } from '../../src/api/query-keys.js';
 import {
@@ -48,7 +50,10 @@ async function seed(id: string) {
 }
 
 const isPending = () => localStorage.getItem(PENDING_LOGOUT_KEY) !== null;
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+const settle = () =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(1100);
+  });
 
 describe('signing out', () => {
   it('asks the server to end the session, wipes the device and says it did', async () => {
@@ -104,6 +109,7 @@ describe('signing out', () => {
   });
 
   it('removes at the next start what a page closed during the sign-out had begun to remove', async () => {
+    useFakeClock();
     const { session } = sessions.start({ me: userA });
     await session.loadMe();
     await seed(A);
@@ -290,6 +296,7 @@ describe('a sign-out that has not reached the server', () => {
   });
 
   it('is finished when the browser comes back online', async () => {
+    useFakeClock();
     signedOutOffline();
     const server: Server = { me: userA, offline: true };
     const restarted = sessions.start(server);
@@ -318,6 +325,7 @@ describe('a sign-out that has not reached the server', () => {
   });
 
   it('stays pending after a server error and is tried again later', async () => {
+    useFakeClock();
     signedOutOffline();
     let answer = () => failure(500, 'INTERNAL');
     const restarted = sessions.start({ me: userA, logout: () => answer() });
@@ -334,6 +342,7 @@ describe('a sign-out that has not reached the server', () => {
   });
 
   it('is finished before a new sign-in: POST /auth/logout comes first, then POST /auth/verify', async () => {
+    useFakeClock();
     signedOutOffline();
     const server: Server = {
       me: userA,
@@ -359,6 +368,7 @@ describe('a sign-out that has not reached the server', () => {
   });
 
   it('is not skipped by a new sign-in: nobody signs in while it cannot be finished', async () => {
+    useFakeClock();
     signedOutOffline();
     const restarted = sessions.start({
       me: userA,
@@ -380,6 +390,7 @@ describe('a sign-out that has not reached the server', () => {
   });
 
   it('is given up before a new sign-in when the server refuses it for another reason than the connection', async () => {
+    useFakeClock();
     signedOutOffline();
     const restarted = sessions.start({
       me: userA,
@@ -421,6 +432,7 @@ describe('a sign-out that has not reached the server', () => {
 
   describe('in several tabs', () => {
     it('is sent by one tab only when they all see the connection come back', async () => {
+      useFakeClock();
       signedOutOffline();
       fakeWebLocks();
       const server: Server = { me: userA, offline: true };
@@ -440,6 +452,7 @@ describe('a sign-out that has not reached the server', () => {
     });
 
     it('holds a sign-in in another tab until the sign-out on its way is answered', async () => {
+      useFakeClock();
       fakeWebLocks();
       const userB = makeMe({ id: USER_B_ID, email: 'b@example.com' });
       let answer!: () => void;

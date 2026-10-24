@@ -2,6 +2,8 @@ import type { AdminLibraryCard, LibraryCandidate } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { gate } from '../interests/support.js';
@@ -447,6 +449,7 @@ describe('admin library (spec 09 §8)', () => {
     });
 
     it('confirms nothing when the promotion is answered once the sign-in has ended', async () => {
+      useFakeClock();
       const answer = gate();
       const { app, server } = await openWithServer(
         { cards: [chess], candidates: [approvedJazz] },
@@ -487,7 +490,9 @@ describe('admin library (spec 09 §8)', () => {
       const candidates = accountKey(adminMe().id, 'admin', 'library', 'candidates');
       app.queryClient.setQueryData(candidates, [approvedJazz]);
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(
         screen.queryByText('Promoted “Jazz”. Published after 30 days of creator inactivity.'),
@@ -496,6 +501,7 @@ describe('admin library (spec 09 §8)', () => {
     });
 
     it('refreshes nothing when the promotion is refused once the sign-in has ended (409)', async () => {
+      useFakeClock();
       const answer = gate();
       const { app, server } = await openWithServer(
         { cards: [chess], candidates: [approvedJazz] },
@@ -520,7 +526,9 @@ describe('admin library (spec 09 §8)', () => {
       const candidates = accountKey(adminMe().id, 'admin', 'library', 'candidates');
       app.queryClient.setQueryData(candidates, [approvedJazz]);
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(app.queryClient.getQueryState(candidates)?.isInvalidated).toBe(false);
     });
@@ -645,6 +653,7 @@ describe('admin library (spec 09 §8)', () => {
     });
 
     it('confirms nothing when the request is created once the sign-in has ended', async () => {
+      useFakeClock();
       const answer = gate();
       const { app, server } = await openWithServer(
         { cards: [chess], candidates: [sailing] },
@@ -673,7 +682,9 @@ describe('admin library (spec 09 §8)', () => {
       const candidates = accountKey(adminMe().id, 'admin', 'library', 'candidates');
       app.queryClient.setQueryData(candidates, [sailing]);
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(screen.queryByText(/Request created/)).toBeNull();
       expect(app.queryClient.getQueryState(candidates)?.isInvalidated).toBe(false);
@@ -905,6 +916,7 @@ describe('admin library (spec 09 §8)', () => {
     });
 
     it('confirms nothing when the card is saved once the sign-in has ended', async () => {
+      useFakeClock();
       const answer = gate();
       const { app, server } = await openWithServer(
         { cards: [solar], candidates: [] },
@@ -930,13 +942,16 @@ describe('admin library (spec 09 §8)', () => {
       const cards = accountKey(adminMe().id, 'admin', 'library', 'cards');
       app.queryClient.setQueryData(cards, { pages: [], pageParams: [] });
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(screen.queryByText('Library card saved.')).toBeNull();
       expect(app.queryClient.getQueryState(cards)?.isInvalidated).toBe(false);
     });
 
     it('refreshes nothing when the card is refused once the sign-in has ended (409 not_latest_version)', async () => {
+      useFakeClock();
       const answer = gate();
       const { app, server } = await openWithServer(
         { cards: [solar], candidates: [] },
@@ -962,7 +977,9 @@ describe('admin library (spec 09 §8)', () => {
       const cards = accountKey(adminMe().id, 'admin', 'library', 'cards');
       app.queryClient.setQueryData(cards, { pages: [], pageParams: [] });
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(app.queryClient.getQueryState(cards)?.isInvalidated).toBe(false);
     });

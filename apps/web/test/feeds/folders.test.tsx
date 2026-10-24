@@ -2,6 +2,8 @@ import type { Me, Subscription } from '@bantoozi/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
@@ -347,6 +349,7 @@ describe('the move buttons', () => {
   });
 
   it('keeps the order the next sign-in of the account saved when an answer from before comes late', async () => {
+    useFakeClock();
     const { app, server } = await openFolders({
       folderOrder: ['A', 'B', 'C'],
       subscriptions: threeFolders,
@@ -375,7 +378,9 @@ describe('the move buttons', () => {
       });
     });
     release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.queryClient.getQueryData<Me>(meKey())?.preferences.folderOrder).toEqual([
       'C',
@@ -456,6 +461,7 @@ describe('renaming a folder', () => {
   });
 
   it('sends no request for the feeds or the account when the answer comes after signing in again', async () => {
+    useFakeClock();
     const { app, server, dialog } = await openRename();
     const renamed = server.routes[RENAME] as ApiRouteHandler;
     const answer = gate();
@@ -479,7 +485,9 @@ describe('renaming a folder', () => {
     const asked = () => ({ feeds: app.calls(LIST).length, account: app.calls('GET /me').length });
     const loaded = asked();
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(asked()).toEqual(loaded);
   });

@@ -3,6 +3,8 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { Menu } from '../../src/components/menu.js';
 import { articleKeys } from '../../src/features/article/query-keys.js';
 import {
@@ -532,6 +534,7 @@ describe('when the request does not go through', () => {
 
 describe('when the sign-in that asked has ended', () => {
   it('shows nothing and closes nothing when the ratings are answered', async () => {
+    useFakeClock();
     const answer = deferred<Response>();
     const onClose = vi.fn();
     const { user, calls, signInAgain } = renderReader(
@@ -549,7 +552,9 @@ describe('when the sign-in that asked has ended', () => {
         items: THREE.map((row) => acked(row, { rating: 1, readAt: AS_OF })),
       }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Rated 3 articles')).toBeNull();
     expect(onClose).not.toHaveBeenCalled();

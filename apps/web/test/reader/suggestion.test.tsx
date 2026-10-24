@@ -3,6 +3,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { ArticleRow } from '../../src/features/article/article-row.js';
 import { cardCache, cardsKey } from '../../src/features/interests/queries.js';
@@ -652,6 +654,7 @@ describe('when there is no offer', () => {
   });
 
   it('shows no offer that arrives after the account was reset', async () => {
+    useFakeClock();
     const item = makeItem();
     const list = deferred<Response>();
     const app = renderRow(item, { ...server(item, YES), 'GET /cards': () => list.promise });
@@ -663,7 +666,7 @@ describe('when there is no offer', () => {
     });
     list.resolve(json(200, CARDS));
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(1100);
     });
 
     expect(app.toasts.getSnapshot()).toEqual([]);

@@ -1,6 +1,8 @@
 import type { LearningFeedEntry, LearningStatus, Subscription } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { formatDateTime } from '../../src/i18n/dates.js';
 import { json } from '../api/fake-fetch.js';
@@ -54,7 +56,10 @@ const percent = (value: number, lang: Lang) =>
   new Intl.NumberFormat(lang, { style: 'percent' }).format(value);
 const decimals = (value: number, lang: Lang) =>
   new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 60)));
+const settle = () =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(1100);
+  });
 
 const sub = (mode: Mode, version = '3'): Subscription =>
   makeSubscription({
@@ -258,6 +263,7 @@ describe('the chip of a training feed only', () => {
   const ENABLE = 'Enable automatic classification for Verge';
 
   it('offers Enable when the interests agree, and drops the chip once confirmed', async () => {
+    useFakeClock();
     const training = sub('training', '3');
     const { app, state, server, chip } = await openChip({ feeds: [readyAgreement('1')] });
     const group = await chip();
@@ -342,6 +348,7 @@ describe('where the chip is not shown', () => {
   });
 
   it('shows no chip for an active feed and asks nothing', async () => {
+    useFakeClock();
     const { app } = await openChip({ mode: 'active', feeds: [readyAgreement('1')] });
 
     await screen.findByRole('heading', { level: 1, name: 'Verge' });
@@ -356,6 +363,7 @@ describe('where the chip is not shown', () => {
     ['the For you lane', '/read/for_you'],
     ['the New lane', '/read/new'],
   ])('shows no chip in %s and asks nothing', async (_name, path) => {
+    useFakeClock();
     const { app } = await openChip({ mode: 'off', path, feeds: [makeFeedEstimate('1', 23, 0.7)] });
 
     await screen.findByRole('link', { name: 'Verge' });
@@ -518,6 +526,7 @@ it.each([
 ] as const)(
   'one settled rating refreshes learning once only on success (mode %s, success %s)',
   async (mode, success) => {
+    useFakeClock();
     holdExits();
     const story = item(1, { feed: { id: '1', title: 'Verge', iconUrl: null } });
     const { app } = await open({
@@ -541,7 +550,8 @@ it.each([
     );
     await settle();
     await settle();
-    expect(app.calls('POST /articles/:id/rating')).toHaveLength(1);
+    // A retryable refusal settles after the initial request and the 500/1000 ms retries.
+    expect(app.calls('POST /articles/:id/rating')).toHaveLength(success ? 1 : 3);
     if (mode === 'training') expect(app.calls(LEARNING)).toHaveLength(before + (success ? 1 : 0));
     else expect(app.calls(LEARNING_ESTIMATES)).toHaveLength(estimatesBefore + (success ? 1 : 0));
   },
@@ -550,6 +560,7 @@ it.each([
 it.each([true, false])(
   'a settled prompt answer refreshes both learning keys only on success (%s)',
   async (success) => {
+    useFakeClock();
     function Observer() {
       useLearning();
       useLearningEstimates();
@@ -581,7 +592,7 @@ it.each([true, false])(
     await app.user.click(screen.getByRole('button', { name: 'Answer prompt' }));
     await settle();
     await settle();
-    expect(app.calls('POST', '/articles/1/prompt-answer')).toHaveLength(1);
+    expect(app.calls('POST', '/articles/1/prompt-answer')).toHaveLength(success ? 1 : 3);
     expect(app.calls('GET', '/me/learning')).toHaveLength(success ? 2 : 1);
     expect(app.calls('GET', '/me/learning/estimates')).toHaveLength(success ? 2 : 1);
   },

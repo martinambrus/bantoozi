@@ -1,5 +1,7 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { routes } from '../../src/api/routes.js';
 import {
@@ -139,6 +141,7 @@ describe('when another account signs in', () => {
   });
 
   it('shows the new account only once the previous one is removed', async () => {
+    useFakeClock();
     const { session, queryClient, server } = sessions.start({ me: userA });
     await session.loadMe();
     await seed(A);
@@ -146,7 +149,7 @@ describe('when another account signs in', () => {
     const shownWhileRemoving: unknown[] = [];
     sessions.onReset(async (reason) => {
       if (reason !== 'account_switch') return;
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await vi.advanceTimersByTimeAsync(1100);
       shownWhileRemoving.push(queryClient.getQueryData(meKey()));
     });
 
@@ -273,13 +276,14 @@ describe('when another tab signs in', () => {
   });
 
   it('leaves a tab that shows nobody signed out', async () => {
+    useFakeClock();
     const first = sessions.start({ me: null, verifiesAs: userA });
     const second = sessions.start({ me: null });
     await first.session.loadMe();
     await second.session.loadMe();
 
     await first.session.verifyCode({ email: userA.email, code: '123456' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.advanceTimersByTimeAsync(1100);
 
     expect(second.queryClient.getQueryData(meKey())).toBeNull();
   });
@@ -296,6 +300,7 @@ describe('when another tab signs in', () => {
   });
 
   it('drops an answer of /me for the earlier account that was on its way', async () => {
+    useFakeClock();
     const { session, queryClient, server, requests } = sessions.start({ me: userA });
     await session.loadMe();
     let answer!: () => void;
@@ -313,7 +318,7 @@ describe('when another tab signs in', () => {
     await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
     answer();
     await asked;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await vi.advanceTimersByTimeAsync(1100);
 
     expect(queryClient.getQueryData(meKey())).toEqual(userB);
   });
@@ -549,7 +554,7 @@ describe('when another tab removes the account while this one writes', () => {
     });
   }
 
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+  const settle = () => vi.advanceTimersByTimeAsync(1100);
 
   async function signedIn() {
     instantChannels();
@@ -566,6 +571,7 @@ describe('when another tab removes the account while this one writes', () => {
   }
 
   it('drops a write of this tab that waited for the database when the other tab signed out', async () => {
+    useFakeClock();
     const other = await signedIn();
 
     const at = Date.now();
@@ -595,6 +601,7 @@ describe('when another tab removes the account while this one writes', () => {
   });
 
   it('keeps what it did not store since the other tab began, such as the rows of a newer session there', async () => {
+    useFakeClock();
     const other = await signedIn();
     await settle();
     const at = Date.now();

@@ -2,6 +2,8 @@ import { OPML_INVALID_REASONS } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, text } from '../api/fake-fetch.js';
@@ -369,6 +371,7 @@ describe('exporting OPML', () => {
   });
 
   it('saves nothing when the export comes once the sign-in has ended', async () => {
+    useFakeClock();
     const { app, server } = await openFeeds();
     const answer = gate();
     server.routes[EXPORT_OPML] = async () => {
@@ -382,7 +385,9 @@ describe('exporting OPML', () => {
     server.me = null;
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(saved).toHaveLength(0);
   });

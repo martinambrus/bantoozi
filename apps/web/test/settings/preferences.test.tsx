@@ -5,7 +5,9 @@ import {
   type UserPreferences,
 } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { meKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
@@ -639,6 +641,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
     });
 
     it('sends a setting changed again only once the server has answered the change before, so the server keeps what the control shows', async () => {
+      useFakeClock();
       const gates = [deferred(), deferred()];
       let sent = 0;
       const { user, queryClient, calls, server } = await openSettings({
@@ -654,7 +657,9 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       await user.click(toggle('Simple mode'));
       await user.click(toggle('Simple mode'));
       await waitFor(() => expect(calls('PATCH /me')).not.toHaveLength(0));
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { simpleMode: true } }]);
       expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'false');
@@ -698,6 +703,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
     });
 
     it('drops a change that waits when the account signs out before it can go', async () => {
+      useFakeClock();
       const gate = deferred();
       let sent = 0;
       const { user, calls, session } = await openSettings({
@@ -713,12 +719,15 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
 
       await act(() => session.resetAccountState());
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { defaultTier: 4 } }]);
     });
 
     it('drops a change that waits when the account signs out and in again before it can go', async () => {
+      useFakeClock();
       const gate = deferred();
       let sent = 0;
       const { user, calls, session, queryClient } = await openSettings({
@@ -738,12 +747,15 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         queryClient.setQueryData(meKey(), me);
       });
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { defaultTier: 4 } }]);
     });
 
     it('keeps what the next sign-in of the account saved when an answer from before comes late', async () => {
+      useFakeClock();
       // The server takes the change at once; its answer arrives after a sign-out and a sign-in.
       const gate = deferred();
       const { user, calls, session, queryClient } = await openSettings({
@@ -768,7 +780,9 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         });
       });
       gate.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(queryClient.getQueryData<Me>(meKey())?.preferences.defaultTier).toBe(2);
     });

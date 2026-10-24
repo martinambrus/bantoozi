@@ -2,6 +2,8 @@ import type { AdminOverview } from '@bantoozi/shared';
 import { act, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { gate } from '../interests/support.js';
@@ -265,6 +267,7 @@ describe('overview (spec 09 §8)', () => {
   });
 
   it('confirms nothing when the reprocessing is queued once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin', {
       'POST /admin/translations/reprocess': async () => {
@@ -278,12 +281,15 @@ describe('overview (spec 09 §8)', () => {
     server.me = null;
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Reprocessing of the skipped translations is queued.')).toBeNull();
   });
 
   it('refreshes nothing when the breaker reset is answered once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin', {
       'POST /admin/engine/reset-breaker': async () => {
@@ -304,7 +310,9 @@ describe('overview (spec 09 §8)', () => {
     const overview = accountKey(adminMe().id, 'admin', 'overview');
     app.queryClient.setQueryData(overview, makeOverview());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Waiting for the worker to apply the reset…')).toBeNull();
     expect(app.queryClient.getQueryState(overview)?.isInvalidated).toBe(false);
@@ -657,6 +665,7 @@ describe('feeds (spec 09 §8)', () => {
   });
 
   it('confirms nothing when the feed is reset once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin/feeds', {
       'GET /admin/feeds': () => json(200, page([broken])),
@@ -675,13 +684,16 @@ describe('feeds (spec 09 §8)', () => {
     const feeds = accountKey(adminMe().id, 'admin', 'feeds');
     app.queryClient.setQueryData(feeds, { pages: [], pageParams: [] });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Feed reset. It will be fetched again soon.')).toBeNull();
     expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
   });
 
   it('confirms nothing when the options are saved once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin/feeds', {
       'PATCH /admin/feeds/:id': async () => {
@@ -702,13 +714,16 @@ describe('feeds (spec 09 §8)', () => {
     const feeds = accountKey(adminMe().id, 'admin', 'feeds');
     app.queryClient.setQueryData(feeds, { pages: [], pageParams: [] });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Fetch options saved.')).toBeNull();
     expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
   });
 
   it('refreshes nothing when the feed reset is refused once the sign-in has ended (409 merged)', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin/feeds', {
       'GET /admin/feeds': () => json(200, page([broken])),
@@ -727,7 +742,9 @@ describe('feeds (spec 09 §8)', () => {
     const feeds = accountKey(adminMe().id, 'admin', 'feeds');
     app.queryClient.setQueryData(feeds, { pages: [], pageParams: [] });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
   });
@@ -866,6 +883,7 @@ describe('users (spec 09 §8)', () => {
   });
 
   it('confirms nothing when the user is saved once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin/users', {
       'PATCH /admin/users/:id': async () => {
@@ -886,7 +904,9 @@ describe('users (spec 09 §8)', () => {
     const users = accountKey(adminMe().id, 'admin', 'users');
     app.queryClient.setQueryData(users, { pages: [], pageParams: [] });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('User saved.')).toBeNull();
     expect(app.queryClient.getQueryState(users)?.isInvalidated).toBe(false);
@@ -1121,6 +1141,7 @@ describe('invites (spec 09 §8)', () => {
   });
 
   it('shows and refreshes nothing when the invites are created once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const { app, server } = await openWithServer('/admin/invites', {
       'POST /admin/invites': async () => {
@@ -1138,7 +1159,9 @@ describe('invites (spec 09 §8)', () => {
     const invites = accountKey(adminMe().id, 'admin', 'invites');
     app.queryClient.setQueryData(invites, { pages: [], pageParams: [] });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByRole('region', { name: 'New invites' })).toBeNull();
     expect(app.queryClient.getQueryState(invites)?.isInvalidated).toBe(false);
@@ -1220,6 +1243,7 @@ describe('waitlist (spec 09 §8)', () => {
   });
 
   it('shows and refreshes nothing when the person is invited once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const invite = makeInviteDto({ email: 'wait@example.com' });
     const { app, server } = await openWithServer('/admin/waitlist', {
@@ -1239,7 +1263,9 @@ describe('waitlist (spec 09 §8)', () => {
     const waitlist = accountKey(adminMe().id, 'admin', 'waitlist');
     app.queryClient.setQueryData(waitlist, { pages: [], pageParams: [] });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByRole('region', { name: 'Invite created' })).toBeNull();
     expect(app.queryClient.getQueryState(waitlist)?.isInvalidated).toBe(false);

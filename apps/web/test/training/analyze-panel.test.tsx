@@ -1106,8 +1106,9 @@ describe('an answer that comes after signing in again', () => {
   }
 
   async function afterwards(view: ReturnType<typeof renderPanel>, stale: ReturnType<typeof seed>) {
-    await waitFor(() => expect(view.queryClient.isMutating()).toBe(0));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await act(async () => {
+      await waitFor(() => expect(view.queryClient.isMutating()).toBe(0));
+    });
     return {
       statuses: view.queryClient
         .getQueryData<ArticleListResponse>(listed)!

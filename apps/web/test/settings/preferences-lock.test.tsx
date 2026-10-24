@@ -1,5 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { json } from '../api/fake-fetch.js';
 import { FakeLocks, installLocks, removeLocks } from '../offline/fake-locks.js';
@@ -100,6 +102,7 @@ describe('the preferences lock across tabs', () => {
   });
 
   it('takes the lock over on "Edit here instead" and locks the tab that had it', async () => {
+    useFakeClock();
     const sending = deferred();
     const first = await openSettings({
       routes: (server) => ({
@@ -110,6 +113,7 @@ describe('the preferences lock across tabs', () => {
       }),
     });
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    await waitFor(() => expect(switchOf(first).closest('[inert]')).toBeNull());
     expect(overlayOf(first)).toBeNull();
     await first.user.click(switchOf(first));
     await first.user.click(prefsOf(first).getAllByRole('radio', { name: 'Newest first' })[0]!);
@@ -129,7 +133,9 @@ describe('the preferences lock across tabs', () => {
     });
     await waitFor(() => expect(switchOf(second).closest('[inert]')).toBeNull());
     await first.user.click(prefsOf(first).getAllByRole('radio', { name: 'Newest first' })[0]!);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(first.calls('PATCH /me')).toHaveLength(2);
     await second.user.click(switchOf(second));
@@ -137,6 +143,7 @@ describe('the preferences lock across tabs', () => {
   });
 
   it('drops a change that was waiting for its turn when the lock is lost', async () => {
+    useFakeClock();
     const sending = deferred();
     const first = await openSettings({
       routes: (server) => ({
@@ -147,6 +154,7 @@ describe('the preferences lock across tabs', () => {
       }),
     });
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    await waitFor(() => expect(switchOf(first).closest('[inert]')).toBeNull());
     await first.user.click(switchOf(first));
     await first.user.click(switchOf(first));
     await waitFor(() => expect(first.calls('PATCH /me')).toHaveLength(1));
@@ -159,24 +167,30 @@ describe('the preferences lock across tabs', () => {
     await act(async () => {
       sending.release();
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(first.calls('PATCH /me')).toHaveLength(1);
   });
 
   it('keeps the controls inert and sends nothing while the first grant is pending', async () => {
+    useFakeClock();
     installLocks({ request: () => new Promise(() => undefined) } as unknown as FakeLocks);
     const tab = await openSettings();
 
     expect(switchOf(tab).closest('[inert]')).not.toBeNull();
     expect(overlayOf(tab)).toBeNull();
     await tab.user.click(switchOf(tab));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(tab.calls('PATCH /me')).toHaveLength(0);
   });
 
   it('waits for a request of the old holder to settle before it takes over', async () => {
+    useFakeClock();
     const sending = deferred();
     const first = await openSettings({
       routes: (server) => ({
@@ -187,6 +201,7 @@ describe('the preferences lock across tabs', () => {
       }),
     });
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    await waitFor(() => expect(switchOf(first).closest('[inert]')).toBeNull());
     await first.user.click(switchOf(first));
     await waitFor(() => expect(first.calls('PATCH /me')).toHaveLength(1));
 
@@ -195,7 +210,9 @@ describe('the preferences lock across tabs', () => {
       await within(second.container).findByRole('button', { name: TAKE_OVER }),
     );
     await waitFor(() => expect(overlayOf(first)).not.toBeNull());
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(switchOf(second).closest('[inert]')).not.toBeNull();
     expect(overlayOf(second)).toBeNull();
@@ -210,11 +227,14 @@ describe('the preferences lock across tabs', () => {
   });
 
   it('reads the account again on a first grant that waited for a save of a tab that left', async () => {
+    useFakeClock();
     // A tab that left the screen with its request on the way: the save lock is still held.
     const release = holdElsewhere(SAVE_LOCK);
     const tab = await openSettings();
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(switchOf(tab).closest('[inert]')).not.toBeNull();
     expect(overlayOf(tab)).toBeNull();
     const before = tab.calls('GET /me').length;
@@ -245,8 +265,10 @@ describe('the preferences lock across tabs', () => {
   });
 
   it('does not send a save that starts after the lock was lost', async () => {
+    useFakeClock();
     const first = await openSettings();
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    await waitFor(() => expect(switchOf(first).closest('[inert]')).toBeNull());
     const release = holdElsewhere(SAVE_LOCK);
     await first.user.click(switchOf(first));
 
@@ -259,7 +281,9 @@ describe('the preferences lock across tabs', () => {
       release();
     });
     await waitFor(() => expect(switchOf(second).closest('[inert]')).toBeNull());
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(first.calls('PATCH /me')).toHaveLength(0);
   });

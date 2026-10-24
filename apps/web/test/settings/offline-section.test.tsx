@@ -3,6 +3,8 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { meKey } from '../../src/api/query-keys.js';
 import { readMe, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
 import { offlineDb, resetOfflineDb } from '../../src/offline/db.js';
@@ -138,6 +140,7 @@ describe('the Offline reading section', () => {
   });
 
   it('leaves the next sign-in of the account as it is when turned off before a sign-out', async () => {
+    useFakeClock();
     await storedArticles();
     const app = await openSettings();
     await within(offline()).findByText('4 articles stored on this device');
@@ -149,7 +152,9 @@ describe('the Offline reading section', () => {
 
     // The choice stays on, so the next sign-in keeps the account for an offline start.
     await vi.waitFor(async () => expect((await readMe(A))?.me.displayName).toBe('Again'));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(isOfflineEnabled(A)).toBe(true);
     expect((await readMe(A))?.me.displayName).toBe('Again');
   });
@@ -195,6 +200,7 @@ describe('the Offline reading section', () => {
     });
 
     it('does not store the account again when it is signed out meanwhile', async () => {
+      useFakeClock();
       await storedArticles();
       const { session } = await openSettings();
       await within(offline()).findByText('4 articles stored on this device');
@@ -206,12 +212,15 @@ describe('the Offline reading section', () => {
 
       // The sign-out removes the rows, and the clear asked for before it stores nothing after.
       await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
       expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
       expect(stored).toEqual([]);
     });
 
     it('stores nothing of the earlier sign-in when the account signs out and in again meanwhile', async () => {
+      useFakeClock();
       await storedArticles();
       const app = await openSettings();
       await within(offline()).findByText('4 articles stored on this device');
@@ -222,7 +231,9 @@ describe('the Offline reading section', () => {
 
       // The next sign-in keeps the account as it is now, and nothing writes the earlier one over it.
       await vi.waitFor(async () => expect((await readMe(A))?.me.displayName).toBe('Again'));
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
       expect((await readMe(A))?.me.displayName).toBe('Again');
       expect(stored).toEqual(['Again']);
     });
@@ -491,8 +502,11 @@ describe('the Offline reading section', () => {
     });
 
     it('does not create the store for an account that has not turned it on', async () => {
+      useFakeClock();
       await openSettings();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(await idb.factory.databases()).toEqual([]);
     });

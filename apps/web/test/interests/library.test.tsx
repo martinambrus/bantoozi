@@ -1,6 +1,8 @@
 import type { CardDto, LibraryCardDto } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
@@ -430,6 +432,7 @@ describe('adding a card', () => {
   });
 
   it('does not add the newer version once the sign-in that asked for it has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const app = await openLibrary({
       'GET /library': page([battery]),
@@ -449,7 +452,9 @@ describe('adding a card', () => {
 
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.calls('POST /library/:id/adopt')).toHaveLength(1);
   });

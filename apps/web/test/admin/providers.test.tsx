@@ -2,6 +2,8 @@ import type { CredentialStatus } from '@bantoozi/shared';
 import { act, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { gate } from '../interests/support.js';
@@ -724,6 +726,7 @@ describe('provider accounts (spec 09 §8)', () => {
   });
 
   it('confirms nothing when the key is staged once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const credentials: Server = {
       items: [jevCredential({ candidateVersion: null, candidateStatus: null }), ollamaCredential()],
@@ -748,13 +751,16 @@ describe('provider accounts (spec 09 §8)', () => {
 
     const key = await endSignIn(app, server, credentials);
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText(STAGED_MESSAGE)).toBeNull();
     expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
   });
 
   it('adopts nothing when the validation is requested once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const credentials: Server = { items: [jevCredential(), ollamaCredential()] };
     const { app, server } = await openWithServer(credentials, {
@@ -770,12 +776,15 @@ describe('provider accounts (spec 09 §8)', () => {
 
     const key = await endSignIn(app, server, credentials);
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
   });
 
   it('confirms nothing when the key is activated once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const credentials: Server = {
       items: [jevCredential({ candidateStatus: 'valid', validatedAt: T1 }), ollamaCredential()],
@@ -800,13 +809,16 @@ describe('provider accounts (spec 09 §8)', () => {
 
     const key = await endSignIn(app, server, credentials);
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Key activated. It is used from now on.')).toBeNull();
     expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
   });
 
   it('confirms nothing when the provider is disabled once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const credentials: Server = { items: [jevCredential(), ollamaCredential()] };
     const { app, server } = await openWithServer(credentials, {
@@ -827,7 +839,9 @@ describe('provider accounts (spec 09 §8)', () => {
 
     const key = await endSignIn(app, server, credentials);
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Provider disabled.')).toBeNull();
     expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
@@ -871,6 +885,7 @@ describe('provider accounts (spec 09 §8)', () => {
   ])(
     'refreshes nothing when %s is refused once the sign-in has ended',
     async (_change, route, start) => {
+      useFakeClock();
       const answer = gate();
       const credentials: Server = {
         items: [jevCredential({ candidateStatus: 'valid', validatedAt: T1 }), ollamaCredential()],
@@ -886,7 +901,9 @@ describe('provider accounts (spec 09 §8)', () => {
 
       const key = await endSignIn(app, server, credentials);
       answer.release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
 
       expect(app.queryClient.getQueryState(key)?.isInvalidated).toBe(false);
     },

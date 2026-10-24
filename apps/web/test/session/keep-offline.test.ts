@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { useFakeClock } from '../support/clock.js';
+
 import type * as CacheModule from '../../src/offline/cache.js';
 import { readMe, setOfflineEnabled } from '../../src/offline/cache.js';
 import { A, dumpDatabase, freshIndexedDb, rowsOf } from '../offline/support.js';
@@ -23,10 +25,11 @@ vi.mock('../../src/offline/cache.js', async (importOriginal) => {
 const userA = makeMe();
 const idb = freshIndexedDb();
 const sessions = trackSessions();
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+const settle = () => vi.advanceTimersByTimeAsync(1100);
 
 describe('keeping the account for an offline start', () => {
   it('keeps nothing of an account that signed out while earlier removals still ran', async () => {
+    useFakeClock();
     await setOfflineEnabled(A, true);
     let release!: () => void;
     purges.held = new Promise<void>((resolve) => {

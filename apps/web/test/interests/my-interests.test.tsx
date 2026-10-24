@@ -1,6 +1,8 @@
 import type { CardDto, Me } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { useFakeClock } from '../support/clock.js';
 
 import { accountKey, meKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -312,6 +314,7 @@ describe('changing the strength', () => {
   });
 
   it('sends a change made while another change of the card is on its way once that one is answered', async () => {
+    useFakeClock();
     const answers = [gate(), gate()];
     let held = rust;
     let sent = 0;
@@ -332,7 +335,9 @@ describe('changing the strength', () => {
     await app.user.click(within(row).getByRole('radio', { name: 'Must' }));
     await app.user.selectOptions(within(row).getByLabelText('Applies to'), 'Hacker News');
     await waitFor(() => expect(app.calls('PATCH /cards/:id')).not.toHaveLength(0));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
       { strength: 'must' },
@@ -390,6 +395,7 @@ describe('changing the strength', () => {
   });
 
   it('drops a change that waits when the account signs out before it can go', async () => {
+    useFakeClock();
     const answer = gate();
     let sent = 0;
     const app = await openMine(
@@ -407,7 +413,9 @@ describe('changing the strength', () => {
 
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
       { strength: 'must' },
@@ -415,6 +423,7 @@ describe('changing the strength', () => {
   });
 
   it('drops a change that waits when the account signs out and in again before it can go', async () => {
+    useFakeClock();
     const answer = gate();
     let sent = 0;
     const app = await openMine(
@@ -436,7 +445,9 @@ describe('changing the strength', () => {
       app.queryClient.setQueryData(meKey(), me);
     });
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
       { strength: 'must' },
@@ -444,6 +455,7 @@ describe('changing the strength', () => {
   });
 
   it('says nothing when saving fails once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const server = interestsServer(
       { subscriptions: FEEDS, cards: [rust] },
@@ -462,12 +474,15 @@ describe('changing the strength', () => {
     server.me = null;
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText('Too many requests. Wait a moment and try again.')).toBeNull();
   });
 
   it('keeps the strength the account shows after signing in again when the earlier answer comes', async () => {
+    useFakeClock();
     const answer = gate();
     const held = [rust];
     const app = await openMine(
@@ -495,7 +510,9 @@ describe('changing the strength', () => {
       within(await rowOf('Rust programming')).getByRole('radio', { name: 'Never' }),
     ).toBeChecked();
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]?.strength).toBe('never');
     expect(
@@ -506,6 +523,7 @@ describe('changing the strength', () => {
   });
 
   it('takes nothing back after signing in again when the earlier save fails', async () => {
+    useFakeClock();
     const answer = gate();
     const held = [rust];
     const app = await openMine(
@@ -533,7 +551,9 @@ describe('changing the strength', () => {
       within(await rowOf('Rust programming')).getByRole('radio', { name: 'Never' }),
     ).toBeChecked();
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]?.strength).toBe('never');
     expect(
@@ -890,6 +910,7 @@ describe('examples', () => {
   });
 
   it('says nothing when removing an example fails once the sign-in has ended', async () => {
+    useFakeClock();
     const answer = gate();
     const server = interestsServer(
       { subscriptions: FEEDS, cards: [garden] },
@@ -910,7 +931,9 @@ describe('examples', () => {
     server.me = null;
     await act(() => app.session.resetAccountState());
     answer.release();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
 
     expect(screen.queryByText("We couldn't find that.")).toBeNull();
   });
