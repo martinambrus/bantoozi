@@ -43,6 +43,7 @@ beforeEach(async () => {
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     [
       'engine.model_resolution',
+      'engine.typesafe_model',
       'engine.model_watch',
       'engine.model_candidate',
       'engine.model_probe',
@@ -366,7 +367,11 @@ it('discards a candidate when the setting is saved concrete and back between wat
   await h.db.transaction(async (tx) => {
     await writeSetting(tx, { key: 'engine.typesafe_model', value: ALIAS, updatedBy: null });
   });
-  expect(await candidate()).toBeUndefined();
+  expect(await candidate()).toMatchObject({ model: V114, count: 1 });
+  // Match the database save time to this fixture's injected clock, ahead of PostgreSQL.
+  await h.owner.query(`UPDATE settings SET updated_at = $1 WHERE key = 'engine.typesafe_model'`, [
+    new Date(NOW.getTime() + 60_000),
+  ]);
   await answer(V114, 30 * 60_000);
   expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
   expect(await candidate()).toMatchObject({
@@ -377,3 +382,22 @@ it('discards a candidate when the setting is saved concrete and back between wat
   await answer(V114, 40 * 60_000);
   expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
 });
+
+it.each([-1, 0])(
+  'keeps a candidate when the setting was last saved %i ms before it',
+  async (offset) => {
+    await h.db.transaction(async (tx) => {
+      await writeSetting(tx, { key: 'engine.typesafe_model', value: ALIAS, updatedBy: null });
+    });
+    await h.owner.query(`UPDATE settings SET updated_at = $1 WHERE key = 'engine.typesafe_model'`, [
+      new Date(NOW.getTime() + offset),
+    ]);
+    await answer(V114);
+    const setting = await rawSetting(h.owner, 'engine.typesafe_model');
+    await answer(V114, GAP - 1);
+    expect(await candidate()).toEqual({ model: V114, count: 2, firstSeenAt: iso(NOW) });
+    expect(await rawSetting(h.owner, 'engine.typesafe_model')).toEqual(setting);
+    await answer(V114, GAP);
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+  },
+);

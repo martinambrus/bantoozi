@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { createDatabase, readSettingRows } from '@bantoozi/db';
 import { AdminEngineModelSchema } from '@bantoozi/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -764,22 +765,59 @@ describe('D-304 second save before alias re-resolution', () => {
   });
 });
 
-it('clears the watch candidate on a concrete save before returning to the alias', async () => {
+it('leaves worker state untouched on concrete and alias saves; the next watch starts a fresh candidate', async () => {
   await setRow('engine.typesafe_model', 'jev-latest');
   await seedModelState(h, {
     pin: { model: 'jev-1.13.0', alias: 'jev-latest' },
     resolution: { model: 'jev-1.13.0' },
     probes: [ok('jev-1.13.0'), { requested: 'jev-latest', answered: 'jev-1.13.0' }],
+    watch: { triggeredAt: SINCE, lastCheck: { at: SINCE, ok: true } },
   });
-  await setRow('engine.model_candidate', {
+  const candidate = {
     model: 'jev-1.14.0',
-    firstSeenAt: new Date().toISOString(),
+    firstSeenAt: new Date(Date.now() - 20 * MIN).toISOString(),
     count: 1,
-  });
+  };
+  await setRow('engine.model_candidate', candidate);
+  await h.owner.query(
+    `UPDATE settings SET updated_at = $1::timestamptz - interval '1 minute'
+      WHERE key = 'engine.typesafe_model'`,
+    [candidate.firstSeenAt],
+  );
+  const db = createDatabase(h.worker);
+  const keys = ['engine.model_watch', 'engine.model_candidate'];
+  const before = await readSettingRows(db, keys);
   const concrete = await setModel('jev-1.13.0');
   expect(concrete.statusCode, concrete.body).toBe(200);
-  expect(await stored('engine.model_candidate')).toBeNull();
+  expect(await readSettingRows(db, keys)).toEqual(before);
   const alias = await setModel('jev-latest');
   expect(alias.statusCode, alias.body).toBe(200);
-  expect(await stored('engine.model_candidate')).toBeNull();
+  expect(await readSettingRows(db, keys)).toEqual(before);
+  const [setting] = await readSettingRows(db, ['engine.typesafe_model']);
+  expect(setting!.updatedAt.getTime()).toBeGreaterThan(Date.parse(candidate.firstSeenAt));
+
+  const at = new Date(Date.now() + MIN);
+  const { createModelWatchHandler } =
+    await import('../../worker/src/handlers/house-model-watch.js');
+  const watch = createModelWatchHandler({
+    db,
+    configuredModel: async () => String(await stored('engine.typesafe_model')),
+    prober: {
+      probe: async (requested) => ({
+        requested,
+        answered: candidate.model,
+        ok: true,
+        at: at.toISOString(),
+      }),
+    },
+    logger: h.server.log,
+    settingsEnv: h.config,
+    now: () => at,
+  });
+  await watch({}, { queue: 'house.model-watch', jobId: 'after-model-round-trip' });
+  expect(await stored('engine.model_candidate')).toEqual({
+    ...candidate,
+    firstSeenAt: at.toISOString(),
+  });
+  expect(await stored('engine.model_resolution')).toMatchObject({ model: 'jev-1.13.0' });
 });

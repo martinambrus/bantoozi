@@ -1,4 +1,5 @@
 import {
+  readSettingRows,
   retryTransaction,
   updateSettingLocked,
   workerOutbox,
@@ -74,6 +75,8 @@ export async function observeModelCandidate(
     let confirmed = false;
     // All transactions touching both rows lock watch first, then candidate.
     await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, watchStateOf);
+    // A save can leave the alias and return between runs; only the worker resets its candidate.
+    const [setting] = await readSettingRows(tx, ['engine.typesafe_model']);
     const candidate = await updateSettingLocked<EngineModelCandidate | null>(
       tx,
       MODEL_CANDIDATE_KEY,
@@ -84,6 +87,7 @@ export async function observeModelCandidate(
         started =
           old === undefined ||
           old.model !== model ||
+          (setting !== undefined && setting.updatedAt.getTime() > Date.parse(old.firstSeenAt)) ||
           now.getTime() - Date.parse(old.firstSeenAt) > MODEL_CANDIDATE_MAX_AGE_MS;
         const candidate = started
           ? { model, firstSeenAt: now.toISOString(), count: 1 }
@@ -108,6 +112,7 @@ export async function observeModelCandidate(
 
 /** The caller holds the watch lock before taking the candidate lock, in this transaction. */
 export async function retryModelCandidate(tx: Transaction, now: Date): Promise<void> {
+  const [setting] = await readSettingRows(tx, ['engine.typesafe_model']);
   const candidate = await updateSettingLocked<EngineModelCandidate | null>(
     tx,
     MODEL_CANDIDATE_KEY,
@@ -115,6 +120,8 @@ export async function retryModelCandidate(tx: Transaction, now: Date): Promise<v
     (current) => {
       const parsed = EngineModelCandidateSchema.safeParse(current);
       return parsed.success &&
+        (setting === undefined ||
+          setting.updatedAt.getTime() <= Date.parse(parsed.data.firstSeenAt)) &&
         now.getTime() - Date.parse(parsed.data.firstSeenAt) <= MODEL_CANDIDATE_MAX_AGE_MS
         ? { ...parsed.data, count: Math.min(Number.MAX_SAFE_INTEGER, parsed.data.count + 1) }
         : null;
