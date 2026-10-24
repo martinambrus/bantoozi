@@ -232,22 +232,6 @@
           "switchedOn": "Switched on",
           "reason": "Reason"
         }
-      },
-      "reasons": {
-        "low_auc": "Quality too low",
-        "below_baseline_auc": "Below your interests alone",
-        "worse_logloss": "Less reliable predictions",
-        "upgrade_regression": "Analysis update reduced quality",
-        "insufficient_explicit": "More ratings needed",
-        "insufficient_class": "More likes and dislikes needed",
-        "rating_fingerprint_changed": "Analysis changed during training",
-        "context_changed": "Interests changed during training",
-        "inputs_changed": "Ratings changed during training",
-        "singular": "Training could not fit these ratings",
-        "nonfinite": "Training could not finish",
-        "nonconverged": "Training could not finish",
-        "research": "Evaluation run",
-        "unknown": "Update was not activated"
       }
     }
   },
