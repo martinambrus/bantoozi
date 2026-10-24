@@ -305,18 +305,18 @@ async function addEstimateRows(user: TestUser, count: number): Promise<void> {
 }
 
 describe('GET /me/learning/history', () => {
-  it('exposes rejection reasons and nullable backfill provenance', async () => {
+  it('exposes rejection reasons with boolean activation for older readers', async () => {
     const user = await createTestUser(h);
     await h.owner.query(
-      `INSERT INTO user_learning_history (user_id, kind, n, activated, turned_on, reason) VALUES ($1, 'model', 10, NULL, NULL, 'low_auc,worse_logloss')`,
+      `INSERT INTO user_learning_history (user_id, kind, n, activated, turned_on, reason) VALUES ($1, 'model', 10, false, false, 'low_auc,worse_logloss')`,
       [user.id],
     );
     const res = await apiClient(h.server, user).get('/me/learning/history');
     expect(res.statusCode, res.body).toBe(200);
     expect(LearningHistorySchema.parse(res.json()).items[0]).toMatchObject({
       reason: 'low_auc,worse_logloss',
-      activated: null,
-      turnedOn: null,
+      activated: false,
+      turnedOn: false,
     });
   });
   it('answers 401 without a session', async () => {

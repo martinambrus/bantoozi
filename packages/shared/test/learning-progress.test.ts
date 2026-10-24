@@ -196,15 +196,17 @@ describe('LearningHistoryItemSchema', () => {
     expect(() => LearningHistoryItemSchema.parse({ ...item, n: -1 })).toThrow();
   });
 
-  it('keeps nullable backfill provenance and rejection reasons', () => {
+  it('keeps rejection reasons and requires boolean activation for older readers', () => {
     expect(
       LearningHistoryItemSchema.parse({
         ...item,
-        activated: null,
-        turnedOn: null,
+        activated: false,
+        turnedOn: false,
         reason: 'low_auc,worse_logloss',
       }),
-    ).toMatchObject({ activated: null, turnedOn: null, reason: 'low_auc,worse_logloss' });
+    ).toMatchObject({ activated: false, turnedOn: false, reason: 'low_auc,worse_logloss' });
+    expect(() => LearningHistoryItemSchema.parse({ ...item, activated: null })).toThrow();
+    expect(() => LearningHistoryItemSchema.parse({ ...item, turnedOn: null })).toThrow();
   });
 
   it('requires every field', () => {
