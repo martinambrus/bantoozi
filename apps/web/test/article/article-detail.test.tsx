@@ -269,7 +269,10 @@ describe('ArticleDetail "Read original"', () => {
       contentRevision: '2',
     });
     expect(screen.getByRole('group', { name: 'Article actions' })).toBeInTheDocument();
-    answer.resolve(actionResponse(acked(item, { readAt: '2026-05-31T10:00:00.000Z' })));
+    await act(async () => {
+      answer.resolve(actionResponse(acked(item, { readAt: '2026-05-31T10:00:00.000Z' })));
+    });
+    expect(screen.getByRole('button', { name: 'Mark as unread' })).toBeInTheDocument();
   });
 
   it('still opens the address when the open cannot be reported', async () => {
@@ -307,8 +310,11 @@ describe('ArticleDetail "Read original"', () => {
 
     it('is sent once when the page is visible again, with the time spent away', async () => {
       useFakeClock();
-      const { user, calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
-      await user.click(await screen.findByRole('button', { name: 'Read original' }));
+      const { calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
+      const readOriginal = await screen.findByRole('button', { name: 'Read original' });
+      await act(async () => {
+        fireEvent.click(readOriginal);
+      });
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       leaveAndReturn(90_000);
@@ -340,8 +346,11 @@ describe('ArticleDetail "Read original"', () => {
 
     it('is not sent when implicit feedback is off', async () => {
       useFakeClock();
-      const { user, calls } = renderDetail(ITEM, {}, { routes });
-      await user.click(await screen.findByRole('button', { name: 'Read original' }));
+      const { calls } = renderDetail(ITEM, {}, { routes });
+      const readOriginal = await screen.findByRole('button', { name: 'Read original' });
+      await act(async () => {
+        fireEvent.click(readOriginal);
+      });
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       leaveAndReturn(90_000);
@@ -354,8 +363,11 @@ describe('ArticleDetail "Read original"', () => {
 
     it('is not sent when the page was never left', async () => {
       useFakeClock();
-      const { user, calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
-      await user.click(await screen.findByRole('button', { name: 'Read original' }));
+      const { calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
+      const readOriginal = await screen.findByRole('button', { name: 'Read original' });
+      await act(async () => {
+        fireEvent.click(readOriginal);
+      });
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       setVisibility('visible');
@@ -368,8 +380,11 @@ describe('ArticleDetail "Read original"', () => {
 
     it('is not sent when the page was left long after the original was opened', async () => {
       useFakeClock();
-      const { user, calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
-      await user.click(await screen.findByRole('button', { name: 'Read original' }));
+      const { calls } = renderDetail(ITEM, {}, { me: implicit(), routes });
+      const readOriginal = await screen.findByRole('button', { name: 'Read original' });
+      await act(async () => {
+        fireEvent.click(readOriginal);
+      });
       await waitFor(() => expect(calls('POST', '/articles/101/open')).toHaveLength(1));
 
       vi.setSystemTime(Date.now() + 60_000);
@@ -431,7 +446,6 @@ describe('ArticleDetail action bar', () => {
   });
 
   it('rates and bookmarks with the fence, the request of the analysis and the feed', async () => {
-    vi.useFakeTimers();
     const requestId = '3f1c2b64-8a5e-4c63-9f0e-5d7a9b1c2e30';
     const item = makeItem({
       analysis: { mode: 'training', status: 'pending', requestId, overDailyCap: null },
@@ -828,8 +842,10 @@ describe('ArticleDetail rules', () => {
       );
       await waitFor(() => expect(calls('POST', '/rules')).toHaveLength(1));
 
-      signInAgain(makeMe({ id: USER_B_ID }));
-      answer.resolve();
+      await act(async () => {
+        signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve();
+      });
       await later();
 
       expect(screen.queryByText('Blocked source: Example Weekly')).toBeNull();
@@ -855,8 +871,10 @@ describe('ArticleDetail rules', () => {
       await user.click(await screen.findByRole('menuitem', { name: 'Mute for 1 day' }));
       await waitFor(() => expect(calls('POST', '/articles/101/mute-story')).toHaveLength(1));
 
-      signInAgain(makeMe({ id: USER_B_ID }));
-      answer.resolve();
+      await act(async () => {
+        signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve();
+      });
       await later();
 
       expect(screen.queryByText('Story muted for 1 day')).toBeNull();
@@ -883,8 +901,10 @@ describe('ArticleDetail rules', () => {
       );
       await waitFor(() => expect(calls('POST', '/rules')).toHaveLength(1));
 
-      signInAgain(makeMe({ id: USER_B_ID }));
-      answer.resolve();
+      await act(async () => {
+        signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve();
+      });
       await later();
 
       expect(
@@ -900,9 +920,12 @@ describe('ArticleDetail rules', () => {
         { routes: ruleRoutes('block_feed', '7') },
       );
       await user.click(await screen.findByRole('button', { name: 'More' }));
-      await user.click(
-        await screen.findByRole('menuitem', { name: 'Block feed (Example Weekly)' }),
-      );
+      const blockFeed = await screen.findByRole('menuitem', {
+        name: 'Block feed (Example Weekly)',
+      });
+      await act(async () => {
+        await user.click(blockFeed);
+      });
       const toast = await findToast('Blocked source: Example Weekly');
 
       signInAgain(makeMe({ id: USER_B_ID }));
@@ -1365,10 +1388,12 @@ describe('ArticleDetail image setting', () => {
       await user.click(await screen.findByRole('button', { name: 'Always block' }));
       await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
 
-      signInAgain(makeMe({ id: USER_B_ID }));
-      answer.resolve(
-        json(200, { feedId: '7', imagePolicy: 'block', effectiveImagesAllowed: false }),
-      );
+      await act(async () => {
+        signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve(
+          json(200, { feedId: '7', imagePolicy: 'block', effectiveImagesAllowed: false }),
+        );
+      });
       await waitFor(() => expect(queryClient.isMutating()).toBe(0));
       await later();
 
@@ -1387,8 +1412,10 @@ describe('ArticleDetail image setting', () => {
       await user.click(await screen.findByRole('button', { name: 'Always block' }));
       await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
 
-      signInAgain(makeMe({ id: USER_B_ID }));
-      answer.resolve(failure(500, 'INTERNAL'));
+      await act(async () => {
+        signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve(failure(500, 'INTERNAL'));
+      });
       await waitFor(() => expect(queryClient.isMutating()).toBe(0));
       await later();
 
