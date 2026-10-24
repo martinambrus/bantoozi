@@ -30,6 +30,7 @@ import { credentialResolverFromConfig } from './credentials/resolver.js';
 import { createWorkerEngineRouter } from './engine-router.js';
 import { createModelProber, recordModelProbe } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
+import { ensureFingerprintRegistered, guardedRegistration } from './learn/fingerprints.js';
 import { lockRestartCurrent } from './stale-worker.js';
 import {
   MODEL_WATCH_TRIGGER_GAP_MS,
@@ -63,6 +64,8 @@ export type WorkerRuntimeConfig = WorkerModelConfig &
     | 'fetchTimeoutMs'
     | 'fetchMaxBytes'
     | 'rateLimitsEnabled'
+    | 'languageModes'
+    | 'signupMode'
   >;
 
 /** The configuration fields the effective runtime values replace. */
@@ -367,6 +370,28 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
           if (await requestModelWatch(db, at)) lastClaimMs = at.getTime();
         }
       : undefined;
+  if (options.recordPin !== false && modelState.kind !== 'unresolved') {
+    // Save the outgoing exact fingerprint before recordModelPin replaces it: a first start after
+    // an upgrade must preserve ratings even if no earlier start or learn registered the old pin.
+    await guardedRegistration(
+      () =>
+        ensureFingerprintRegistered(
+          db,
+          {
+            settingsEnv: {
+              prefilterMinCards: config.prefilterMinCards,
+              dailyBudgetUsd: config.dailyBudgetUsd,
+              languageModes: config.languageModes,
+              signupMode: config.signupMode,
+            },
+            primaryModel: processModel,
+          },
+          now(),
+        ),
+      logger,
+      { rethrow: true },
+    );
+  }
   const models = createWorkerModels(db, liveConfig, logger, {
     primaryModel: processModel,
     ...(onModelUnavailable === undefined ? {} : { onModelUnavailable }),

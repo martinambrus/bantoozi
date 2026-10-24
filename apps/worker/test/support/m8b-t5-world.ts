@@ -98,6 +98,8 @@ export interface WorkerRuntimeConfigLike {
   typesafePricePerMtokUsd: number;
   engineConcurrency: number;
   dailyBudgetUsd: number;
+  languageModes: { en: 'native'; sk: 'native'; cs: 'native' };
+  signupMode: 'invite';
   ollamaBaseUrl: string;
   ollamaModelFast: string;
   ollamaModelStrong: string;
@@ -134,6 +136,8 @@ export function baseConfig(
     typesafePricePerMtokUsd: 0.042,
     engineConcurrency: 8,
     dailyBudgetUsd: 5,
+    languageModes: { en: 'native', sk: 'native', cs: 'native' },
+    signupMode: 'invite',
     ollamaBaseUrl: 'https://ollama.com',
     ollamaModelFast: LLM.fast,
     ollamaModelStrong: LLM.strong,
