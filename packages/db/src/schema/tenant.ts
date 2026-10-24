@@ -442,6 +442,31 @@ export const userArticle = pgTable(
   ],
 );
 
+/** Offers are durable; only a recorded impression consumes their scope's cooldown. */
+export const dislikePatternOffers = pgTable(
+  'dislike_pattern_offers',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    scopeId: int8('scope_id').notNull(),
+    offeredAt: tstz('offered_at').notNull().defaultNow(),
+    articleIds: int8('article_ids').array().notNull(),
+    seenAt: tstz('seen_at'),
+    answer: text('answer'),
+    answeredAt: tstz('answered_at'),
+  },
+  (t) => [
+    check('dislike_pattern_offers_scope_check', sql`scope IN ('card','feed')`),
+    check('dislike_pattern_offers_articles_check', sql`cardinality(article_ids) BETWEEN 1 AND 3`),
+    check('dislike_pattern_offers_answer_check', sql`answer IN ('accepted','dismissed')`),
+    check('dislike_pattern_offers_answered_check', sql`(answer IS NULL) = (answered_at IS NULL)`),
+    index('dislike_pattern_offers_scope_idx').on(t.userId, t.scope, t.scopeId, t.seenAt),
+  ],
+);
+
 export const feedbackEvents = pgTable(
   'feedback_events',
   {

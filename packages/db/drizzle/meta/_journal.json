@@ -253,6 +253,13 @@
       "when": 1792568400006,
       "tag": "0035_learning_history",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792568400007,
+      "tag": "0036_dislike_pattern_offers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   AppError,
@@ -1394,7 +1394,7 @@ async function suggestionContext(
   };
 }
 
-/** A rate event's `dislikePattern` offer blocks another one for the same card family this long. */
+/** A seen offer blocks another one for the same scope this long. */
 const PATTERN_OFFER_LOOKBACK_DAYS = 14;
 
 /** The dislike-pattern value of a rating (spec 06 §10): the card, whether it lowers, the offer. */
@@ -1402,6 +1402,7 @@ export interface DislikePatternValue {
   cardId: string;
   lowered: boolean;
   offer: string[] | null;
+  offerId: string | null;
 }
 
 /** The injected similar-dislikes check and the size of the rating pool it reads. */
@@ -1429,7 +1430,7 @@ async function patternCard(
   articleId: string,
   minP: number,
   now: Date,
-): Promise<{ cardId: string; offered: boolean } | null> {
+): Promise<{ cardId: string; familyId: string; offered: boolean } | null> {
   const family = (alias: string) =>
     sql.raw(
       `CASE WHEN ${alias}.visibility = 'private' THEN coalesce(${alias}.parent_card_id, ${alias}.id) ELSE ${alias}.id END`,
@@ -1449,17 +1450,62 @@ async function patternCard(
      LIMIT 1`);
   const card = best.rows[0];
   if (card === undefined) return null;
-  const offers = await tx.execute<{ one: number }>(sql`
-    SELECT 1 AS one
-      FROM feedback_events e
-      JOIN interest_cards o ON o.id = (e.value -> 'dislikePattern' ->> 'cardId')::bigint
-     WHERE e.user_id = ${userId}::uuid AND e.kind = 'rate'
-       AND jsonb_typeof(e.value -> 'dislikePattern') = 'object'
-       AND e.created_at > ${now.toISOString()}::timestamptz
-                          - make_interval(days => ${PATTERN_OFFER_LOOKBACK_DAYS})
-       AND ${family('o')}::text = ${card.family}
+  return {
+    cardId: card.id,
+    familyId: card.family,
+    offered: await patternScopeSeen(tx, userId, 'card', card.family, now),
+  };
+}
+
+async function patternScopeSeen(
+  tx: TenantTx,
+  userId: string,
+  scope: 'card' | 'feed',
+  scopeId: string,
+  now: Date,
+): Promise<boolean> {
+  const result = await tx.execute(sql`
+    SELECT 1 FROM dislike_pattern_offers
+     WHERE user_id = ${userId}::uuid AND scope = ${scope} AND scope_id = ${scopeId}::bigint
+       AND seen_at > ${now.toISOString()}::timestamptz - make_interval(days => ${PATTERN_OFFER_LOOKBACK_DAYS})
      LIMIT 1`);
-  return { cardId: card.id, offered: offers.rows.length > 0 };
+  return result.rows.length > 0;
+}
+
+async function insertPatternOffer(
+  tx: TenantTx,
+  userId: string,
+  scope: 'card' | 'feed',
+  scopeId: string,
+  articleIds: string[],
+  now: Date,
+): Promise<string> {
+  const id = randomUUID();
+  await tx.execute(sql`
+    INSERT INTO dislike_pattern_offers (id, user_id, scope, scope_id, offered_at, article_ids)
+    VALUES (${id}::uuid, ${userId}::uuid, ${scope}, ${scopeId}::bigint, ${now.toISOString()}::timestamptz, ${sql.param(articleIds)}::bigint[])`);
+  return id;
+}
+
+/** Idempotent events, serialized with ratings on the user's lock; first answer and impression win. */
+export async function recordPatternOfferEvent(
+  tx: TenantTx,
+  input: {
+    articleId: string;
+    offerId: string;
+    event: 'seen' | 'accepted' | 'dismissed';
+    now: Date;
+  },
+): Promise<void> {
+  const { user } = await lockReaderUser(tx);
+  const result = await tx.execute(sql`
+    UPDATE dislike_pattern_offers
+       SET seen_at = CASE WHEN ${input.event} = 'seen' THEN coalesce(seen_at, ${input.now.toISOString()}::timestamptz) ELSE seen_at END,
+           answer = CASE WHEN ${input.event} <> 'seen' THEN coalesce(answer, ${input.event}) ELSE answer END,
+           answered_at = CASE WHEN ${input.event} <> 'seen' THEN coalesce(answered_at, ${input.now.toISOString()}::timestamptz) ELSE answered_at END
+     WHERE id = ${input.offerId}::uuid AND user_id = ${user}::uuid AND article_ids[1] = ${input.articleId}::bigint
+     RETURNING id`);
+  if (result.rows.length === 0) throw new AppError('NOT_FOUND', 'Pattern offer not found');
 }
 
 async function dislikePattern(
@@ -1484,10 +1530,15 @@ async function dislikePattern(
     labelled: labelled.get(card.cardId) ?? [],
     now,
   });
+  const offer = lock.prefs.exampleSuggestions && !card.offered ? judged.offer : null;
   return {
     cardId: card.cardId,
     lowered: lock.prefs.demote.similar === 'off' ? false : judged.lowered,
-    offer: lock.prefs.exampleSuggestions && !card.offered ? judged.offer : null,
+    offer,
+    offerId:
+      offer === null
+        ? null
+        : await insertPatternOffer(tx, lock.user, 'card', card.familyId, offer, now),
   };
 }
 

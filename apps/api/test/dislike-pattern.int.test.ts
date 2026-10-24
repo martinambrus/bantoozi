@@ -65,9 +65,12 @@ async function rate(
   );
 }
 
-async function world(preferences: Record<string, unknown> = {}) {
+async function world(
+  preferences: Record<string, unknown> = {},
+  mode: 'active' | 'training' = 'active',
+) {
   const r = await newReader(h, preferences);
-  const feed = await subscribedFeed(h, r.user.id);
+  const feed = await subscribedFeed(h, r.user.id, { mode });
   const card = (await createCard(h.owner, { interest: `used Skoda parts and cars ${r.user.id}` }))
     .id;
   await h.owner.query(
@@ -95,7 +98,14 @@ async function candidate(w: Awaited<ReturnType<typeof world>>, title: string): P
 }
 
 interface PatternBody {
-  pattern?: { cardId: string; lowered: boolean; offer: string[] | null } | null;
+  pattern?: {
+    kind: 'card' | 'feed';
+    cardId: string;
+    feedId: string;
+    lowered: boolean;
+    offer: string[] | null;
+    offerId: string | null;
+  } | null;
   exampleSuggestion?: unknown;
 }
 
@@ -143,11 +153,81 @@ describe('rating pattern (DPF-3)', () => {
     const target = await candidate(w, TARGET);
     const first = await dislike(w, target);
     expect(first.pattern?.offer).not.toBeNull();
+    await w.api.post(`/articles/${target}/pattern-offer`, {
+      offerId: first.pattern?.offerId,
+      event: 'seen',
+    });
     const third = await candidate(w, D3);
     const body = await dislike(w, third);
     expect(body.pattern).toBeTruthy();
     expect(body.pattern!.lowered).toBe(true);
     expect(body.pattern!.offer).toBeNull();
+  });
+
+  it('DPF-6 unseen offers do not consume the cooldown', async () => {
+    const w = await world();
+    const target = await candidate(w, TARGET);
+    const first = await dislike(w, target);
+    expect(first.pattern?.offerId).toEqual(expect.any(String));
+    const next = await dislike(w, await candidate(w, D3));
+    expect(next.pattern?.offer).toHaveLength(3);
+    expect(next.pattern?.offerId).not.toBe(first.pattern?.offerId);
+  });
+
+  it('DPF-6 only seen offers block their scope, with idempotent tenant-scoped events', async () => {
+    const w = await world();
+    const target = await candidate(w, TARGET);
+    const first = await dislike(w, target);
+    const offerId = first.pattern?.offerId;
+    expect(offerId).toEqual(expect.any(String));
+    const stranger = await newReader(h);
+    expect(
+      (await stranger.api.post(`/articles/${target}/pattern-offer`, { offerId, event: 'seen' }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await w.api.post(`/articles/${await candidate(w, D3)}/pattern-offer`, {
+          offerId,
+          event: 'seen',
+        })
+      ).statusCode,
+    ).toBe(404);
+    for (let i = 0; i < 2; i++) {
+      expect(
+        (await w.api.post(`/articles/${target}/pattern-offer`, { offerId, event: 'seen' }))
+          .statusCode,
+      ).toBe(204);
+    }
+    expect((await dislike(w, await candidate(w, D3))).pattern?.offer).toBeNull();
+    const other = await world();
+    expect((await dislike(other, await candidate(other, TARGET))).pattern?.offer).toHaveLength(3);
+    await h.owner.query(
+      `UPDATE dislike_pattern_offers SET seen_at = now() - interval '15 days' WHERE id = $1`,
+      [offerId],
+    );
+    expect((await dislike(w, await candidate(w, TARGET))).pattern?.offer).toHaveLength(3);
+  });
+
+  it('DPF-6 impressions and first answer remain unchanged on repeated events', async () => {
+    const w = await world();
+    const target = await candidate(w, TARGET);
+    const offerId = (await dislike(w, target)).pattern?.offerId;
+    const event = (value: string) =>
+      w.api.post(`/articles/${target}/pattern-offer`, { offerId, event: value });
+    expect((await event('seen')).statusCode).toBe(204);
+    const before = await h.owner.query('SELECT seen_at FROM dislike_pattern_offers WHERE id = $1', [
+      offerId,
+    ]);
+    for (const value of ['seen', 'accepted', 'accepted', 'dismissed'])
+      expect((await event(value)).statusCode).toBe(204);
+    const after = await h.owner.query(
+      'SELECT seen_at, answer, answered_at FROM dislike_pattern_offers WHERE id = $1',
+      [offerId],
+    );
+    expect(after.rows[0].seen_at).toEqual(before.rows[0].seen_at);
+    expect(after.rows[0].answer).toBe('accepted');
+    expect(after.rows[0].answered_at).toBeTruthy();
   });
 
   it('P4 a clickbait reason has no pattern', async () => {

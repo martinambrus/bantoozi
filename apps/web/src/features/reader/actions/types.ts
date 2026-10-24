@@ -128,6 +128,7 @@ export interface ExampleSuggestion {
 export interface DislikePattern {
   cardId: string;
   lowered: boolean;
+  offerId: string | null;
   /** Up to three articles to offer as "no" examples of the card, or null when there is no offer. */
   offer: string[] | null;
 }

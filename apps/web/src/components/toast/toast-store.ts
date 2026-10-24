@@ -15,6 +15,8 @@ export interface ToastInput {
   actions?: readonly ToastAction[] | undefined;
   /** Milliseconds on screen (default 5000); null keeps it until dismissed. */
   durationMs?: number | null | undefined;
+  /** Called after a continuous second rendered in a visible document. */
+  onSeen?: (() => void) | undefined;
 }
 
 export interface Toast {
@@ -26,6 +28,7 @@ export interface Toast {
   /** `action` first, then `actions`. */
   actions: readonly ToastAction[];
   durationMs: number | null;
+  onSeen?: (() => void) | undefined;
 }
 
 export interface ToastStore {
@@ -95,6 +98,7 @@ export function createToastStore(): ToastStore {
       const toast: Toast = {
         id: input.id ?? `toast-${counter}`,
         message: input.message,
+        onSeen: input.onSeen,
         tone: input.tone,
         action: actions[0],
         actions,

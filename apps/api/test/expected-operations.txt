@@ -81,6 +81,7 @@ POST /articles/:id/labels
 POST /articles/:id/mute-story
 POST /articles/:id/open
 POST /articles/:id/prompt-answer
+POST /articles/:id/pattern-offer
 POST /articles/:id/rating
 POST /articles/:id/read
 POST /articles/:id/unhide

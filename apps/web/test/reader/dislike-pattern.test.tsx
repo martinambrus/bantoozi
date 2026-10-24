@@ -1,5 +1,5 @@
 import type { ArticleListItem, CardDto } from '@bantoozi/shared';
-import { screen, within } from '@testing-library/react';
+import { screen, within, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ArticleRow } from '../../src/features/article/article-row.js';
@@ -9,10 +9,13 @@ import {
   bodyOf,
   findToast,
   makeItem,
+  setVisibility,
+  restoreVisibility,
   renderReader,
   type ReaderHarnessOptions,
 } from '../article/harness.js';
 import { cardResult, makeCard } from '../interests/support.js';
+import { holdExits } from './exit-hold.js';
 import { acked } from './actions/fake-transport.js';
 
 const READ_AT = '2026-05-31T10:00:00.000Z';
@@ -36,11 +39,13 @@ interface Pattern {
   cardId: string;
   lowered: boolean;
   offer: string[] | null;
+  offerId: string | null;
 }
 
 const apps: { unhandled: string[] }[] = [];
 
 afterEach(() => {
+  restoreVisibility();
   for (const app of apps.splice(0)) expect(app.unhandled).toEqual([]);
 });
 
@@ -55,6 +60,7 @@ function server(item: ArticleListItem, pattern: Pattern | null, suggestion = fal
         exampleSuggestion: suggestion ? { cardId: '31', side: 'no' } : null,
         pattern,
       }),
+    'POST /articles/:id/pattern-offer': () => json(204, null),
     'GET /cards': () => json(200, [EV, SOLAR] satisfies CardDto[]),
     'POST /cards/:id/examples/batch': () => json(200, cardResult(FORK, { from: '31', to: '35' })),
     'POST /cards/:id/examples': () => json(200, cardResult(FORK, { from: '31', to: '35' })),
@@ -62,6 +68,7 @@ function server(item: ArticleListItem, pattern: Pattern | null, suggestion = fal
 }
 
 async function dislike(pattern: Pattern | null, suggestion = false) {
+  holdExits();
   const item = makeItem();
   const app = renderReader(<Row item={item} />, { routes: server(item, pattern, suggestion) });
   apps.push(app);
@@ -80,10 +87,15 @@ const buttons = (toast: HTMLElement) =>
     .map((button) => button.getAttribute('aria-label') ?? button.textContent)
     .filter((name) => name !== 'Dismiss');
 
-const OFFER: Pattern = { cardId: '31', lowered: true, offer: ['201', '202'] };
+const OFFER: Pattern = {
+  cardId: '31',
+  lowered: true,
+  offer: ['201', '202'],
+  offerId: 'a0a00000-0000-4000-8000-000000000001',
+};
 
 describe('the dislike pattern in the undo toast', () => {
-  it('T1 offers "Show fewer like these" after Undo, for 8 seconds, and sends the batch', async () => {
+  it('T1 offers "Show fewer like these" after Undo, stays until closed, and sends the batch', async () => {
     const app = await dislike(OFFER);
 
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
@@ -114,8 +126,41 @@ describe('the dislike pattern in the undo toast', () => {
     expect(app.calls('POST', '/cards/31/examples')).toHaveLength(0);
   });
 
+  it('DPF-6 acknowledges visibility after one second, then the answer', async () => {
+    const app = await dislike(OFFER);
+    await findToast(`${DISLIKED} ${LOWERED}`);
+    expect(app.calls('POST', '/articles/101/pattern-offer')).toHaveLength(0);
+    await waitFor(() => expect(app.calls('POST', '/articles/101/pattern-offer')).toHaveLength(1), {
+      timeout: 1800,
+    });
+    expect(bodyOf(app.calls('POST', '/articles/101/pattern-offer')[0]!)).toEqual({
+      offerId: OFFER.offerId,
+      event: 'seen',
+    });
+    await app.user.click(screen.getByRole('button', { name: NOT_NOW }));
+    await waitFor(() => expect(app.calls('POST', '/articles/101/pattern-offer')).toHaveLength(2));
+    expect(bodyOf(app.calls('POST', '/articles/101/pattern-offer')[1]!)).toEqual({
+      offerId: OFFER.offerId,
+      event: 'dismissed',
+    });
+  });
+
+  it('DPF-6 hidden time does not count and closing before one second records no seen event', async () => {
+    setVisibility('hidden');
+    const app = await dislike(OFFER);
+    const toast = await findToast(`${DISLIKED} ${LOWERED}`);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(app.calls('POST', '/articles/101/pattern-offer')).toHaveLength(0);
+    setVisibility('visible');
+    await app.user.click(within(toast).getByRole('button', { name: NOT_NOW }));
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(app.calls('POST', '/articles/101/pattern-offer').map(bodyOf)).toEqual([
+      { offerId: OFFER.offerId, event: 'dismissed' },
+    ]);
+  });
+
   it('T3 says the ranking was lowered, with only Undo, when there is no offer', async () => {
-    const app = await dislike({ cardId: '31', lowered: true, offer: null });
+    const app = await dislike({ cardId: '31', lowered: true, offer: null, offerId: null });
 
     const toast = await findToast(`${DISLIKED} ${LOWERED}`);
 
@@ -125,7 +170,10 @@ describe('the dislike pattern in the undo toast', () => {
 
   it.each([
     ['no pattern', null],
-    ['a pattern that lowered nothing', { cardId: '31', lowered: false, offer: null }],
+    [
+      'a pattern that lowered nothing',
+      { cardId: '31', lowered: false, offer: null, offerId: null },
+    ],
   ])("T4 keeps today's toast for %s", async (_name, pattern) => {
     const app = await dislike(pattern);
 

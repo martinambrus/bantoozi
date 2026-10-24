@@ -37,7 +37,15 @@ export interface ExampleOffers {
    * its card, or null when the pattern has no offer, the card is not among the ones the person
    * holds or the cards cannot be read.
    */
-  patternActions(pattern: DislikePattern): Promise<readonly ToastAction[] | null>;
+  patternActions(
+    pattern: DislikePattern,
+    articleId: string,
+  ): Promise<readonly ToastAction[] | null>;
+  patternEvent(
+    pattern: DislikePattern,
+    articleId: string,
+    event: 'seen' | 'accepted' | 'dismissed',
+  ): void;
   /** Aborts the requests of the offers taken up and forgets them: nothing more is shown for them. */
   release(): void;
 }
@@ -108,7 +116,23 @@ export function createExampleOffers({
     toast.show({ message: i18n.t('article:toast.suggestionsOff'), tone: 'success' });
   }
 
+  function patternEvent(
+    pattern: DislikePattern,
+    articleId: string,
+    event: 'seen' | 'accepted' | 'dismissed',
+  ): void {
+    if (pattern.offerId === null) return;
+    void api
+      .call(
+        routes.patternOfferEvent,
+        { params: { id: articleId }, body: { offerId: pattern.offerId, event } },
+        { signal: controller.signal },
+      )
+      .catch(() => {});
+  }
+
   return {
+    patternEvent,
     async actionsFor(suggestion, articleId) {
       let cards: CardDto[];
       try {
@@ -139,7 +163,7 @@ export function createExampleOffers({
         },
       ];
     },
-    async patternActions(pattern) {
+    async patternActions(pattern, articleId) {
       const { offer } = pattern;
       if (offer === null) return null;
       let cards: CardDto[];
@@ -154,10 +178,14 @@ export function createExampleOffers({
         {
           label: i18n.t('article:toast.fewerLikeThese'),
           onAction: () => {
+            patternEvent(pattern, articleId, 'accepted');
             void teachFewer(pattern.cardId, offer);
           },
         },
-        { label: i18n.t('article:toast.notNow'), onAction: () => {} },
+        {
+          label: i18n.t('article:toast.notNow'),
+          onAction: () => patternEvent(pattern, articleId, 'dismissed'),
+        },
       ];
     },
     release() {

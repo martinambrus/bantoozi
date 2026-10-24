@@ -114,6 +114,7 @@ import {
   PromoteResultSchema,
   PromotionRequestBodySchema,
   PromotionRequestResultSchema,
+  PatternOfferEventSchema,
   PromptAnswerBodySchema,
   ProviderParamsSchema,
   PublicationRequestListSchema,
@@ -461,6 +462,15 @@ export const routes = {
   }),
 
   // ── Reader actions (spec 08 §5.3, §5.4) ────────────────────────────────────────────────────────
+  patternOfferEvent: defineRoute({
+    method: 'POST',
+    path: '/articles/:id/pattern-offer',
+    auth: 'user',
+    idempotent: true,
+    params: ArticleIdParamsSchema,
+    body: PatternOfferEventSchema,
+    response: null,
+  }),
   articleRead: defineRoute({
     method: 'POST',
     path: '/articles/:id/read',

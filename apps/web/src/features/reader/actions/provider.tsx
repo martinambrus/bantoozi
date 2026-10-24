@@ -247,7 +247,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       });
     };
     if (lowered && pattern.offer !== null) {
-      void offers.patternActions(pattern).then((offered) => {
+      void offers.patternActions(pattern, item.id).then((offered) => {
         if (turn !== latestOffer || !isRecent(handle)) return;
         const current = store.view(item);
         if (current.rating !== item.rating || current.reason !== item.reason) return;
@@ -263,6 +263,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
           message,
           tone: 'success',
           durationMs: OFFER_TOAST_MS,
+          onSeen: () => offers.patternEvent(pattern, item.id, 'seen'),
           action: undoAction,
           actions: offered,
         });

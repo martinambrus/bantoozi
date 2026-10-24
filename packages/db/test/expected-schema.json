@@ -3593,6 +3593,80 @@
         "forced": true
       }
     },
+    "dislike_pattern_offers": {
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "scope": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "scope_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "offered_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "article_ids": {
+          "type": "bigint[]",
+          "nullable": false,
+          "default": null
+        },
+        "seen_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "answer": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "answered_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "scope IN ('card','feed')",
+        "cardinality(article_ids) BETWEEN 1 AND 3",
+        "answer IN ('accepted','dismissed')",
+        "(answer IS NULL) = (answered_at IS NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "dislike_pattern_offers_scope_idx": {
+          "unique": false,
+          "definition": "(user_id, scope, scope_id, seen_at)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
     "feedback_events": {
       "columns": {
         "id": {
@@ -4130,6 +4204,14 @@
   },
   "policies": [
     {
+      "table": "dislike_pattern_offers",
+      "name": "dislike_pattern_offers_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
       "table": "subscriptions",
       "name": "subscriptions_tenant",
       "command": "ALL",
@@ -4358,6 +4440,7 @@
         "user_estimate_models": ["SELECT"],
         "user_feed_preferences": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "user_learning_history": ["SELECT"],
+        "dislike_pattern_offers": ["SELECT", "INSERT", "UPDATE"],
         "user_labels": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "user_models": ["SELECT"],
         "user_rules": ["SELECT", "INSERT", "UPDATE", "DELETE"],

@@ -416,7 +416,15 @@ export const DislikePatternSchema = z
   .object({
     cardId: IdSchema,
     lowered: z.boolean(),
+    offerId: UuidStringSchema.nullable(),
     offer: z.array(IdSchema).min(1).max(3).nullable(),
+  })
+  .strict();
+
+export const PatternOfferEventSchema = z
+  .object({
+    offerId: UuidStringSchema,
+    event: z.enum(['seen', 'accepted', 'dismissed']),
   })
   .strict();
 
