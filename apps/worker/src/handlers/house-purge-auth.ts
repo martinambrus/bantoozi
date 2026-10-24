@@ -63,7 +63,7 @@ export type SweepJob =
 
 /**
  * The saved keyset positions of `job`'s unfinished sweeps, by sweep name; a missing or malformed
- * cursor holds none, so every sweep starts from the beginning.
+ * entry restarts only that sweep; valid sibling positions survive.
  */
 export async function readSweepCursors(
   deps: WorkerDeps,
@@ -74,8 +74,16 @@ export async function readSweepCursors(
     await readStoredSetting(deps.db, 'house.progress'),
     deps.settingsEnv,
   );
-  const parsed = readerSchema(HOUSE_PROGRESS_CURSORS[job]).safeParse(progress?.[job]?.cursor);
-  return parsed.success ? { ...parsed.data.sweeps } : {};
+  const cursor = progress?.[job]?.cursor;
+  const sweeps = object(cursor) ? cursor.sweeps : undefined;
+  if (!object(sweeps)) return {};
+  const reader = readerSchema(HOUSE_PROGRESS_CURSORS[job].shape.sweeps);
+  return Object.fromEntries(
+    Object.entries(sweeps).flatMap(([key, value]) => {
+      const parsed = reader.safeParse({ [key]: value });
+      return parsed.success ? Object.entries(parsed.data) : [];
+    }),
+  );
 }
 
 /** The `cursor` to record for the sweep positions left, or none when every sweep finished. */
@@ -126,10 +134,17 @@ export function recoverStaleRebuild<Q extends RebuildJob>(
 /** At most this many pending runs per job are kept (HOUSE_PROGRESS_CURSORS caps the list). */
 const MAX_PENDING_RUNS = 20;
 
-/** The runs of `job` recorded as pending; a malformed cursor holds none. */
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** The runs of `job` recorded as pending; discard only malformed entries. */
 function pendingOf(job: RebuildJob, cursor: unknown): RebuildRun[] {
-  const parsed = readerSchema(HOUSE_PROGRESS_CURSORS[job]).safeParse(cursor);
-  return parsed.success ? parsed.data.pending : [];
+  if (!object(cursor) || !Array.isArray(cursor.pending)) return [];
+  const reader = readerSchema(HOUSE_PROGRESS_CURSORS[job].shape.pending.element);
+  return cursor.pending.flatMap((value) => {
+    const parsed = reader.safeParse(value);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 /**

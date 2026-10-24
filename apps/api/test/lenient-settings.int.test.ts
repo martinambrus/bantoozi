@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
 import {
+  TEST_METRICS_TOKEN,
   apiClient,
   createApiHarness,
   createTestUser,
@@ -175,3 +176,24 @@ it.each(['existing', 'missing'] as const)(
     }
   },
 );
+
+it('drops only malformed ops events when appending and preserves valid event extensions', async () => {
+  const at = new Date().toISOString();
+  const first = { kind: 'backup_ok', detail: 'first', at, future: 1 };
+  const last = { kind: 'deploy_ok', detail: 'last', at, future: 2 };
+  await put('ops.events', [first, { kind: 'bad', detail: 42, at }, last]);
+  const response = await h.server.inject({
+    method: 'POST',
+    url: '/api/v1/admin/ops-event',
+    headers: { authorization: `Bearer ${TEST_METRICS_TOKEN}` },
+    payload: { kind: 'backup_ok', detail: 'appended' },
+  });
+  expect(response.statusCode, response.body).toBe(201);
+  expect(response.json().stored).toBe(3);
+  const stored = await h.owner.query("SELECT value FROM settings WHERE key = 'ops.events'");
+  expect(stored.rows[0].value).toEqual([
+    first,
+    last,
+    { kind: 'backup_ok', detail: 'appended', at: response.json().at },
+  ]);
+});
