@@ -831,7 +831,14 @@ describe('the feed settings', () => {
       await app.user.click(enable);
 
       expect(app.calls(SET_INFERENCE)).toHaveLength(1);
-      expect(within(sheet).getByRole('button', { name: 'Turn classification off' })).toBeDisabled();
+      expect(enable).toHaveFocus();
+      expect(enable).not.toBeDisabled();
+      expect(enable).toHaveAttribute('aria-disabled', 'true');
+      expect(
+        within(sheet).getByRole('button', { name: 'Turn classification off' }),
+      ).toHaveAttribute('aria-disabled', 'true');
+      await app.user.click(within(sheet).getByRole('button', { name: 'Turn classification off' }));
+      expect(app.calls(SET_INFERENCE)).toHaveLength(1);
       answer(
         json(200, {
           subscription: makeSubscription({ feed: { id: '5' }, inferenceMode: 'active' }),
