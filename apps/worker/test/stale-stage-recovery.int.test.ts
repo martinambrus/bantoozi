@@ -2,7 +2,10 @@ import { retryTransaction, workerOutbox } from '@bantoozi/db';
 import { QUEUES, buildJobIntent, parseJobPayload, type QueueName } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 
-import { dispatch } from '../src/handlers/index.js';
+import { createBoss, registerHandlers } from '../src/boss.js';
+import { relayOnce, type JobBroker } from '../src/outbox-relay.js';
+
+import { dispatch, type QueueHandler } from '../src/handlers/index.js';
 
 import {
   NEW_MODEL,
@@ -42,6 +45,14 @@ async function boot(model: string) {
   return runtime;
 }
 
+async function revisionOf(id: string): Promise<string> {
+  const result = await h.owner.query<{ revision: string }>(
+    "SELECT dedupe_key::jsonb ->> 'revision' AS revision FROM job_outbox WHERE id = $1",
+    [id],
+  );
+  return result.rows[0]!.revision;
+}
+
 const cases: Array<[QueueName, Record<string, unknown>]> = [
   ['article.enrich', { articleId: '1', priority: 'interactive' }],
   ['article.translate', { articleId: '1', modeChange: true, forceTier2: true, retried: true }],
@@ -68,8 +79,13 @@ it.each(cases)(
     await boot(NEW_MODEL);
     await h.clearOutbox();
     const router = new ScriptedRouter(h.db, old.processModel);
-    const handlers = handlersFor(h, old, router);
+    const logs = recorder();
+    const handlers = h.handlersWith({
+      logger: logs.logger,
+      classification: { ...old.models.classification, router },
+    });
     const payload = parseJobPayload(queue, input);
+    let staleRecoveryRevision: string | undefined;
     for (let cycle = 0; cycle < 3; cycle += 1) {
       const limit = QUEUES[queue].options.retryLimit ?? 0;
       for (let attempt = 0; attempt <= limit; attempt += 1) {
@@ -77,6 +93,7 @@ it.each(cases)(
           dispatch(handlers, queue, payload, {
             queue,
             jobId: `stale-${cycle}`,
+            ...(staleRecoveryRevision === undefined ? {} : { staleRecoveryRevision }),
             retry: { count: attempt, limit },
           }),
         ).rejects.toMatchObject({ name: 'StaleWorkerError' });
@@ -87,6 +104,7 @@ it.each(cases)(
         dispatch(handlers, queue, payload, {
           queue,
           jobId: `stale-${cycle}`,
+          ...(staleRecoveryRevision === undefined ? {} : { staleRecoveryRevision }),
           retry: { count: limit, limit },
         }),
       ).rejects.toMatchObject({ name: 'StaleWorkerError' });
@@ -94,12 +112,18 @@ it.each(cases)(
       expect(intents).toHaveLength(1);
       expect(intents[0]?.payload).toEqual(payload);
       const delay = (intents[0]?.availableAt.getTime() ?? 0) - Date.now();
-      expect(delay).toBeGreaterThan(20_000);
-      expect(delay).toBeLessThanOrEqual(31_000);
+      expect(delay).toBeGreaterThan(30_000 * 2 ** cycle - 10_000);
+      expect(delay).toBeLessThanOrEqual(30_000 * 2 ** cycle + 1_000);
+      staleRecoveryRevision = await revisionOf(intents[0]!.id);
       // Simulate delivery of the replacement; its next stale consumption must leave another.
       await h.clearOutbox();
     }
     expect(router.asks).toEqual([]);
+    expect(
+      logs.logs
+        .filter((entry) => entry.msg === 'stale worker: delayed intent left for a current worker')
+        .map((entry) => entry.obj.hop),
+    ).toEqual([0, 1, 2]);
   },
 );
 
@@ -171,4 +195,103 @@ it('does not coalesce the replacement into the original intent while its relay a
   ).rejects.toMatchObject({ name: 'StaleWorkerError' });
   await h.owner.query('UPDATE job_outbox SET delivered_at = now() WHERE id = $1', [original?.id]);
   expect(await h.intents('article.enrich', { pending: true })).toHaveLength(1);
+});
+
+it('carries three growing stale hops through the relay and broker, then a current worker ends the chain', async () => {
+  const old = await boot(OLD_MODEL);
+  const current = await boot(NEW_MODEL);
+  const logs = recorder();
+  const now = new Date();
+  const makeHandlers = (runtime: WorkerRuntimeLike) =>
+    h.handlersWith({
+      now: () => now,
+      logger: logs.logger,
+      classification: {
+        ...runtime.models.classification,
+        router: new ScriptedRouter(h.db, runtime.processModel),
+      },
+    });
+  let active = makeHandlers(old);
+  const handlers = {
+    ...active,
+    'article.enrich': {
+      status: 'implemented' as const,
+      handle: async (...args: Parameters<QueueHandler<'article.enrich'>>) => {
+        await dispatch(active, 'article.enrich', ...args);
+      },
+    },
+  };
+  const boss = createBoss(h.testDb.urls.worker);
+  boss.on('error', () => {});
+  await boss.start();
+  const broker: JobBroker = {
+    send: (queue, data, singletonKey) =>
+      boss.send(queue, data, {
+        retryLimit: 0,
+        ...(singletonKey === undefined ? {} : { singletonKey }),
+      }),
+    sendDebounced: async () => {
+      throw new Error('unexpected debounce');
+    },
+  };
+  try {
+    await registerHandlers(boss, handlers, ['article.enrich'], logs.logger);
+    await h.clearOutbox();
+    const originalJobId = await boss.send('article.enrich', { articleId: '1' }, { retryLimit: 0 });
+    for (let hop = 0; hop < 3; hop += 1) {
+      await expect
+        .poll(async () => (await h.intents('article.enrich', { pending: true })).length, {
+          timeout: 10_000,
+        })
+        .toBe(1);
+      const [intent] = await h.intents('article.enrich', { pending: true });
+      expect(intent!.availableAt.getTime() - now.getTime()).toBe(30_000 * 2 ** hop);
+      expect(await revisionOf(intent!.id)).toBe(`stale:${originalJobId}:${hop}`);
+      if (hop === 2) active = makeHandlers(current);
+      await h.owner.query('UPDATE job_outbox SET available_at = now() WHERE id = $1', [intent!.id]);
+      expect(await relayOnce(h.db, broker, { handlers })).toMatchObject({ delivered: 1 });
+    }
+    await expect
+      .poll(
+        async () => {
+          const result = await h.owner.query<{ state: string }>(
+            "SELECT state::text AS state FROM pgboss.job WHERE name = 'article.enrich' ORDER BY created_on DESC LIMIT 1",
+          );
+          return result.rows[0]?.state;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe('completed');
+    expect(await h.intents('article.enrich', { pending: true })).toEqual([]);
+    expect(
+      logs.logs
+        .filter((entry) => entry.msg === 'stale worker: delayed intent left for a current worker')
+        .map((entry) => entry.obj.hop),
+    ).toEqual([0, 1, 2]);
+  } finally {
+    await boss.stop({ graceful: false, wait: true, timeout: 5_000 });
+  }
+});
+
+it.each([5, 20])('caps stale replacement hop %s at fifteen minutes', async (hop) => {
+  const old = await boot(OLD_MODEL);
+  await boot(NEW_MODEL);
+  const now = new Date();
+  const handlers = h.handlersWith({ now: () => now, classification: old.models.classification });
+  await h.clearOutbox();
+  await expect(
+    dispatch(
+      handlers,
+      'article.enrich',
+      { articleId: '1' },
+      {
+        queue: 'article.enrich',
+        jobId: 'capped',
+        staleRecoveryRevision: `stale:original:${hop - 1}`,
+      },
+    ),
+  ).rejects.toMatchObject({ name: 'StaleWorkerError' });
+  const [intent] = await h.intents('article.enrich', { pending: true });
+  expect(intent!.availableAt.getTime() - now.getTime()).toBe(15 * 60_000);
+  expect(await revisionOf(intent!.id)).toBe(`stale:original:${hop}`);
 });

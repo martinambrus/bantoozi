@@ -1,7 +1,8 @@
-import { retryTransaction, workerOutbox } from '@bantoozi/db';
+import { enqueueDelayedWorkerIntent, retryTransaction } from '@bantoozi/db';
 import { buildJobIntent, type QueueName } from '@bantoozi/shared';
 
 import { StaleWorkerError } from '../stale-worker.js';
+import { parseStaleRecoveryRevision } from '../stale-recovery.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 
@@ -22,17 +23,24 @@ export function recoverStaleJob<Q extends QueueName>(
         error instanceof StaleWorkerError &&
         (context.retry === undefined || context.retry.count >= context.retry.limit)
       ) {
-        const availableAt = new Date(nowOf(deps).getTime() + error.retryDelaySeconds * 1000);
+        const previous = parseStaleRecoveryRevision(context.staleRecoveryRevision);
+        const hop = previous === null ? 0 : previous.hop + 1;
+        const delaySeconds = Math.min(error.retryDelaySeconds * 2 ** Math.min(hop, 5), 15 * 60);
+        const availableAt = new Date(nowOf(deps).getTime() + delaySeconds * 1000);
         // A relay may still be acknowledging the original intent. This job's replacement must
         // not coalesce with that intent; repeated handling of this job still coalesces with itself.
         const intent = buildJobIntent(context.queue, payload, {
-          revision: `stale:${context.jobId}`,
+          revision: `stale:${previous?.originalJobId ?? context.jobId}:${hop}`,
         });
-        await retryTransaction(deps.db, (tx) => workerOutbox(tx, { availableAt }).enqueue(intent));
-        deps.logger.warn(
-          { queue: context.queue, jobId: context.jobId, availableAt },
-          'stale worker: delayed intent left for a current worker',
+        const inserted = await retryTransaction(deps.db, (tx) =>
+          enqueueDelayedWorkerIntent(tx, intent, availableAt),
         );
+        if (inserted) {
+          deps.logger.warn(
+            { queue: context.queue, jobId: context.jobId, availableAt, hop },
+            'stale worker: delayed intent left for a current worker',
+          );
+        }
       }
       throw error;
     }
