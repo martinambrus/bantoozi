@@ -1,3 +1,4 @@
+import { writeSetting } from '@bantoozi/db';
 import { EngineModelWatchSchema as OriginModelWatchSchema } from '../../../packages/shared/test/support/origin-model-watch.js';
 import { startFakeTypeSafe, type FakeTypeSafeServer } from '@bantoozi/testing';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -42,6 +43,7 @@ beforeEach(async () => {
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
     [
       'engine.model_resolution',
+      'engine.typesafe_model',
       'engine.model_watch',
       'engine.model_candidate',
       'engine.model_probe',
@@ -298,3 +300,104 @@ describe('JEV-8: alias flap controls', () => {
     expect(mailer.sent).toHaveLength(1);
   });
 });
+
+describe('candidate lifetime', () => {
+  it.each([86_400_000, 86_400_001])(
+    'candidate age %i respects the 24-hour boundary',
+    async (age) => {
+      await answer(V114);
+      await answer(V114, age);
+      if (age === 86_400_000) {
+        expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+        expect(await candidate()).toBeUndefined();
+      } else {
+        expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
+        expect(await candidate()).toEqual({
+          model: V114,
+          firstSeenAt: iso(new Date(NOW.getTime() + age)),
+          count: 1,
+        });
+        expect(mailer.sent).toHaveLength(0);
+        expect(await registryOf(h)).toEqual({});
+        await answer(V114, age + GAP);
+        expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+      }
+    },
+  );
+
+  it('clears a candidate when a check sees a concrete setting', async () => {
+    await answer(V114);
+    await runWatch(h, { prober: realProber(h, fake, NOW), configured: V113, now: NOW, mailer });
+    expect(await candidate()).toBeUndefined();
+    await answer(V114, GAP);
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
+    expect(await candidate()).toMatchObject({ model: V114, count: 1 });
+  });
+
+  it('clears a candidate when the setting leaves the alias during a probe', async () => {
+    await answer(V114);
+    let reads = 0;
+    await runWatch(h, {
+      prober: realProber(h, fake, NOW),
+      configuredModel: async () => (++reads === 1 ? ALIAS : V113),
+      now: NOW,
+      mailer,
+    });
+    expect(await candidate()).toBeUndefined();
+  });
+});
+
+it('discards an expired candidate on a failed confirmation without scheduling another retry', async () => {
+  await answer(V114);
+  const before = await h.intents('house.model-watch', { pending: true });
+  fake.setOptions({ failRate: 1, failStatus: 503 });
+  const at = new Date(NOW.getTime() + 86_400_001);
+  await runWatch(h, { prober: realProber(h, fake, at), now: at, mailer });
+  expect(await candidate()).toBeUndefined();
+  expect(await h.intents('house.model-watch', { pending: true })).toHaveLength(before.length);
+});
+
+it('discards a candidate when the setting is saved concrete and back between watch runs', async () => {
+  fake.setOptions({ failRate: 0 });
+  await answer(V114);
+  expect(await candidate()).toMatchObject({ model: V114, count: 1 });
+  await h.db.transaction(async (tx) => {
+    await writeSetting(tx, { key: 'engine.typesafe_model', value: V113, updatedBy: null });
+  });
+  await h.db.transaction(async (tx) => {
+    await writeSetting(tx, { key: 'engine.typesafe_model', value: ALIAS, updatedBy: null });
+  });
+  expect(await candidate()).toMatchObject({ model: V114, count: 1 });
+  // Match the database save time to this fixture's injected clock, ahead of PostgreSQL.
+  await h.owner.query(`UPDATE settings SET updated_at = $1 WHERE key = 'engine.typesafe_model'`, [
+    new Date(NOW.getTime() + 60_000),
+  ]);
+  await answer(V114, 30 * 60_000);
+  expect(await resolutionRow(h.owner)).toMatchObject({ model: V113 });
+  expect(await candidate()).toMatchObject({
+    model: V114,
+    count: 1,
+    firstSeenAt: iso(new Date(NOW.getTime() + 30 * 60_000)),
+  });
+  await answer(V114, 40 * 60_000);
+  expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+});
+
+it.each([-1, 0])(
+  'keeps a candidate when the setting was last saved %i ms before it',
+  async (offset) => {
+    await h.db.transaction(async (tx) => {
+      await writeSetting(tx, { key: 'engine.typesafe_model', value: ALIAS, updatedBy: null });
+    });
+    await h.owner.query(`UPDATE settings SET updated_at = $1 WHERE key = 'engine.typesafe_model'`, [
+      new Date(NOW.getTime() + offset),
+    ]);
+    await answer(V114);
+    const setting = await rawSetting(h.owner, 'engine.typesafe_model');
+    await answer(V114, GAP - 1);
+    expect(await candidate()).toEqual({ model: V114, count: 2, firstSeenAt: iso(NOW) });
+    expect(await rawSetting(h.owner, 'engine.typesafe_model')).toEqual(setting);
+    await answer(V114, GAP);
+    expect(await resolutionRow(h.owner)).toMatchObject({ model: V114 });
+  },
+);

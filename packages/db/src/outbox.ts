@@ -46,10 +46,10 @@ async function insertIntents(
     ON CONFLICT DO NOTHING`);
 }
 
-async function insertDelayedWorkerIntents(
+async function insertWorkerIntents(
   tx: Executor,
   intents: readonly JobIntent[],
-  availableAt: Date,
+  availableAt?: Date,
 ) {
   if (intents.length === 0) return;
   // A single upsert cannot affect the same row twice. Match sequential inserts by keeping the
@@ -65,13 +65,17 @@ async function insertDelayedWorkerIntents(
   await tx.execute(sql`
     INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
     SELECT queue, payload, dedupe_key, NULL,
-           greatest(now(), ${availableAt.toISOString()}::timestamptz)
+           greatest(now(), ${availableAt?.toISOString() ?? null}::timestamptz)
       FROM (${intentRows(distinct)}) batch
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
-    DO UPDATE SET available_at = least(job_outbox.available_at, excluded.available_at)
+    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_until > now()
+                                     THEN excluded.available_at
+                                     ELSE least(job_outbox.available_at, excluded.available_at) END,
+                  lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND excluded.available_at < job_outbox.available_at`);
+        AND (job_outbox.lease_until > now()
+             OR (${availableAt !== undefined} AND excluded.available_at < job_outbox.available_at))`);
 }
 
 /**
@@ -87,24 +91,41 @@ export async function rankCovered(tx: TenantTx): Promise<boolean> {
 }
 
 /**
- * A delayed worker intent: identical undelivered work keeps its earliest due time and its lease.
+ * A delayed worker intent: identical unleased work keeps its earliest due time. A leased intent
+ * may already have reached a handler (for example analysis.process seeing not_due) before the
+ * relay acknowledges it. Re-arm that row at the requested time and revoke the relay lease, so its
+ * late acknowledgement or failure cannot erase the deferral. The in-flight job remains safe to
+ * finish; consumers are idempotent. Subsequent unleased deferrals again keep the earliest time.
  * Worker-role only: requires SELECT and UPDATE on job_outbox; the API role has INSERT only.
- * Returns true when work was inserted or brought forward; false when already due no later.
+ * Returns true when inserted, re-armed or brought forward; false when already pending no later.
  */
 export async function enqueueDelayedWorkerIntent(
   tx: Executor,
   intent: JobIntent,
   availableAt: Date,
 ): Promise<boolean> {
+  return insertWorkerIntent(tx, intent, availableAt);
+}
+
+/** Immediate worker writes also re-arm live leases; pending delayed work keeps its due time. */
+async function insertWorkerIntent(
+  tx: Executor,
+  intent: JobIntent,
+  availableAt?: Date,
+): Promise<boolean> {
   const result = await tx.execute(sql`
     INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
     VALUES (${intent.queue}, ${JSON.stringify(intent.payload)}::jsonb, ${intent.dedupeKey}, NULL,
-            greatest(now(), ${availableAt.toISOString()}::timestamptz))
+            greatest(now(), ${availableAt?.toISOString() ?? null}::timestamptz))
     ON CONFLICT (queue, dedupe_key)
       WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL
-    DO UPDATE SET available_at = least(job_outbox.available_at, excluded.available_at)
+    DO UPDATE SET available_at = CASE WHEN job_outbox.lease_until > now()
+                                     THEN excluded.available_at
+                                     ELSE least(job_outbox.available_at, excluded.available_at) END,
+                  lease_token = NULL, lease_until = NULL
       WHERE job_outbox.delivered_at IS NULL
-        AND excluded.available_at < job_outbox.available_at
+        AND (job_outbox.lease_until > now()
+             OR (${availableAt !== undefined} AND excluded.available_at < job_outbox.available_at))
     RETURNING id`);
   return result.rows.length > 0;
 }
@@ -122,19 +143,16 @@ export function tenantOutbox(tx: TenantTx): JobSender {
  * A worker transaction's outbox writer (follow-on jobs; no requester). With `availableAt`, every
  * intent it writes is delayed until then: a job deferred by a publisher cooldown or a known retry
  * time records such an intent instead of sleeping inside a worker (spec 03 §8.2). An identical
- * pending intent still coalesces it (the earliest due time wins).
+ * pending intent without a live lease still coalesces it (the earliest delayed due time wins).
+ * A live lease is revoked and the row re-armed, fencing late relay acknowledgements.
  */
 export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = {}): JobSender {
   const { availableAt } = options;
   return {
     enqueue: async (intent) => {
-      if (availableAt === undefined) await insertIntent(tx, intent, null);
-      else await enqueueDelayedWorkerIntent(tx, intent, availableAt);
+      await insertWorkerIntent(tx, intent, availableAt);
     },
-    enqueueMany: (intents) =>
-      availableAt === undefined
-        ? insertIntents(tx, intents, null)
-        : insertDelayedWorkerIntents(tx, intents, availableAt),
+    enqueueMany: (intents) => insertWorkerIntents(tx, intents, availableAt),
   };
 }
 
@@ -282,8 +300,8 @@ export async function pgBossQueueExists(db: Executor, name: string): Promise<boo
  * Age in seconds of the oldest due, undelivered intent (the relay warns above 5 minutes; spec 11
  * §6.1 "Pipeline backlog"). An intent delayed on purpose (an origin cooldown, a merge retry after
  * an Undo pin) is not backlog before its `available_at` and counts from then. A failed send counts
- * from its creation, also during its backoff: the backoff moves `available_at`, and a send that
- * keeps failing is exactly the backlog this reports.
+ * from its creation once due. Future retries and re-armed deferrals stay out of current backlog;
+ * their last_error and attempts remain available for Admin diagnostics.
  */
 export async function oldestPendingOutboxAgeSeconds(
   db: Executor,
@@ -294,6 +312,6 @@ export async function oldestPendingOutboxAgeSeconds(
     SELECT extract(epoch FROM ${at} - min(CASE WHEN last_error IS NULL THEN available_at
                                                ELSE created_at END))::float8 AS age
       FROM job_outbox
-     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= ${at})`);
+     WHERE delivered_at IS NULL AND available_at <= ${at}`);
   return result.rows[0]?.age ?? null;
 }

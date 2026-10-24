@@ -1,4 +1,5 @@
 import {
+  judgeModelProbe,
   planModelChange,
   type AdminEngineModel,
   type EngineModelProbe,
@@ -94,6 +95,11 @@ export function useModelStatus() {
     queryKey: key,
     queryFn: ({ signal }) => api.call(routes.adminEngineModelGet, undefined, { signal }),
   });
+  // The cache retains both the API time and when this browser received it, including on remount.
+  const serverNow = () =>
+    query.data === undefined
+      ? Date.now()
+      : Date.parse(query.data.now) + (Date.now() - query.dataUpdatedAt);
   const probe = useApiMutation(routes.adminEngineModelProbe);
   const check = useApiMutation(routes.adminEngineModelCheck);
   const { mutateAsync: sendProbe } = probe;
@@ -163,12 +169,13 @@ export function useModelStatus() {
     (target: string): Promise<ProbeOutcome> =>
       exclusive<ProbeOutcome>({ name: 'probing', model: target }, async (signal) => {
         const first = await read(signal);
-        const reusable = planModelChange(
-          stateOf(first.status),
-          target,
-          first.serverNow() + MODEL_REUSE_SLACK_MS,
-        );
-        if (reusable.state === 'ok') return { state: 'ok', plan: reusable, status: first.status };
+        const reusable = planModelChange(stateOf(first.status), target, first.serverNow());
+        if (
+          reusable.state === 'ok' &&
+          judgeModelProbe(first.status.probes, target, first.serverNow() + MODEL_REUSE_SLACK_MS)
+            .state === 'ok'
+        )
+          return { state: 'ok', plan: reusable, status: first.status };
         const baseline = first.status.probes[target]?.at;
         const baselineMs = baseline === undefined ? Number.NEGATIVE_INFINITY : Date.parse(baseline);
         await sendProbe({ body: { model: target } });
@@ -202,5 +209,5 @@ export function useModelStatus() {
 
   const cancel = useCallback(() => running.current?.abort(), []);
 
-  return { query, run, ensureProbe, checkNow, cancel };
+  return { query, run, ensureProbe, checkNow, cancel, serverNow };
 }

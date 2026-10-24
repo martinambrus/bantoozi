@@ -28,8 +28,8 @@ export function recoverStaleJob<Q extends QueueName>(
           const hop = previous === null ? 0 : previous.hop + 1;
           const delaySeconds = Math.min(error.retryDelaySeconds * 2 ** Math.min(hop, 5), 15 * 60);
           const availableAt = new Date(nowOf(deps).getTime() + delaySeconds * 1000);
-          // A relay may still be acknowledging the original intent. This job's replacement must
-          // not coalesce with that intent; repeated handling of this job still coalesces with itself.
+          // D-319 per-hop keys keep recovery generations distinct and carry their backoff hop.
+          // Live-lease re-arming also fences relay acks; repeated handling still coalesces per hop.
           const intent = buildJobIntent(context.queue, payload, {
             revision: `stale:${previous?.originalJobId ?? context.jobId}:${hop}`,
           });

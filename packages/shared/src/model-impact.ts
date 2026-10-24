@@ -50,18 +50,36 @@ export function judgeModelProbe(
 }
 
 /**
- * The concrete model a setting stands for: the id itself, or for the alias the stored resolution,
+ * D-304: a resolution is dormant only with an unmarked pin for another model and a check outside
+ * the probe window. Shared by the worker and save-time planning; time never enters a fingerprint.
+ */
+export function resolutionInForce(
+  row: { model: string; checkedAt?: string },
+  pin: { model: string; alias?: string | undefined } | null,
+  now: number | Date,
+): boolean {
+  if (pin === null || pin.alias !== undefined || pin.model === row.model) return true;
+  const age = (typeof now === 'number' ? now : now.getTime()) - Date.parse(row.checkedAt ?? '');
+  return age >= -MODEL_PROBE_MAX_SKEW_MS && age <= MODEL_PROBE_MAX_AGE_MS;
+}
+
+/**
+ * The concrete model a setting stands for: the id itself, or for the alias an in-force resolution,
  * else the pinned model; `null` when nothing says (an alias that was never resolved on a fresh
  * install).
  */
 export function concreteModelOf(
   setting: string,
-  resolution: { model: string } | null | undefined,
-  pin: { model: string } | null | undefined,
+  resolution: { model: string; checkedAt?: string } | null | undefined,
+  pin: { model: string; alias?: string | undefined } | null | undefined,
+  nowMs: number,
 ): string | null {
   if (!isModelAlias(setting)) return setting;
   const pinned = pin?.model;
-  return resolution?.model ?? (pinned === undefined || isModelAlias(pinned) ? null : pinned);
+  if (resolution != null && resolutionInForce(resolution, pin ?? null, nowMs)) {
+    return resolution.model;
+  }
+  return pinned === undefined || isModelAlias(pinned) ? null : pinned;
 }
 
 /**
@@ -100,9 +118,9 @@ export interface ModelState {
   /** The effective `engine.typesafe_model`: a concrete id or `jev-latest`. */
   setting: string;
   /** `engine.model_resolution`: where the alias pointed when the worker last asked. */
-  resolution: { model: string } | null;
+  resolution: { model: string; checkedAt?: string } | null;
   /** `engine.model_pin`: the model the stored analyses were made with. */
-  pin: { model: string } | null;
+  pin: { model: string; alias?: string | undefined } | null;
   /** `engine.model_probe`: the newest probe results by requested id. */
   probes: Readonly<Record<string, EngineModelProbe>> | null | undefined;
 }
@@ -128,7 +146,7 @@ export type ModelChangePlan =
 export function planModelChange(state: ModelState, target: string, nowMs: number): ModelChangePlan {
   const verdict = judgeModelProbe(state.probes, target, nowMs);
   if (verdict.state !== 'ok') return verdict;
-  const current = concreteModelOf(state.setting, state.resolution, state.pin);
+  const current = concreteModelOf(state.setting, state.resolution, state.pin, nowMs);
   const impact = modelPathImpact(current, verdict.concrete);
   return { state: 'ok', probe: verdict.probe, current, concrete: verdict.concrete, impact };
 }

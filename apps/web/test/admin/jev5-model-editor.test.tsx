@@ -823,6 +823,47 @@ describe('JEV-5 Check now', () => {
     expect(group()).toHaveTextContent(DEFAULT);
   });
 
+  it.each(['en', 'sk'] as const)(
+    'shows a failed check with a dormant resolution in %s',
+    async (language) => {
+      const { app, model } = await open({
+        language,
+        saved: ALIAS,
+        savedAt: modelAgo(60),
+        status: {
+          ...aliasStatus('jev-1.14.0', modelAgo(11)),
+          pin: { model: DEFAULT, since: T1 },
+        },
+        server: { checkOnRead: 1, checkResult: { ok: false, error: 'timeout' } },
+      });
+      const checkButton = inGroup().getByRole('button', {
+        name: language === 'en' ? 'Check now' : 'Overiť teraz',
+      });
+      await app.user.click(checkButton);
+      await wait(1_800);
+
+      await vi.waitFor(() =>
+        expect(group()).toHaveTextContent(
+          language === 'en'
+            ? `The check at ${printedTime(MODEL_NOW)} failed (Jev did not answer in time.). The alias is still unresolved.`
+            : `Overenie ${printedTime(MODEL_NOW, 'Europe/Bratislava', 'sk')} zlyhalo (Jev neodpovedal včas.). Vydanie pre alias zatiaľ nie je zistené.`,
+        ),
+      );
+      expect(group()).toHaveTextContent(
+        language === 'en' ? 'Not resolved yet.' : 'Zatiaľ nezistené.',
+      );
+      expect(group()).not.toHaveTextContent('jev-1.14.0');
+      expect(group()).not.toHaveTextContent(
+        language === 'en' ? 'The release stays' : 'Vydanie zostáva',
+      );
+      expect(checkButton).not.toHaveAttribute('aria-busy');
+      expect(model.checks).toBe(1);
+      const settled = model.reads;
+      await wait(20_000);
+      expect(model.reads).toBe(settled);
+    },
+  );
+
   it('gives up after 90 seconds, with one request', async () => {
     const { app, model } = await open({
       saved: ALIAS,
@@ -962,6 +1003,7 @@ const REQUIRED = [
   'settings.modelEditor.checking',
   'settings.modelEditor.checkTimeout',
   'settings.modelEditor.checkFailed',
+  'settings.modelEditor.checkFailedUnresolved',
   'settings.modelEditor.probing',
   'settings.modelEditor.probeAnswered',
   'settings.modelEditor.probeRefused',
@@ -1070,4 +1112,105 @@ it.each([0, 1])('shows an alias resolution checked %i ms after a recent save', a
   await open({ saved: ALIAS, savedAt, status: aliasStatus('jev-1.14.0', checkedAt) });
   expect(group()).toHaveTextContent(`Resolves to jev-1.14.0 · checked ${printedTime(checkedAt)}`);
   expect(group()).not.toHaveTextContent('Not resolved yet.');
+});
+
+describe('D-304 second save before alias re-resolution', () => {
+  it('requires eval replay from the concrete pin while the alias resolution is dormant', async () => {
+    const { app } = await open({
+      saved: ALIAS,
+      status: {
+        ...aliasStatus(DEFAULT),
+        pin: { model: 'jev-2.0.0', since: T1 },
+        probes: freshProbes('jev-1.14.0'),
+      },
+    });
+    await app.user.click(radio(PINNED_RADIO));
+    await typeId(app, 'jev-1.14.0');
+    await app.user.click(saveButton());
+    const dialog = await restartDialog();
+    expect(tickIn(dialog)).not.toBeChecked();
+    expect(confirmIn(dialog)).toBeDisabled();
+    expect(app.calls(PATCH)).toHaveLength(0);
+    await app.user.click(tickIn(dialog));
+    await app.user.click(confirmIn(dialog));
+    await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
+    expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: 'jev-1.14.0', acknowledge: true });
+  });
+});
+
+it('keeps a nine-minute resolution in force when reusing a fresh probe on a skewed browser clock', async () => {
+  vi.setSystemTime(new Date(Date.parse(MODEL_NOW) + 15 * 60_000));
+  const { app } = await open({
+    saved: ALIAS,
+    status: {
+      ...aliasStatus(DEFAULT, modelAgo(9)),
+      pin: { model: 'jev-2.0.0', since: T1 },
+      probes: freshProbes('jev-1.14.0'),
+    },
+  });
+  await app.user.click(radio(PINNED_RADIO));
+  await typeId(app, 'jev-1.14.0');
+  await app.user.click(saveButton());
+  const dialog = await changeDialog();
+  expect(dialog).toHaveTextContent(KEPT_TEXT);
+  expect(within(dialog).queryByRole('checkbox')).toBeNull();
+});
+
+it('ends Check now polling with a visible fingerprint registration failure', async () => {
+  const { app, model } = await open({
+    saved: ALIAS,
+    status: aliasStatus(DEFAULT, modelAgo(60)),
+    server: { checkOnRead: 1, checkResult: { ok: false, error: 'fingerprint_registration' } },
+  });
+  await app.user.click(inGroup().getByRole('button', { name: 'Check now' }));
+  await wait(1_800);
+  await vi.waitFor(() => expect(group()).toHaveTextContent('fingerprint_registration'));
+  expect(group()).toHaveTextContent(`The release stays ${DEFAULT}.`);
+  expect(inGroup().getByRole('button', { name: 'Check now' })).not.toHaveAttribute('aria-busy');
+  const settled = model.reads;
+  await wait(20_000);
+  expect(model.reads).toBe(settled);
+});
+
+it('uses the advancing API clock for prefill after an in-force resolution becomes dormant', async () => {
+  vi.setSystemTime(new Date(Date.parse(MODEL_NOW) + 7 * 60 * 60_000));
+  const { app } = await open({
+    saved: ALIAS,
+    status: {
+      ...aliasStatus('jev-1.14.0', modelAgo(9)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).toHaveTextContent('Resolves to jev-1.14.0');
+  await wait(2 * 60_000);
+  await app.user.click(radio(PINNED_RADIO));
+  expect(input()).toHaveValue(DEFAULT);
+  expect(group()).toHaveTextContent('Not resolved yet.');
+});
+
+it('uses a recent resolution from before the setting save for display and prefill', async () => {
+  const { app } = await open({
+    saved: ALIAS,
+    savedAt: modelAgo(1),
+    status: {
+      ...aliasStatus('jev-1.14.0', modelAgo(2)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).toHaveTextContent('Resolves to jev-1.14.0');
+  await app.user.click(radio(PINNED_RADIO));
+  expect(input()).toHaveValue('jev-1.14.0');
+});
+
+it('hides a dormant resolution even when it was checked after the setting save', async () => {
+  await open({
+    saved: ALIAS,
+    savedAt: modelAgo(60),
+    status: {
+      ...aliasStatus('jev-1.14.0', modelAgo(11)),
+      pin: { model: DEFAULT, since: T1 },
+    },
+  });
+  expect(group()).toHaveTextContent('Not resolved yet.');
+  expect(group()).not.toHaveTextContent('Resolves to jev-1.14.0');
 });

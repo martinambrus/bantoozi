@@ -8,8 +8,6 @@ import {
 import {
   EngineModelPinSchema,
   EngineModelResolutionSchema,
-  MODEL_PROBE_MAX_AGE_MS,
-  MODEL_PROBE_MAX_SKEW_MS,
   canonicalJson,
   type EngineModelPin,
   type EngineModelResolution,
@@ -80,21 +78,7 @@ export async function recordModelResolution(
   });
 }
 
-/**
- * Whether a stored resolution still describes the model this installation serves. It is dormant
- * only when the pin is not alias-marked (no process ran the alias), names another model, and the
- * row was not confirmed within the probe window; every other row is in force. Not part of any
- * restart fingerprint: the fingerprint depends on stored rows only, never on the clock.
- */
-export function resolutionInForce(
-  row: EngineModelResolution,
-  pin: EngineModelPin | null,
-  now: number | Date,
-): boolean {
-  if (pin === null || pin.alias !== undefined || pin.model === row.model) return true;
-  const age = (typeof now === 'number' ? now : now.getTime()) - Date.parse(row.checkedAt);
-  return age >= -MODEL_PROBE_MAX_SKEW_MS && age <= MODEL_PROBE_MAX_AGE_MS;
-}
+export { resolutionInForce } from '@bantoozi/shared';
 
 /** The stored resolution and pin, each null when absent or invalid. */
 export async function readResolutionState(

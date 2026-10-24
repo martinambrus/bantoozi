@@ -3,6 +3,7 @@ import {
   isModelAlias,
   JEV_LATEST_ALIAS,
   concreteModelOf,
+  resolutionInForce,
   type AdminSettingsPatch,
   type ModelImpact,
 } from '@bantoozi/shared';
@@ -102,7 +103,6 @@ export function ModelEditor({
   defaultValue,
   source,
   hasStoredRow,
-  storedAt,
   problems,
   onSend,
   onSaved,
@@ -156,7 +156,9 @@ export function ModelEditor({
       setEdit({ mode, id: draft.id });
       return;
     }
-    const resolved = status ? concreteModelOf(status.setting.value, resolution, status.pin) : null;
+    const resolved = status
+      ? concreteModelOf(status.setting.value, status.resolution, status.pin, model.serverNow())
+      : null;
     setEdit({ mode, id: draft.id === '' ? (resolved ?? '') : draft.id });
   }
 
@@ -281,19 +283,17 @@ export function ModelEditor({
   }
 
   const storedResolution = status?.resolution ?? null;
-  // A concrete worker can leave an old alias resolution behind. After saving the alias again,
-  // show it only once a check has confirmed it for this setting change.
+  // Display, prefill and save planning all use the shared D-304 rule on the advancing API clock.
   const resolution =
     storedResolution !== null &&
-    (storedAt == null || Date.parse(storedResolution.checkedAt) >= Date.parse(storedAt))
+    resolutionInForce(storedResolution, status?.pin ?? null, model.serverNow())
       ? storedResolution
       : null;
   const lastCheck = status?.watch.lastCheck ?? null;
   const checkFailed =
     lastCheck !== null &&
     !lastCheck.ok &&
-    resolution !== null &&
-    Date.parse(lastCheck.at) > Date.parse(resolution.checkedAt);
+    (resolution === null || Date.parse(lastCheck.at) > Date.parse(resolution.checkedAt));
   const when = (iso: string) => whenText(iso, i18n.language, timezone);
   const resetTarget = typeof defaultValue === 'string' ? defaultValue : null;
 
@@ -403,11 +403,16 @@ export function ModelEditor({
           </Hint>
           {checkFailed ? (
             <Hint>
-              {t('settings.modelEditor.checkFailed', {
-                time: when(lastCheck.at),
-                reason: errorWords(t, lastCheck.error),
-                model: resolution.model,
-              })}
+              {t(
+                resolution === null
+                  ? 'settings.modelEditor.checkFailedUnresolved'
+                  : 'settings.modelEditor.checkFailed',
+                {
+                  time: when(lastCheck.at),
+                  reason: errorWords(t, lastCheck.error),
+                  model: resolution?.model,
+                },
+              )}
             </Hint>
           ) : null}
           {checkTimedOut ? <Hint>{t('settings.modelEditor.checkTimeout')}</Hint> : null}

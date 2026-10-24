@@ -367,11 +367,13 @@ describe('relay primitives (worker role)', () => {
     const due = await oldestPendingOutboxAgeSeconds(ctx.worker);
     expect(due).toBeGreaterThanOrEqual(60);
     expect(due).toBeLessThan(300);
-    // A failed send counts from its creation, also while its backoff moves `available_at`.
+    // A failed send counts from creation once due; future backoff is not current backlog.
     await ctx.owner.query(
       `UPDATE job_outbox SET last_error = 'Error', available_at = now() + interval '15 minutes'
         WHERE delivered_at IS NULL`,
     );
+    expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
+    await ctx.owner.query('UPDATE job_outbox SET available_at = now() WHERE delivered_at IS NULL');
     expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeGreaterThan(3_000);
     await drain();
   });
@@ -446,7 +448,7 @@ describe('relay primitives (worker role)', () => {
   });
 });
 
-it('the earliest delayed intent wins without changing leases, payloads or delivered history', async () => {
+it('the earliest delayed intent wins unless re-arming a live lease; payloads and history stay', async () => {
   await drain();
   const intent = buildJobIntent('article.enrich', { articleId: '987' }, { revision: 'earliest' });
   const early = new Date(Date.now() + 60_000);
@@ -463,14 +465,19 @@ it('the earliest delayed intent wins without changing leases, payloads or delive
   );
   const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
   expect(claimed).toBeDefined();
-  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(false);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, late)).toBe(true);
   pending = (await outboxRows('article.enrich')).filter((r) => r.delivered_at === null);
   expect(pending[0]).toMatchObject({
-    lease_token: claimed!.leaseToken,
+    lease_token: null,
+    available_at: late,
     attempts: 1,
     payload: intent.payload,
   });
-  await completeOutboxIntent(ctx.worker, claimed!);
+  expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(false);
+  expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, early)).toBe(true);
+  await ctx.owner.query('UPDATE job_outbox SET available_at = now() WHERE id = $1', [claimed!.id]);
+  const [replacement] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  expect(await completeOutboxIntent(ctx.worker, replacement!)).toBe(true);
   expect(await enqueueDelayedWorkerIntent(ctx.worker, intent, early)).toBe(true);
   const rows = (await outboxRows('article.enrich')).filter(
     (r) => r.dedupe_key === intent.dedupeKey,
@@ -583,7 +590,7 @@ it('batch inserts preserve pending duplicates, null keys and delivered history',
   expect(pendingRows.every((r) => r.user_id === null)).toBe(true);
 });
 
-it('delayed batches retain the earliest time and leases, including duplicate and null keys', async () => {
+it('delayed batches retain the earliest time and re-arm leases, including duplicate and null keys', async () => {
   await drain();
   const pending = buildJobIntent('article.extract', { articleId: '990' });
   const fresh = buildJobIntent('article.extract', { articleId: '991' });
@@ -608,7 +615,7 @@ it('delayed batches retain the earliest time and leases, including duplicate and
   expect(before.every((r) => r.available_at.getTime() === early.getTime())).toBe(true);
   expect(before[0]).toMatchObject({
     payload: pending.payload,
-    lease_token: '00000000-0000-4000-8000-000000000001',
+    lease_token: null,
   });
   await ctx.worker.transaction(async (tx) => {
     await workerOutbox(tx, { availableAt: late }).enqueueMany!([pending, fresh]);
@@ -623,3 +630,136 @@ it('delayed batches retain the earliest time and leases, including duplicate and
     (await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 })).map((r) => r.payload),
   ).toEqual([fresh.payload]);
 });
+
+it.each([false, true])(
+  'preserves a deferral made before relay acknowledgement (batch %s)',
+  async (batch) => {
+    await drain();
+    const intent = buildJobIntent('analysis.process', {
+      analysisRequestId: '00000000-0000-4000-8000-000000000043',
+    });
+    await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    expect(claimed).toBeDefined();
+    const due = new Date(Date.now() + 600_000);
+    // The just-sent handler sees not_due, schedules itself, and finishes before the relay acks.
+    await ctx.worker.transaction(async (tx) => {
+      const sender = workerOutbox(tx, { availableAt: due });
+      if (batch) await sender.enqueueMany!([intent]);
+      else await sender.enqueue(intent);
+    });
+    expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(false);
+    expect(
+      await failOutboxIntent(ctx.worker, claimed!, {
+        error: 'late send failure',
+        retryInSeconds: 1,
+      }),
+    ).toBe(false);
+    const pending = (await outboxRows('analysis.process')).filter(
+      (row) => row.delivered_at === null,
+    );
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.available_at).toEqual(due);
+    expect(pending[0]!.lease_token).toBeNull();
+  },
+);
+
+it.each([false, true])(
+  'keeps crashed-relay work due after a delayed insert (batch %s)',
+  async (batch) => {
+    await drain();
+    const intent = buildJobIntent('house.reconcile', {}, { revision: 'expired-lease' });
+    await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    await ctx.owner.query(
+      "UPDATE job_outbox SET lease_until = now() - interval '1 second' WHERE id = $1",
+      [claimed!.id],
+    );
+    const before = (await outboxRows()).find((row) => row.id === claimed!.id)!;
+    await ctx.worker.transaction(async (tx) => {
+      const sender = workerOutbox(tx, { availableAt: new Date(Date.now() + 600_000) });
+      if (batch) await sender.enqueueMany!([intent]);
+      else await sender.enqueue(intent);
+    });
+    expect((await outboxRows()).find((row) => row.id === claimed!.id)!.available_at).toEqual(
+      before.available_at,
+    );
+    const due = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    expect(due.map((row) => row.id)).toEqual([claimed!.id]);
+  },
+);
+
+it('retains failure details without counting a future re-arm as backlog', async () => {
+  await drain();
+  const intent = buildJobIntent('house.reconcile', {}, { revision: 'failed-rearm' });
+  await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+  const [failed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  await failOutboxIntent(ctx.worker, failed!, { error: 'broker unavailable', retryInSeconds: 0 });
+  await ctx.owner.query(
+    "UPDATE job_outbox SET created_at = now() - interval '1 hour' WHERE id = $1",
+    [failed!.id],
+  );
+  const [retry] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+  const due = new Date(Date.now() + 600_000);
+  await enqueueDelayedWorkerIntent(ctx.worker, intent, due);
+  expect(await completeOutboxIntent(ctx.worker, retry!)).toBe(false);
+  expect((await outboxRows()).find((row) => row.id === failed!.id)).toMatchObject({
+    last_error: 'broker unavailable',
+    attempts: 2,
+  });
+  expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
+  expect(await oldestPendingOutboxAgeSeconds(ctx.worker, due)).toBeGreaterThan(3_000);
+});
+
+it.each([false, true])(
+  'preserves immediate worker work before relay acknowledgement (batch %s)',
+  async (batch) => {
+    await drain();
+    const intent = buildJobIntent('house.reconcile', {}, { revision: 'immediate-live' });
+    await ctx.worker.transaction((tx) => workerOutbox(tx).enqueue(intent));
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    await ctx.worker.transaction(async (tx) => {
+      const sender = workerOutbox(tx);
+      if (batch) await sender.enqueueMany!([intent, intent]);
+      else await sender.enqueue(intent);
+    });
+    expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(false);
+    expect(
+      await failOutboxIntent(ctx.worker, claimed!, { error: 'late', retryInSeconds: 900 }),
+    ).toBe(false);
+    const pending = (await outboxRows()).filter((row) => row.delivered_at === null);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ id: claimed!.id, lease_token: null });
+    expect(
+      (await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 })).map((row) => row.id),
+    ).toEqual([claimed!.id]);
+  },
+);
+
+it.each([false, true])(
+  'keeps API immediate writes INSERT-only with a live lease (batch %s)',
+  async (batch) => {
+    await drain();
+    const user = await createUser(ctx.owner);
+    const intent = buildJobIntent('user.learn', { userId: user.id });
+    const write = () =>
+      withTenant(ctx.app, user.id, async (tx) => {
+        const sender = tenantOutbox(tx);
+        if (batch) await sender.enqueueMany!([intent]);
+        else await sender.enqueue(intent);
+      });
+    await write();
+    const [claimed] = await claimOutboxIntents(ctx.worker, { limit: 1, leaseSeconds: 30 });
+    await write();
+    expect(await completeOutboxIntent(ctx.worker, claimed!)).toBe(true);
+    expect((await outboxRows()).filter((row) => row.delivered_at === null)).toHaveLength(0);
+    for (const statement of [
+      'SELECT * FROM job_outbox',
+      'UPDATE job_outbox SET attempts = attempts',
+    ]) {
+      expect(
+        await sqlStateOf(asTenant(ctx.appPool, user.id, (client) => client.query(statement))),
+      ).toBe('42501');
+    }
+  },
+);

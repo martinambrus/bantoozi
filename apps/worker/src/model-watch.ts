@@ -1,4 +1,5 @@
 import {
+  readSettingRows,
   retryTransaction,
   updateSettingLocked,
   workerOutbox,
@@ -17,6 +18,7 @@ import {
 export const MODEL_CANDIDATE_KEY = 'engine.model_candidate';
 export const MODEL_WATCH_KEY = 'engine.model_watch';
 export const MODEL_WATCH_CONFIRM_MS = 10 * 60_000;
+export const MODEL_CANDIDATE_MAX_AGE_MS = 24 * 60 * 60_000;
 const MODEL_WATCH_MAX_RETRIES = 3;
 const MODEL_WATCH_RETRY_MS = 60_000;
 export const MODEL_WATCH_TRIGGER_GAP_MS = 10 * 60_000;
@@ -72,10 +74,9 @@ export async function observeModelCandidate(
     let started = false;
     let confirmed = false;
     // All transactions touching both rows lock watch first, then candidate.
-    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => ({
-      ...watchStateOf(current),
-      lastCheck: { at: now.toISOString(), ok: true },
-    }));
+    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, watchStateOf);
+    // A save can leave the alias and return between runs; only the worker resets its candidate.
+    const [setting] = await readSettingRows(tx, ['engine.typesafe_model']);
     const candidate = await updateSettingLocked<EngineModelCandidate | null>(
       tx,
       MODEL_CANDIDATE_KEY,
@@ -83,7 +84,11 @@ export async function observeModelCandidate(
       (current) => {
         const parsed = EngineModelCandidateSchema.safeParse(current);
         const old = parsed.success ? parsed.data : undefined;
-        started = old === undefined || old.model !== model;
+        started =
+          old === undefined ||
+          old.model !== model ||
+          (setting !== undefined && setting.updatedAt.getTime() > Date.parse(old.firstSeenAt)) ||
+          now.getTime() - Date.parse(old.firstSeenAt) > MODEL_CANDIDATE_MAX_AGE_MS;
         const candidate = started
           ? { model, firstSeenAt: now.toISOString(), count: 1 }
           : { ...old!, count: Math.min(Number.MAX_SAFE_INTEGER, old!.count + 1) };
@@ -94,20 +99,30 @@ export async function observeModelCandidate(
     );
     if (candidate !== null && !confirmed) {
       await enqueueCandidateConfirmation(tx, candidate, now, started);
+      await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => ({
+        ...watchStateOf(current),
+        lastCheck: { at: now.toISOString(), ok: true },
+      }));
     }
+    // A confirmed observation still needs outgoing fingerprint registration and adoption.
+    // The handler publishes lastCheck only after both succeed, so Check now keeps polling.
     return confirmed;
   });
 }
 
 /** The caller holds the watch lock before taking the candidate lock, in this transaction. */
 export async function retryModelCandidate(tx: Transaction, now: Date): Promise<void> {
+  const [setting] = await readSettingRows(tx, ['engine.typesafe_model']);
   const candidate = await updateSettingLocked<EngineModelCandidate | null>(
     tx,
     MODEL_CANDIDATE_KEY,
     null,
     (current) => {
       const parsed = EngineModelCandidateSchema.safeParse(current);
-      return parsed.success
+      return parsed.success &&
+        (setting === undefined ||
+          setting.updatedAt.getTime() <= Date.parse(parsed.data.firstSeenAt)) &&
+        now.getTime() - Date.parse(parsed.data.firstSeenAt) <= MODEL_CANDIDATE_MAX_AGE_MS
         ? { ...parsed.data, count: Math.min(Number.MAX_SAFE_INTEGER, parsed.data.count + 1) }
         : null;
     },

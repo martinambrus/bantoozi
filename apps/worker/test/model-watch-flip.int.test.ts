@@ -25,6 +25,7 @@ import {
   API_KEY,
   LATER,
   NOW,
+  STORED_AT,
   V114,
   V2,
   WatchMailer,
@@ -105,6 +106,10 @@ async function aliasWorld(): Promise<void> {
   await h.owner.query('DELETE FROM engine_reservations');
   await h.owner.query('DELETE FROM usage_daily');
   await setSetting(h.owner, 'engine.typesafe_model', ALIAS);
+  // The saved setting predates the watch observations on this fixture's injected clock.
+  await h.owner.query(`UPDATE settings SET updated_at = $1 WHERE key = 'engine.typesafe_model'`, [
+    STORED_AT,
+  ]);
   await storeResolution(h.owner, OLD_MODEL);
   await clearAdmins(h.owner);
   await addAdmin(h.owner, ADMIN);
