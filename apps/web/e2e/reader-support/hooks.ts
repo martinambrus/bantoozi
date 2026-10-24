@@ -1,6 +1,7 @@
 import type { Control, FeedItem, NewFeedItem } from '../support/control.js';
 import type { FeedKey } from '../support/env.js';
 import { expect } from '../support/test.js';
+import { isExtracted } from '../support/pipeline.js';
 
 import { requestsFor } from './origin.js';
 
@@ -94,12 +95,11 @@ export async function arrive(
           (state) => state.title === appended.title,
         );
         articleId = found?.id ?? '';
-        return found?.pipelineState ?? 'not ingested';
+        return found !== undefined && isExtracted(found);
       },
       { message: `"${appended.title}" is extracted`, timeout: 45_000, intervals: [500, 1_000] },
     )
-    // A feed in automatic mode can take the article past `extracted` between two polls.
-    .toMatch(/^(extracted|translated|enriched|matched|degraded)$/);
+    .toBe(true);
   if (pageStatus !== undefined) {
     expect(
       (await requestsFor(control, key, pagePath)).length,
