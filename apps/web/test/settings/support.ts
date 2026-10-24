@@ -114,6 +114,10 @@ export function settingsRoutes(
     'GET /feed-preferences': () => json(200, []),
     'GET /subscriptions': () => json(200, []),
     'GET /me/learning': () => json(200, makeLearning()),
+    'GET /me/learning/estimates': () => {
+      const { estimates, estimateGate } = makeLearning();
+      return json(200, { estimates, estimateGate });
+    },
     'GET /me/learning/history': () => json(200, makeHistory()),
     ...over,
   };

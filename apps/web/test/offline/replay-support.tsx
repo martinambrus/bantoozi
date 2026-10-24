@@ -230,6 +230,10 @@ export function createArticleServer(
     ),
     // A rating makes the reader ask for the estimate status (the effect notice).
     'GET /me/learning': () => json(200, makeLearning()),
+    'GET /me/learning/estimates': () => {
+      const { estimates, estimateGate } = makeLearning();
+      return json(200, { estimates, estimateGate });
+    },
   };
 
   const fake: FakeServer = { me, routes };

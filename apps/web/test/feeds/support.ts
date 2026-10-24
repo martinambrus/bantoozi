@@ -76,6 +76,10 @@ export function feedsServer(options: FeedsServerOptions = {}) {
     routes: {
       [LIST]: () => json(200, state.subscriptions),
       'GET /me/learning': () => json(200, makeLearning()),
+      'GET /me/learning/estimates': () => {
+        const { estimates, estimateGate } = makeLearning();
+        return json(200, { estimates, estimateGate });
+      },
       ...options.routes,
     },
   };

@@ -65,6 +65,10 @@ async function openReader(
       routes: {
         'GET /articles/counts': () => json(200, COUNTS),
         'GET /me/learning': () => json(200, makeLearning()),
+        'GET /me/learning/estimates': () => {
+          const { estimates, estimateGate } = makeLearning();
+          return json(200, { estimates, estimateGate });
+        },
         ...options.routes,
       },
     },
