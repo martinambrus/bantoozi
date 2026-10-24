@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { createDatabase, missingReadinessQueues, readActiveCredentialSecret } from '@bantoozi/db';
+import {
+  createDatabase,
+  missingReadinessQueues,
+  PG_BOSS_CRON_QUEUE,
+  readActiveCredentialSecret,
+} from '@bantoozi/db';
 import { decryptProviderSecret, ProviderKeyring } from '@bantoozi/shared/server/credential-crypto';
 import { FAKE_TYPESAFE_PATH, startFakeTypeSafe } from '@bantoozi/testing';
 import type pg from 'pg';
@@ -33,7 +38,7 @@ const SNAPSHOT_LINES = 5;
 
 const quoteIdent = (name: string): string => `"${name.replace(/"/gu, '""')}"`;
 
-/** Registry queues and pg-boss's internal cron queue must survive the restore. */
+/** The internal cron queue must survive; newer release registry queues are advisory. */
 export async function checkQueues(pool: pg.Pool): Promise<string[]> {
   let missing: string[];
   try {
@@ -41,10 +46,15 @@ export async function checkQueues(pool: pg.Pool): Promise<string[]> {
   } catch {
     throw new VerifyError('queues', 'queue catalog could not be read');
   }
-  if (missing.length > 0) {
-    throw new VerifyError('queues', `missing ${missing.join(', ')}; run the migrate job`);
+  if (missing.includes(PG_BOSS_CRON_QUEUE)) {
+    throw new VerifyError('queues', `missing ${PG_BOSS_CRON_QUEUE}; run the migrate job`);
   }
-  return ['CHECK queues=ok (registry and internal cron queues present)'];
+  return [
+    'CHECK queues=ok (internal cron queue present)',
+    ...(missing.length === 0
+      ? []
+      : [`WARN registry queues missing: ${missing.join(', ')}; run the migrate job`]),
+  ];
 }
 
 async function scalar<T>(

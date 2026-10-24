@@ -130,13 +130,33 @@ describe('restore verification on a healthy restore', () => {
 });
 
 describe('restore verification on a damaged restore', () => {
-  it.each(['user.estimate', PG_BOSS_CRON_QUEUE])('fails naming missing queue %s', async (queue) => {
+  it('accepts a backup from before a registry queue was added, with migrate advice', async () => {
+    const queue = 'user.estimate';
     await pool.query('DELETE FROM pgboss.job WHERE name = $1', [queue]);
     await pool.query('SELECT pgboss.delete_queue($1)', [queue]);
     try {
+      const version = Number(
+        (await pool.query('SELECT count(*) AS n FROM drizzle.__drizzle_migrations')).rows[0].n,
+      );
+      const lines = await verifyRestore(pool, {
+        expectedSchemaVersion: version,
+        keys: { keyId: KEY_ID, keysJson: KEYS },
+      });
+      expect(lines).toContain('CHECK queues=ok (internal cron queue present)');
+      expect(lines).toContain('WARN registry queues missing: user.estimate; run the migrate job');
+      expect(lines.join('\n')).toContain('CHECK foreign_keys=ok');
+    } finally {
+      await runMigrations({ databaseUrl: testDb.urls.owner });
+    }
+  });
+
+  it('fails naming the missing internal cron queue', async () => {
+    await pool.query('DELETE FROM pgboss.job WHERE name = $1', [PG_BOSS_CRON_QUEUE]);
+    await pool.query('SELECT pgboss.delete_queue($1)', [PG_BOSS_CRON_QUEUE]);
+    try {
       await expect(
         verifyRestore(pool, { keys: { keyId: KEY_ID, keysJson: KEYS } }),
-      ).rejects.toThrow(new RegExp(`check queues failed:.*${queue}.*migrate`, 'u'));
+      ).rejects.toThrow(new RegExp(`check queues failed:.*${PG_BOSS_CRON_QUEUE}.*migrate`, 'u'));
     } finally {
       await runMigrations({ databaseUrl: testDb.urls.owner });
     }
