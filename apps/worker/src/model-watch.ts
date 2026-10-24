@@ -23,18 +23,23 @@ export const MODEL_WATCH_TRIGGER_GAP_MS = 10 * 60_000;
 
 type Notice = NonNullable<EngineModelWatch['notice']>;
 
-/** Both ids are validated concrete Jev releases; build metadata does not change precedence. */
+/**
+ * Validated concrete Jev releases: a fourth numeric component is a hotfix above the base release.
+ * Build metadata is ignored; `-` suffixes use semver precedence (ASCII: `-rc10` < `-rc9`).
+ */
 export function isOlderSameMajorRelease(answered: string, current: string): boolean {
-  const parts = (model: string) => /^jev-(\d+)\.(\d+)\.(\d+)(.*)$/.exec(model)!;
+  const parts = (model: string) => /^jev-(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(.*)$/.exec(model)!;
   const a = parts(answered);
   const b = parts(current);
   if (BigInt(a[1]!) !== BigInt(b[1]!)) return false;
-  for (const i of [2, 3]) {
-    if (BigInt(a[i]!) !== BigInt(b[i]!)) return BigInt(a[i]!) < BigInt(b[i]!);
+  for (const i of [2, 3, 4]) {
+    const left = BigInt(a[i] ?? '0');
+    const right = BigInt(b[i] ?? '0');
+    if (left !== right) return left < right;
   }
   const suffix = (value: string) => value.split('+')[0]!;
-  const left = suffix(a[4]!);
-  const right = suffix(b[4]!);
+  const left = suffix(a[5]!);
+  const right = suffix(b[5]!);
   if (left === right || left === '') return false;
   if (right === '') return true;
   const l = left.slice(1).split('.');
