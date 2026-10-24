@@ -1,3 +1,4 @@
+import { CALL_KINDS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 import {
   check,
@@ -21,6 +22,9 @@ import { articles, feeds } from './articles.js';
 import { int8, tstz } from './columns.js';
 
 // Spec 02 §3.1: model answers (versioned caches and immutable call audit).
+
+const callKindCheck = () =>
+  sql.raw(`kind IN (${CALL_KINDS.map((kind) => `'${kind.replaceAll("'", "''")}'`).join(',')})`);
 
 export const questionSets = pgTable(
   'question_sets',
@@ -52,10 +56,7 @@ export const engineReservations = pgTable(
     expiresAt: tstz('expires_at').notNull(),
   },
   (t) => [
-    check(
-      'engine_reservations_kind_check',
-      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')`,
-    ),
+    check('engine_reservations_kind_check', callKindCheck()),
     check('engine_reservations_reserved_usd_check', sql`reserved_usd >= 0`),
     check('engine_reservations_reserved_calls_check', sql`reserved_calls > 0`),
     check('engine_reservations_status_check', sql`status IN ('reserved','settled','uncertain')`),
@@ -108,10 +109,7 @@ export const engineCalls = pgTable(
   },
   (t) => [
     check('engine_calls_engine_check', sql`engine IN ('typesafe','llm','laya','libretranslate')`),
-    check(
-      'engine_calls_kind_check',
-      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')`,
-    ),
+    check('engine_calls_kind_check', callKindCheck()),
     check('engine_calls_credential_version_check', sql`credential_version > 0`),
     check('engine_calls_article_revision_check', sql`article_revision > 0`),
     check('engine_calls_n_questions_check', sql`n_questions >= 0`),
@@ -376,10 +374,7 @@ export const usageDaily = pgTable(
   },
   (t) => [
     primaryKey({ name: 'usage_daily_pkey', columns: [t.day, t.userId, t.engine, t.kind] }),
-    check(
-      'usage_daily_kind_check',
-      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')`,
-    ),
+    check('usage_daily_kind_check', callKindCheck()),
     check('usage_daily_calls_check', sql`calls >= 0`),
     check('usage_daily_input_tokens_check', sql`input_tokens >= 0`),
     check('usage_daily_output_tokens_check', sql`output_tokens >= 0`),

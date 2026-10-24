@@ -4565,7 +4565,7 @@
         },
         "engine_calls_kind_check": {
           "name": "engine_calls_kind_check",
-          "value": "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+          "value": "kind IN ('enrich','match','cluster','suggest','translate','eval','credential_probe','card_draft','model_probe')"
         },
         "engine_calls_credential_version_check": {
           "name": "engine_calls_credential_version_check",
@@ -4753,7 +4753,7 @@
       "checkConstraints": {
         "engine_reservations_kind_check": {
           "name": "engine_reservations_kind_check",
-          "value": "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+          "value": "kind IN ('enrich','match','cluster','suggest','translate','eval','credential_probe','card_draft','model_probe')"
         },
         "engine_reservations_reserved_usd_check": {
           "name": "engine_reservations_reserved_usd_check",
@@ -5625,7 +5625,7 @@
       "checkConstraints": {
         "usage_daily_kind_check": {
           "name": "usage_daily_kind_check",
-          "value": "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')"
+          "value": "kind IN ('enrich','match','cluster','suggest','translate','eval','credential_probe','card_draft','model_probe')"
         },
         "usage_daily_calls_check": {
           "name": "usage_daily_calls_check",
