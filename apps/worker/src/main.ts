@@ -28,6 +28,7 @@ import { poolTrainer } from './learn/trainer.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady, startQueueReadiness } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
+import { ProcessLeases } from './process-leases.js';
 import { createShutdownGate } from './shutdown-gate.js';
 import { verifyQuestionSets } from './seed.js';
 
@@ -114,9 +115,11 @@ const mailer = createMailer({
   smtpUrl: config.smtpUrl,
   logger,
 });
+const leases = new ProcessLeases();
 const handlers = createHandlers(
   createWorkerDeps({
     db,
+    leases,
     lockPool,
     fetch: {
       userAgent: config.fetchUserAgent,
@@ -180,6 +183,7 @@ async function stop(signal: string): Promise<void> {
     await relay?.stop();
     // Compose gives both workers 120 s: allow 100 s for in-flight calls, leaving 20 s for cleanup.
     await boss?.stop({ graceful: true, timeout: 100_000, wait: true });
+    await leases.drain();
     queueReadiness.stop();
     await heartbeat?.stop();
     await models.close();
