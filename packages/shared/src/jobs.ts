@@ -180,7 +180,7 @@ export const QUEUES = {
   'article.enrich.laya': spec({
     payload: enrichPayload,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1, retryDelay: STALE_WORKER_RETRY_DELAY_SECONDS },
+    options: { policy: 'stately', retryLimit: 1 },
     layaOnly: true,
   }),
   'article.cluster': spec({
@@ -319,6 +319,7 @@ export type QueueName = keyof typeof QUEUES;
  * Queues whose handlers fail a job on a stale worker (`StaleWorkerError`) and so rely on the queue's
  * {@link STALE_WORKER_RETRY_DELAY_SECONDS}. `analysis.process` reschedules itself; interactive
  * `card.draft` keeps immediate queue retries and relies on its delayed recovery intent when stale.
+ * Laya is still an M9 stub; add its implemented handler here only when it has a currentness guard.
  */
 export const STALE_GUARDED_QUEUES = [
   'user.suggest',
@@ -330,7 +331,6 @@ export const STALE_GUARDED_QUEUES = [
   'house.reenrich',
   'house.rematch',
   'house.translate-cards',
-  'article.enrich.laya',
 ] as const satisfies readonly QueueName[];
 
 export type JobPayload<Q extends QueueName> = z.output<(typeof QUEUES)[Q]['payload']>;
