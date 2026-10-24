@@ -204,6 +204,15 @@ const PER_USER_TABLES: PerUserTable[] = [
     ],
   },
   {
+    table: 'dislike_pattern_offers',
+    may: { insert: true, update: true, delete: false },
+    insert: (u) => [
+      "INSERT INTO dislike_pattern_offers (id, user_id, scope, scope_id, article_ids) VALUES ($1, $2, 'feed', $3, ARRAY[$4::bigint])",
+      [randomUUID(), u, f.feed, f.spareArticle],
+    ],
+    update: (u) => ['UPDATE dislike_pattern_offers SET seen_at = now() WHERE user_id = $1', [u]],
+  },
+  {
     table: 'feedback_events',
     may: { insert: true, update: false, delete: false },
     insert: (u) => [
@@ -478,6 +487,11 @@ async function seed(owner: pg.Pool): Promise<Fixtures> {
   await bookmark(a, snapshots.bookmarkA, label.id, 1);
   await bookmark(b, snapshots.bookmarkB, labelB.id, -1);
 
+  await owner.query(
+    `INSERT INTO dislike_pattern_offers (id, user_id, scope, scope_id, article_ids)
+     VALUES ($1, $3, 'feed', $5, ARRAY[$6::bigint]), ($2, $4, 'feed', $5, ARRAY[$6::bigint])`,
+    [randomUUID(), randomUUID(), a, b, feed, article],
+  );
   await owner.query(
     `INSERT INTO feedback_events (user_id, article_id, kind, value)
      VALUES ($1, $3, 'bookmark', '{}'), ($2, $3, 'rate', '{"rating": -1}')`,
