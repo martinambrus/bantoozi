@@ -281,6 +281,13 @@
       "when": 1792568400010,
       "tag": "0039_credential_activation_preserve_breaker_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792568400011,
+      "tag": "0040_credential_expected_revision_cas",
+      "breakpoints": true
     }
   ]
 }

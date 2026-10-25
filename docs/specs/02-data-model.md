@@ -406,7 +406,7 @@ cursors, and a malformed field of `engine.model_watch`, drops only that entry or
 names and env-credential providers they do not know. Kept extras belong to the key path, not to the record (a new
 candidate or reset breaker can inherit them); intersections other than plain objects, pipes, Map/Set and in-place
 array edits do not preserve extras. A typo'd key in a stored row is ignored on read. SQL writers must preserve extras the
-same way (`admin_activate_provider_credential` does not yet: task #49).
+same way (`admin_activate_provider_credential` preserves unknown breaker fields under D-336, migration 0039).
 
 `pnpm db:seed` inserts **only** `card_text_mode`, `question_sets.active = {}` and `language_modes`
 (from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
@@ -1620,7 +1620,11 @@ p_expected_revision bigint)` transaction enqueues `provider.validate {provider,c
 only after the administrator explicitly requests Validate, for a candidate that is not being validated
 under a live lease (a `validating` candidate whose lease expired may be queued again, D-87). Activation requires the same valid candidate, current revision/configuration fingerprint and a
 validation result no older than 24 hours; disable
-preserves a tombstone. Worker validation CAS includes candidate version and lease token. Keyring
+preserves a tombstone. Staging, explicit validation, activation and enable/disable require an exact, non-NULL
+expected credential revision. A NULL or mismatched expected revision raises `BZ409` at the revision guard before
+committing any credential or outbox change (D-338; activation already enforces this under D-336). Existing missing-row,
+provider, envelope, lease and administrator checks retain their error precedence.
+Worker validation CAS includes candidate version and lease token. Keyring
 cryptography is application-side, not a PostgreSQL decryption function. No generic SQL setter or
 ciphertext SELECT privilege is granted to the API role. The five functions above are SECURITY
 DEFINER with a fixed trusted search path, PUBLIC execute revoked and execute granted to

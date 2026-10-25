@@ -3466,3 +3466,18 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   DTO validation stay unchanged. This protects cached bundles that contain this change when a newer
   server adds fields; already-deployed older JavaScript still needs its normal reload. Breaking
   changes to known fields or discriminators remain invalid responses. No migration or dependency.
+- D-338: 2026-10-25 (task #51; SQL credential CAS guards) — Migration 0040 replaces
+  `admin_stage_provider_credential`, `admin_validate_provider_credential` and
+  `admin_set_provider_enabled` with the same signatures, owner, grants, SECURITY DEFINER and
+  trusted search path. Their expected-revision guards use `IS DISTINCT FROM`, matching
+  activation's D-336 guard: NULL expected revisions conflict with `BZ409` instead of skipping
+  the guard through SQL's three-valued comparison. Stage and disable cannot create a row
+  through a NULL-revision call; replacement staging and enable/disable cannot change stored
+  credentials; explicit validation cannot enqueue a job through a NULL-revision call. The
+  existing provider, administrator, envelope, candidate and live/expired lease checks remain.
+  Tests call the functions as the authenticated app role for both providers, preserve complete
+  credential/outbox state on rejection, prove exact-revision success and stale rejection, and
+  exercise a 0039→0040 upgrade with function identity/grants/catalog and idempotence checks.
+  Older binaries making correct non-NULL expected-revision calls remain compatible after
+  rollback; the migrated SQL continues to reject NULL bypasses. There is no new schema,
+  runtime caller change or API contract change, and migrations 0000–0039 are unchanged.

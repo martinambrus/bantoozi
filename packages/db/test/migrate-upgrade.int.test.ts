@@ -215,13 +215,24 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
                      WHERE oid = 'admin_activate_provider_credential(text,bigint,bigint)'::regprocedure`);
       const beforeIdentity = (await identity()).rows;
       const beforeCatalog = await catalog(old.urls.owner);
-      expect(await runMigrations({ databaseUrl: old.urls.owner })).toMatchObject({
+      // Apply 0039 alone so its one-function catalog control survives later migrations.
+      const activation = journal.entries.find((entry) => entry.tag.startsWith('0039_'))!;
+      await cp(
+        path.join(MIGRATIONS_FOLDER, `${activation.tag}.sql`),
+        path.join(activationFolder, `${activation.tag}.sql`),
+      );
+      await writeFile(
+        path.join(activationFolder, 'meta', '_journal.json'),
+        JSON.stringify({ ...journal, entries: [...kept, activation] }),
+      );
+      expect(
+        await runMigrations({ databaseUrl: old.urls.owner, migrationsFolder: activationFolder }),
+      ).toMatchObject({
         migrationsApplied: 1,
         pgBoss: 'current',
       });
       expect((await identity()).rows).toEqual(beforeIdentity);
       const upgraded = await catalog(old.urls.owner);
-      expect(upgraded).toEqual(await catalog(fresh.testDb.urls.owner));
       expect(upgraded).toEqual({ ...beforeCatalog, functions: upgraded.functions });
       const changedFunctions = upgraded.functions?.filter(
         (definition, index) => definition !== beforeCatalog.functions?.[index],
@@ -261,9 +272,212 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
           },
         },
       ]);
+      expect(
+        await runMigrations({ databaseUrl: old.urls.owner, migrationsFolder: activationFolder }),
+      ).toMatchObject({
+        migrationsApplied: 0,
+      });
+      expect(await runMigrations({ databaseUrl: old.urls.owner })).toMatchObject({
+        migrationsApplied: journal.entries.length - kept.length - 1,
+      });
+      expect(await catalog(old.urls.owner)).toEqual(await catalog(fresh.testDb.urls.owner));
+    } finally {
+      await appPool.end();
+      await pool.end();
+      await old.drop();
+    }
+  });
+
+  it('upgrades 0039 to 0040, rejecting NULL credential CAS revisions and retaining identity and grants', async () => {
+    const casFolder = path.join(previousFolder, 'before-credential-cas');
+    await mkdir(path.join(casFolder, 'meta'), { recursive: true });
+    const kept = journal.entries.slice(
+      0,
+      journal.entries.findIndex((entry) => entry.tag.startsWith('0040_')),
+    );
+    expect(kept).toHaveLength(40);
+    expect(kept.at(-1)?.tag).toBe('0039_credential_activation_preserve_breaker_fields');
+    for (const entry of kept) {
+      await cp(
+        path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
+        path.join(casFolder, `${entry.tag}.sql`),
+      );
+    }
+    await writeFile(
+      path.join(casFolder, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: kept }),
+    );
+    const old = await setupTestDatabase({
+      pkg: 'dbcasup',
+      migrationsDir: casFolder,
+      pgBossVersion: PG_BOSS_VERSION,
+      migrate: async (url) => {
+        await runMigrations({ databaseUrl: url, migrationsFolder: casFolder });
+      },
+    });
+    const pool = new pg.Pool({ connectionString: old.urls.owner, max: 1 });
+    const appPool = new pg.Pool({ connectionString: old.urls.app, max: 1 });
+    try {
+      const admin = await createUser(pool, { role: 'admin' });
+      const ring = ProviderKeyring.parse(
+        'cas-key',
+        JSON.stringify({ 'cas-key': randomBytes(32).toString('base64') }),
+      );
+      if (!ring.ok) throw new Error('invalid CAS upgrade keyring');
+      const providers = ['typesafe', 'ollama'] as const;
+      const envelope = (provider: (typeof providers)[number], version: string) =>
+        JSON.stringify(
+          encryptProviderSecret({
+            keyring: ring.keyring,
+            provider,
+            secretVersion: version,
+            secret: 'cas-upgrade-fixture-key',
+          }),
+        );
+      for (const provider of providers) {
+        await pool.query(
+          `INSERT INTO provider_credentials
+             (provider, revision, enabled, active_version, active_envelope, candidate_version,
+              candidate_envelope, candidate_status, updated_by)
+           VALUES ($1, 7, false, 6, $2, 7, $3, 'pending', $4)`,
+          [provider, envelope(provider, '6'), envelope(provider, '7'), admin.id],
+        );
+      }
+      const calls: { text: string; values: unknown[] }[] = providers.flatMap((provider) => [
+        {
+          text: 'SELECT * FROM admin_stage_provider_credential($1, $2, $3)',
+          values: [provider, null, envelope(provider, '8')],
+        },
+        {
+          text: 'SELECT admin_validate_provider_credential($1, $2, $3)',
+          values: [provider, 7, null],
+        },
+        {
+          text: 'SELECT * FROM admin_set_provider_enabled($1, $2, $3)',
+          values: [provider, null, true],
+        },
+        {
+          text: 'SELECT * FROM admin_set_provider_enabled($1, $2, $3)',
+          values: [provider, null, false],
+        },
+      ]);
+      const rows = () => pool.query('SELECT * FROM provider_credentials ORDER BY provider');
+      const outbox = () => pool.query('SELECT * FROM job_outbox ORDER BY id');
+      const beforeRows = (await rows()).rows;
+      const beforeOutbox = (await outbox()).rows;
+      // Prove that each otherwise-valid NULL call succeeds on 0039, then roll it back.
+      const client = await appPool.connect();
+      try {
+        for (const call of calls) {
+          await client.query('BEGIN');
+          try {
+            await client.query("SELECT set_config('app.user_id', $1, true)", [admin.id]);
+            await client.query(call.text, call.values);
+          } finally {
+            await client.query('ROLLBACK');
+          }
+        }
+      } finally {
+        client.release();
+      }
+      expect((await rows()).rows).toEqual(beforeRows);
+      expect((await outbox()).rows).toEqual(beforeOutbox);
+      const signatures = [
+        'admin_stage_provider_credential(text,bigint,jsonb)',
+        'admin_validate_provider_credential(text,bigint,bigint)',
+        'admin_set_provider_enabled(text,bigint,boolean)',
+      ];
+      const identity = () =>
+        pool.query(
+          `SELECT oid, proowner, proacl::text, prosecdef, proconfig, proargnames, proargtypes::text,
+                prorettype, proretset, provolatile, prokind
+           FROM pg_proc WHERE oid = ANY($1::regprocedure[]) ORDER BY oid`,
+          [signatures],
+        );
+      const beforeIdentity = (await identity()).rows;
+      expect(beforeIdentity).toHaveLength(3);
+      const beforeCatalog = await catalog(old.urls.owner);
+      expect(await runMigrations({ databaseUrl: old.urls.owner })).toMatchObject({
+        migrationsApplied: 1,
+        pgBoss: 'current',
+      });
+      expect((await identity()).rows).toEqual(beforeIdentity);
+      expect((await rows()).rows).toEqual(beforeRows);
+      expect((await outbox()).rows).toEqual(beforeOutbox);
+      const upgraded = await catalog(old.urls.owner);
+      expect(upgraded).toEqual({ ...beforeCatalog, functions: upgraded.functions });
+      expect(upgraded).toEqual(await catalog(fresh.testDb.urls.owner));
+      const changedFunctions = upgraded.functions?.filter(
+        (definition, index) => definition !== beforeCatalog.functions?.[index],
+      );
+      expect(changedFunctions?.map((definition) => definition.split('(')[0])).toEqual([
+        'admin_set_provider_enabled',
+        'admin_stage_provider_credential',
+        'admin_validate_provider_credential',
+      ]);
+      for (const call of calls) {
+        await expect(
+          asTenant(appPool, admin.id, (client) => client.query(call.text, call.values)),
+        ).rejects.toMatchObject({ code: 'BZ409' });
+        expect((await rows()).rows).toEqual(beforeRows);
+        expect((await outbox()).rows).toEqual(beforeOutbox);
+      }
+      for (const provider of providers) {
+        const execute = (text: string, values: unknown[]) =>
+          asTenant(appPool, admin.id, (client) => client.query(text, values));
+        await expect(
+          execute('SELECT * FROM admin_stage_provider_credential($1, 6, $2)', [
+            provider,
+            envelope(provider, '8'),
+          ]),
+        ).rejects.toMatchObject({ code: 'BZ409' });
+        expect(
+          (
+            await execute('SELECT * FROM admin_stage_provider_credential($1, 7, $2)', [
+              provider,
+              envelope(provider, '8'),
+            ])
+          ).rows,
+        ).toEqual([{ revision: '8', candidate_version: '8' }]);
+        await expect(
+          execute('SELECT admin_validate_provider_credential($1, 8, 7)', [provider]),
+        ).rejects.toMatchObject({ code: 'BZ409' });
+        await execute('SELECT admin_validate_provider_credential($1, 8, 8)', [provider]);
+        await expect(
+          execute('SELECT * FROM admin_set_provider_enabled($1, 7, true)', [provider]),
+        ).rejects.toMatchObject({ code: 'BZ409' });
+        expect(
+          (await execute('SELECT * FROM admin_set_provider_enabled($1, 8, true)', [provider])).rows,
+        ).toEqual([{ revision: '9', enabled: true }]);
+        await expect(
+          execute('SELECT * FROM admin_set_provider_enabled($1, 8, false)', [provider]),
+        ).rejects.toMatchObject({ code: 'BZ409' });
+        expect(
+          (await execute('SELECT * FROM admin_set_provider_enabled($1, 9, false)', [provider]))
+            .rows,
+        ).toEqual([{ revision: '10', enabled: false }]);
+      }
+      expect(
+        (await outbox()).rows.map((row) => ({
+          queue: row.queue,
+          payload: row.payload,
+          user_id: row.user_id,
+        })),
+      ).toEqual(
+        providers.map((provider) => ({
+          queue: 'provider.validate',
+          payload: { provider, candidateVersion: '8' },
+          user_id: admin.id,
+        })),
+      );
+      const afterRows = (await rows()).rows;
+      const afterOutbox = (await outbox()).rows;
       expect(await runMigrations({ databaseUrl: old.urls.owner })).toMatchObject({
         migrationsApplied: 0,
       });
+      expect(await catalog(old.urls.owner)).toEqual(upgraded);
+      expect((await rows()).rows).toEqual(afterRows);
+      expect((await outbox()).rows).toEqual(afterOutbox);
     } finally {
       await appPool.end();
       await pool.end();
