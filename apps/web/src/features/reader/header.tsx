@@ -143,46 +143,53 @@ export function ReaderHeader({
 
   return (
     <div role="group" aria-labelledby={titleId} className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 id={titleId} className="min-w-0 break-words text-2xl font-bold">
-          {title}
-        </h1>
-        {subscription === undefined ? null : (
-          <ClassificationBadge mode={subscription.inferenceMode} />
-        )}
-        {count === undefined ? null : (
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-            {t(countKey, { value: count })}
-          </p>
-        )}
-        {rankingPending ? (
-          <p
-            role="status"
-            className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
-          >
-            <Spinner className="size-4" />
-            {t('header.rankingPending')}
-          </p>
-        ) : null}
-        {subscription === undefined ? null : <FeedLearningChip subscription={subscription} />}
-        <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
-          <Button variant="secondary" loading={refreshing} onClick={refresh}>
-            <RefreshIcon className="size-4" />
-            {t('header.refresh')}
-          </Button>
-          {lane === null ? null : (
-            <MarkAllRead
-              lane={lane}
-              scope={scopeOf(view)}
-              name={viewName}
-              count={count}
-              items={items}
-              minTier={viewMinTier(view, preferences)}
-              onChanged={refresh}
-            />
+      <div className="flex flex-col items-start gap-2">
+        <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 id={titleId} className="min-w-0 break-words text-2xl font-bold">
+            {title}
+          </h1>
+          {subscription === undefined ? null : (
+            <ClassificationBadge mode={subscription.inferenceMode} />
           )}
-          <MoreMenu view={view} name={viewName} items={items} visible={visible} />
+          {count === undefined ? null : (
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              {t(countKey, { value: count })}
+            </p>
+          )}
+          {/* Reserve the feed's ranking label so polling cannot reflow the header or list. */}
+          {rankingPending || subscription !== undefined ? (
+            <p
+              role="status"
+              aria-hidden={!rankingPending}
+              className={cx(
+                'flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300',
+                !rankingPending && 'invisible',
+              )}
+            >
+              <Spinner className="size-4" />
+              {t('header.rankingPending')}
+            </p>
+          ) : null}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
+            <Button variant="secondary" loading={refreshing} onClick={refresh}>
+              <RefreshIcon className="size-4" />
+              {t('header.refresh')}
+            </Button>
+            {lane === null ? null : (
+              <MarkAllRead
+                lane={lane}
+                scope={scopeOf(view)}
+                name={viewName}
+                count={count}
+                items={items}
+                minTier={viewMinTier(view, preferences)}
+                onChanged={refresh}
+              />
+            )}
+            <MoreMenu view={view} name={viewName} items={items} visible={visible} />
+          </div>
         </div>
+        {subscription === undefined ? null : <FeedLearningChip subscription={subscription} />}
       </div>
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         {view.kind === 'lane' || onLaneChange === undefined ? null : (
