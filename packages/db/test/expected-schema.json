@@ -4666,7 +4666,7 @@
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app"],
-      "bodyMd5": "a0558ae1b594260d30e7be28d0bea2a8"
+      "bodyMd5": "87d9e1340f6fbb5605a196955f3d8c63"
     },
     "admin_card_holders": {
       "args": "p_card_ids bigint[]",

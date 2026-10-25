@@ -244,7 +244,7 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
       candidate,
       expected,
     ]);
-  const activate = (userId: string, provider: string, expected: Id, candidate: Id) =>
+  const activate = (userId: string, provider: string, expected: Id | null, candidate: Id) =>
     appRow(userId, 'SELECT * FROM admin_activate_provider_credential($1, $2, $3)', [
       provider,
       expected,
@@ -627,6 +627,28 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
     // The candidate was consumed: activation cannot be replayed.
     expect(await sqlStateOf(activate(admin, 'typesafe', 2, 1))).toBe('BZ409');
   });
+
+  it.each(['typesafe', 'ollama'] as const)(
+    'rejects a NULL expected revision for %s without changing credentials or breakers (0039)',
+    async (provider) => {
+      await activateFresh(provider, 0);
+      await stage(admin, provider, 2, sealFor(provider, 3));
+      await validateAsWorker(provider, 3);
+      await seedCircuit({
+        typesafe: { state: 'auth', reopenCount: 3, futureField: { keep: true } },
+        llm: { state: 'auth', reopenCount: 2, futureField: ['keep', null] },
+        resetRequested: {},
+      });
+      const beforeCredential = await credential(provider);
+      const beforeCircuit = await ownerRow("SELECT * FROM settings WHERE key = 'engine.circuit'");
+
+      expect(await outcome(activate(admin, provider, null, 3))).toBe('BZ409');
+      expect(await credential(provider)).toEqual(beforeCredential);
+      expect(await ownerRow("SELECT * FROM settings WHERE key = 'engine.circuit'")).toEqual(
+        beforeCircuit,
+      );
+    },
+  );
 
   it.each(['typesafe', 'ollama'] as const)(
     'closes %s auth breakers without dropping unknown fields (0039)',

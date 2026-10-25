@@ -13,7 +13,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'no credential staged' USING ERRCODE = 'BZ404';
   END IF;
-  IF v_row.revision <> p_expected_revision OR v_row.candidate_version IS DISTINCT FROM p_candidate_version
+  IF v_row.revision IS DISTINCT FROM p_expected_revision OR v_row.candidate_version IS DISTINCT FROM p_candidate_version
      OR v_row.candidate_status IS DISTINCT FROM 'valid' OR v_row.validated_at IS NULL
      OR v_row.validated_at < now() - interval '24 hours' THEN
     RAISE EXCEPTION 'candidate is not a current valid validation' USING ERRCODE = 'BZ409';

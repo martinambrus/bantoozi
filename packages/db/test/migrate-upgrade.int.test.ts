@@ -230,6 +230,21 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
       expect(changedFunctions?.[0]).toMatch(/^admin_activate_provider_credential\(/);
       const circuit = () => pool.query("SELECT value FROM settings WHERE key = 'engine.circuit'");
       expect((await circuit()).rows).toEqual([{ value: breakers }]);
+      const credentialBefore = (await pool.query('SELECT * FROM provider_credentials')).rows;
+      const circuitBefore = (
+        await pool.query("SELECT * FROM settings WHERE key = 'engine.circuit'")
+      ).rows;
+      await expect(
+        asTenant(appPool, admin.id, (client) =>
+          client.query("SELECT * FROM admin_activate_provider_credential('typesafe', NULL, 1)"),
+        ),
+      ).rejects.toMatchObject({ code: 'BZ409' });
+      expect((await pool.query('SELECT * FROM provider_credentials')).rows).toEqual(
+        credentialBefore,
+      );
+      expect(
+        (await pool.query("SELECT * FROM settings WHERE key = 'engine.circuit'")).rows,
+      ).toEqual(circuitBefore);
       const result = await asTenant(appPool, admin.id, (client) =>
         client.query("SELECT * FROM admin_activate_provider_credential('typesafe', 1, 1)"),
       );
