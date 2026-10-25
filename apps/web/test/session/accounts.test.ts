@@ -288,6 +288,20 @@ describe('when another tab signs in', () => {
     expect(second.queryClient.getQueryData(meKey())).toBeNull();
   });
 
+  it('accepts new account fields from another bundle without a /me refetch', async () => {
+    instantChannels();
+    const { session, queryClient, requests } = sessions.start({ me: userA });
+    await session.loadMe();
+    const other = new BroadcastChannel(SESSION_CHANNEL);
+    onTestFinished(() => other.close());
+    other.postMessage({
+      type: 'signed-in',
+      me: { ...userB, future: true, preferences: { ...userB.preferences, future: true } },
+    });
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
+    expect(requestsTo(requests, 'GET /api/v1/me')).toHaveLength(1);
+  });
+
   it('asks who is signed in when it cannot read the account the other tab sent', async () => {
     const { session, queryClient, server } = sessions.start({ me: userA });
     await session.loadMe();

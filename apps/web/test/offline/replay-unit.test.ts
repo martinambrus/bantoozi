@@ -230,6 +230,32 @@ describe('the broadcast between tabs', () => {
     receiver.close();
   });
 
+  it('reads added fields in settled articles from a newer tab for done and stale outcomes', async () => {
+    const receiver = createActionQueue({ accountId: A });
+    const heard: SettledNote[] = [];
+    receiver.hear((n) => heard.push(n));
+    const raw = new BroadcastChannel(OFFLINE_CHANNEL);
+    const item = makeItem();
+    const newer = { ...item, future: true, feed: { ...item.feed, future: true } };
+    raw.postMessage({
+      accountId: A,
+      note: { id: 'r1', outcome: 'done', item: newer, mutationId: 'm1' },
+    });
+    raw.postMessage({ accountId: A, note: { id: 'r2', outcome: 'stale', item: newer } });
+    raw.postMessage({
+      accountId: A,
+      note: { id: 'bad', outcome: 'stale', item: { ...newer, stateVersion: 'invalid' } },
+    });
+    await tick();
+    await tick();
+    expect(heard).toEqual([
+      { id: 'r1', outcome: 'done', item, mutationId: 'm1' },
+      { id: 'r2', outcome: 'stale', item },
+    ]);
+    raw.close();
+    receiver.close();
+  });
+
   it('does not tell tabs of another account, and does not hear what it cannot read', async () => {
     const other = createActionQueue({ accountId: B });
     const mine = createActionQueue({ accountId: A });

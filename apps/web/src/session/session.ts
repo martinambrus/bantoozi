@@ -1,4 +1,10 @@
-import { MeSchema, type Me, type RequestCodeResponse, type VerifyResponse } from '@bantoozi/shared';
+import {
+  MeSchema,
+  readerSchema,
+  type Me,
+  type RequestCodeResponse,
+  type VerifyResponse,
+} from '@bantoozi/shared';
 import { hashKey, isCancelledError, type QueryClient } from '@tanstack/react-query';
 import type { i18n as I18n } from 'i18next';
 
@@ -261,7 +267,7 @@ export function createSession(options: SessionOptions): Session {
         cookies += 1;
         const shown = idInCache();
         if (typeof shown !== 'string') return;
-        const signedIn = MeSchema.safeParse(message.me);
+        const signedIn = readerSchema(MeSchema).safeParse(message.me);
         if (!signedIn.success) {
           // A tab of another version of the app: this one asks who is signed in.
           void queryClient.refetchQueries({ queryKey: meKey(), exact: true });

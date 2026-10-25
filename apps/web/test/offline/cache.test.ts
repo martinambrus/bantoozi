@@ -130,6 +130,17 @@ describe('what is read back', () => {
     expect(ids((await readView(B, 'view'))?.items)).toEqual(['2']);
   });
 
+  it('reads accounts saved by a newer bundle and still rejects invalid known fields', async () => {
+    setClock(T0);
+    await setOfflineEnabled(A, true);
+    const me = makeMe();
+    const newer = { ...me, future: true, preferences: { ...me.preferences, future: true } };
+    await saveMe(A, newer);
+    expect(await readMe(A)).toEqual({ me, savedAt: T0 });
+    await saveMe(A, { ...newer, invitesLeft: -1 });
+    expect(await readMe(A)).toBeNull();
+  });
+
   it('keeps the account for an offline start and drops it with the rest', async () => {
     setClock(T0);
     await setOfflineEnabled(A, true);

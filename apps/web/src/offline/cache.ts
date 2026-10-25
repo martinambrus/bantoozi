@@ -1,4 +1,10 @@
-import { MeSchema, type ArticleDetail, type ArticleListItem, type Me } from '@bantoozi/shared';
+import {
+  MeSchema,
+  readerSchema,
+  type ArticleDetail,
+  type ArticleListItem,
+  type Me,
+} from '@bantoozi/shared';
 import type { IDBPTransaction } from 'idb';
 
 import { isNewerState, pickReader, type ReaderState } from '../features/reader/actions/types.js';
@@ -367,7 +373,7 @@ export async function readMe(accountId: string): Promise<{ me: Me; savedAt: numb
     await sweep(accountId);
     return null;
   }
-  const parsed = MeSchema.safeParse(row.me);
+  const parsed = readerSchema(MeSchema).safeParse(row.me);
   return parsed.success ? { me: parsed.data, savedAt: row.savedAt } : null;
 }
 

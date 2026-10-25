@@ -1,4 +1,4 @@
-import { ErrorResponseSchema } from '@bantoozi/shared';
+import { ErrorResponseSchema, readerSchema } from '@bantoozi/shared';
 import type { z } from 'zod';
 
 import { ApiError } from './errors.js';
@@ -163,7 +163,7 @@ function httpError(response: Response, body: string): ApiError {
 
 function parseEnvelope(body: string) {
   try {
-    const parsed = ErrorResponseSchema.safeParse(JSON.parse(body));
+    const parsed = readerSchema(ErrorResponseSchema).safeParse(JSON.parse(body));
     return parsed.success ? parsed.data.error : null;
   } catch {
     return null;
@@ -183,7 +183,9 @@ function parseBody(route: AnyRoute, schema: z.ZodType, status: number, body: str
       cause,
     });
   }
-  const result = schema.safeParse(value);
+  // Cached bundles may receive additive DTO fields from a newer server. The derived reader
+  // strips structured extras recursively while preserving all known-field constraints.
+  const result = readerSchema(schema).safeParse(value);
   if (!result.success) {
     throw new ApiError({
       kind: 'invalid_response',
