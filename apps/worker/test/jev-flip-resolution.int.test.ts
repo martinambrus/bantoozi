@@ -367,10 +367,10 @@ describe('N7: recordStartResolution', () => {
     expect(await resolutionRow(h.owner)).toEqual(fresh);
   });
 
-  it('replaces an invalid row', async () => {
-    await setSetting(h.owner, 'engine.model_resolution', { nonsense: true });
+  it('repairs invalid known fields and preserves unknown fields', async () => {
+    await setSetting(h.owner, 'engine.model_resolution', { model: 123, nonsense: true });
     expect(await resolution.recordStartResolution(h.db, input())).toEqual(fresh);
-    expect(await resolutionRow(h.owner)).toEqual(fresh);
+    expect(await resolutionRow(h.owner)).toEqual({ ...fresh, nonsense: true });
   });
 
   it('adopts a valid row byte-identical', async () => {

@@ -1,5 +1,6 @@
 import { readerReleaseClock, releasedCarrier } from '../api/releases.js';
 import {
+  readerSchema,
   AppError,
   CardTextModeSchema,
   compareBigIntStrings,
@@ -661,7 +662,7 @@ export function noEffects(): CardEffects {
 }
 
 async function cardTextMode(tx: TenantTx): Promise<'as_written' | 'english'> {
-  const parsed = CardTextModeSchema.safeParse(
+  const parsed = readerSchema(CardTextModeSchema).safeParse(
     (await readStoredSetting(tx, 'card_text_mode')) ?? 'as_written',
   );
   return parsed.success ? parsed.data : 'as_written';

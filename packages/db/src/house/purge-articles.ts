@@ -1,4 +1,4 @@
-import { DEFAULT_RANKER_CONFIG, mergeRankerConfig } from '@bantoozi/shared';
+import { parseStoredSetting, DEFAULT_RANKER_CONFIG, mergeRankerConfig } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
@@ -44,8 +44,12 @@ export interface PurgeArticlesPage {
 export async function dislikeProtectionDays(tx: Transaction): Promise<number> {
   let historyDays: number = DEFAULT_RANKER_CONFIG.model.historyDays;
   try {
-    historyDays = mergeRankerConfig((await readStoredSetting(tx, 'ranker.thresholds')) ?? {}).model
-      .historyDays;
+    historyDays = mergeRankerConfig(
+      parseStoredSetting(
+        'ranker.thresholds',
+        (await readStoredSetting(tx, 'ranker.thresholds')) ?? {},
+      ),
+    ).model.historyDays;
   } catch {
     // An invalid stored override falls back to the defaults, as the ranker does.
   }

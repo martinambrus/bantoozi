@@ -1,4 +1,4 @@
-import { isHeartbeatFresh, parseSetting, type QueueName } from '@bantoozi/shared';
+import { parseStoredSetting, isHeartbeatFresh, type QueueName } from '@bantoozi/shared';
 
 /**
  * The worker precondition of `eval ingest-sample` (spec 10 §2.1, D-96): a worker heartbeat younger
@@ -32,7 +32,7 @@ export type WorkerCheck =
 
 /** The live entries of `settings['worker.heartbeat']` (validated; a malformed value is an error). */
 export function liveWorkers(value: unknown, now: Date): LiveWorker[] {
-  const parsed = parseSetting('worker.heartbeat', value ?? {});
+  const parsed = parseStoredSetting('worker.heartbeat', value ?? {});
   const live: LiveWorker[] = [];
   for (const [processId, entry] of Object.entries(parsed)) {
     const at = new Date(entry.at);

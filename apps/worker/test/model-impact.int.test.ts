@@ -227,7 +227,7 @@ describe('I: recordModelProbe records the impact in the same transaction', () =>
     await recordModelProbe(h.db, okAt(B), { warn });
     expect(warn).toHaveBeenCalledExactlyOnceWith(
       { key: 'engine.model_probe' },
-      'invalid stored model probes; resetting the record',
+      'invalid stored model probes; discarding corrupt entries',
     );
     expect(await probeOf(h.owner)).toEqual(okAt(B));
   });

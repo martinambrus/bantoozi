@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
+  parseStoredSetting,
+  readerSchema,
+  EngineModelPinSchema,
+  QuestionSetsActiveSchema,
   AppError,
   DEFAULT_RANKER_CONFIG,
   ExplainSchema,
@@ -129,14 +133,16 @@ export function effectiveRatingSettings(
   stored: ReadonlyMap<string, unknown>,
   defaults: RatingDefaults,
 ): Record<string, unknown> {
+  const rawLaya = objectOf(stored.get('engine.model_pin'))['laya'];
+  const laya = readerSchema(EngineModelPinSchema.shape.laya).safeParse(rawLaya);
+  const rawActive = stored.get('question_sets.active');
+  const active = readerSchema(QuestionSetsActiveSchema).safeParse(rawActive);
   return {
     'engine.model_pin': {
       model: effectiveModel(stored, defaults),
-      ...(objectOf(stored.get('engine.model_pin'))['laya'] === undefined
-        ? {}
-        : { laya: objectOf(stored.get('engine.model_pin'))['laya'] }),
+      ...(rawLaya === undefined ? {} : { laya: laya.success ? laya.data : rawLaya }),
     },
-    'question_sets.active': stored.get('question_sets.active') ?? null,
+    'question_sets.active': active.success ? active.data : (rawActive ?? null),
     language_modes: stored.get('language_modes') ?? defaults.languageModes,
     card_text_mode: stored.get('card_text_mode') ?? defaults.cardTextMode,
   };
@@ -718,7 +724,7 @@ function restorePatch(before: UndoTarget['before']): ReaderPatch {
 export async function readRankerConfig(tx: TenantTx): Promise<RankerConfig> {
   const stored = await readStoredSetting(tx, 'ranker.thresholds');
   try {
-    return mergeRankerConfig(stored ?? {});
+    return mergeRankerConfig(parseStoredSetting('ranker.thresholds', stored ?? {}));
   } catch {
     return mergeRankerConfig({}, DEFAULT_RANKER_CONFIG as unknown as RankerConfig);
   }

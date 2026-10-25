@@ -1,4 +1,9 @@
-import { AppError, mergeRankerConfig, type RankerConfig } from '@bantoozi/shared';
+import {
+  parseStoredSetting,
+  AppError,
+  mergeRankerConfig,
+  type RankerConfig,
+} from '@bantoozi/shared';
 
 import { scoreVersion } from './version.js';
 
@@ -42,9 +47,9 @@ export class RankerSettingsError extends AppError {
 
 /**
  * Resolves the stored ranking settings (spec 06 §7, §11). A missing row means its default: no
- * override, settings version 0. A present row must validate: the override through the strict
- * shared schema (unknown keys such as `windowDays` are rejected, the window is the fixed
- * `RANK_WINDOW_DAYS`), then the merged config as a whole; the version as a non-negative safe
+ * override, settings version 0. A present row must validate: the stored reader strips unknown
+ * fields before the strict merge validator checks the known override and full configuration
+ * (the window remains the fixed `RANK_WINDOW_DAYS`); the version is a non-negative safe
  * integer. Anything else throws {@link RankerSettingsError}.
  */
 export function resolveRankerSettings(stored: StoredRankerSettings): RankerSettings {
@@ -52,7 +57,12 @@ export function resolveRankerSettings(stored: StoredRankerSettings): RankerSetti
   try {
     // `mergeRankerConfig` reads null as "no override"; a stored JSON null is malformed instead.
     if (stored.thresholds === null) throw new TypeError('ranker.thresholds must be an object');
-    config = mergeRankerConfig(stored.thresholds === undefined ? {} : stored.thresholds);
+    config = mergeRankerConfig(
+      parseStoredSetting(
+        'ranker.thresholds',
+        stored.thresholds === undefined ? {} : stored.thresholds,
+      ),
+    );
   } catch (error) {
     throw new RankerSettingsError('ranker.thresholds', error);
   }

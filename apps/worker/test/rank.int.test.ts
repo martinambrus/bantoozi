@@ -610,7 +610,7 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     const r = await reader();
     await matched(r.feedId, r.cardId, 0.9);
     try {
-      await h.setSetting('ranker.thresholds', { windowDays: 30 });
+      await h.setSetting('ranker.thresholds', { model: { historyDays: 'bad' } });
       await expect(rank(r.userId)).rejects.toThrow();
       expect((await rows(r.userId)).size).toBe(0);
     } finally {

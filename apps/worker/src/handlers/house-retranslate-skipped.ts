@@ -7,10 +7,10 @@ import {
   type ReprocessCursor,
 } from '@bantoozi/db';
 import {
+  parseStoredSetting,
   RANK_WINDOW_DAYS,
   TRANSLATE_SKIP_REASONS,
   enqueueTranslate,
-  parseSetting,
   settingDefault,
 } from '@bantoozi/shared';
 
@@ -51,7 +51,7 @@ export function createRetranslateSkippedHandler(
     const fallback = settingDefault('translate.tier2_daily_cap', deps.settingsEnv) ?? 0;
     let cap = fallback;
     try {
-      if (stored !== undefined) cap = parseSetting('translate.tier2_daily_cap', stored);
+      if (stored !== undefined) cap = parseStoredSetting('translate.tier2_daily_cap', stored);
     } catch {
       deps.logger.warn({ job: JOB }, 'stored tier-2 cap is malformed; using its default');
     }

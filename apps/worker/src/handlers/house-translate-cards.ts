@@ -11,7 +11,7 @@ import {
   workerOutbox,
   type CardAwaitingTranslation,
 } from '@bantoozi/db';
-import { enqueueRematch, HOUSE_PROGRESS_CURSORS } from '@bantoozi/shared';
+import { readerSchema, enqueueRematch, HOUSE_PROGRESS_CURSORS } from '@bantoozi/shared';
 import {
   assessTranslation,
   isBlankText,
@@ -74,7 +74,7 @@ export function createTranslateCardsHandler(
     const counts = { examined: 0, translated: 0, kept: 0 };
     const unrestricted = payload.userId === undefined;
     const saved = unrestricted
-      ? HOUSE_PROGRESS_CURSORS[JOB].safeParse(
+      ? readerSchema(HOUSE_PROGRESS_CURSORS[JOB]).safeParse(
           (
             (await readStoredSetting(deps.db, 'house.progress')) as
               Record<string, { cursor?: unknown } | undefined> | undefined

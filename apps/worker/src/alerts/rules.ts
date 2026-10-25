@@ -11,6 +11,7 @@ import {
   typesafeModelMismatches,
 } from '@bantoozi/db';
 import {
+  readerSchema,
   HEARTBEAT_FRESH_MS,
   HOUSE_CRON_SCHEDULES,
   HOUSE_PROGRESS_CURSORS,
@@ -373,7 +374,7 @@ const erasureRule: AlertRule = {
   id: 'erasure',
   async evaluate(context) {
     const progress = (await read(context, 'house.progress')) ?? {};
-    const cursor = HOUSE_PROGRESS_CURSORS['house.purge-users'].safeParse(
+    const cursor = readerSchema(HOUSE_PROGRESS_CURSORS['house.purge-users']).safeParse(
       progress['house.purge-users']?.cursor,
     );
     if (!cursor.success) return [];
@@ -479,7 +480,7 @@ const diskRule: AlertRule = {
     }
     let detail: ReturnType<typeof HostHealthDetailSchema.parse>;
     try {
-      detail = HostHealthDetailSchema.parse(JSON.parse(newest.detail));
+      detail = readerSchema(HostHealthDetailSchema).parse(JSON.parse(newest.detail));
     } catch {
       return [];
     }
@@ -704,7 +705,7 @@ const containersRule: AlertRule = {
       if (event.kind !== 'host_health') continue;
       const at = Date.parse(event.at);
       try {
-        const detail = HostHealthDetailSchema.parse(JSON.parse(event.detail));
+        const detail = readerSchema(HostHealthDetailSchema).parse(JSON.parse(event.detail));
         if (detail.containers !== undefined) reports.push({ at, containers: detail.containers });
       } catch {
         // A malformed report is the disk rule's concern.

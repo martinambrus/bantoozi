@@ -84,11 +84,11 @@ describe('admin model DTOs', () => {
     expect(AdminEngineModelSchema.parse(bare)).toEqual(bare);
   });
 
-  it('is strict: a raw pin (llm, laya), an unknown field or a missing clock is refused', () => {
-    expect(
-      AdminEngineModelSchema.safeParse({ ...status, pin: { ...status.pin, llm: null } }).success,
-    ).toBe(false);
-    expect(AdminEngineModelSchema.safeParse({ ...status, extra: 1 }).success).toBe(false);
+  it('strips future fields and projected pin fields but still refuses a missing clock', () => {
+    expect(AdminEngineModelSchema.parse({ ...status, pin: { ...status.pin, llm: null } })).toEqual(
+      status,
+    );
+    expect(AdminEngineModelSchema.parse({ ...status, extra: 1 })).toEqual(status);
     const { now: _now, ...withoutNow } = status;
     expect(AdminEngineModelSchema.safeParse(withoutNow).success).toBe(false);
   });

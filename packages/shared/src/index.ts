@@ -45,3 +45,4 @@ export * from './text/tokens.js';
 export * from './release-window.js';
 export * from './feed-icon-url.js';
 export * from './worker-health.js';
+export * from './setting-readers.js';

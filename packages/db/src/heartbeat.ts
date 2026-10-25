@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 
-import type { JsonValue } from '@bantoozi/shared';
+import { WorkerHeartbeatSchema, type JsonValue } from '@bantoozi/shared';
 
 import type { Executor } from './client.js';
 
@@ -47,7 +47,17 @@ export async function recordWorkerHeartbeat(
            AND jsonb_typeof(e.value) = 'object'
            AND (e.value->>'at') IS NOT NULL
            AND (e.value->>'at')::timestamptz >= ${cutoff}::timestamptz
-      ), '{}'::jsonb) || ${value}::jsonb,
+      ), '{}'::jsonb) || jsonb_build_object(${processId}::text,
+        (CASE WHEN jsonb_typeof(settings.value -> ${processId}) = 'object'
+          THEN settings.value -> ${processId} ELSE '{}'::jsonb END
+          - ${sql.param(Object.keys(WorkerHeartbeatSchema.valueType.shape))}::text[])
+        || ${JSON.stringify(entry)}::jsonb
+        || CASE WHEN ${JSON.stringify(entry)}::jsonb ? 'pool' THEN jsonb_build_object('pool',
+          (CASE WHEN jsonb_typeof(settings.value -> ${processId} -> 'pool') = 'object'
+            THEN settings.value -> ${processId} -> 'pool' ELSE '{}'::jsonb END
+            - ${sql.param(Object.keys(WorkerHeartbeatSchema.valueType.shape.pool.unwrap().shape))}::text[])
+          || ${JSON.stringify(entry.pool ?? {})}::jsonb)
+          ELSE '{}'::jsonb END),
       updated_at = now()`);
 }
 

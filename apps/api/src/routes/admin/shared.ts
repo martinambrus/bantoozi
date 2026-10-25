@@ -6,6 +6,7 @@ import {
   type AdminPublicationRequestRow,
 } from '@bantoozi/db';
 import {
+  readerSchema,
   isHeartbeatFresh,
   LAYA_QUEUES,
   KeyringReportSchema,
@@ -48,7 +49,7 @@ export async function freshWorkers(db: Executor, now: Date): Promise<FreshWorker
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
   const workers: FreshWorker[] = [];
   for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
-    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const parsed = readerSchema(WorkerHeartbeatSchema).safeParse({ [processId]: entry });
     if (!parsed.success) continue;
     const value = parsed.data[processId];
     if (value === undefined) continue;
@@ -75,11 +76,11 @@ export async function freshWorkerKeyrings(
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
   const result: { workerId: string; status: KeyringStatus; activeKeyId?: string }[] = [];
   for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
-    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const parsed = readerSchema(WorkerHeartbeatSchema).safeParse({ [processId]: entry });
     const value = parsed.success ? parsed.data[processId] : undefined;
     if (value === undefined) continue;
     if (!isHeartbeatFresh(Date.parse(value.at), now)) continue;
-    const report = KeyringReportSchema.safeParse(value.runtime?.['keyring']);
+    const report = readerSchema(KeyringReportSchema).safeParse(value.runtime?.['keyring']);
     if (!report.success) continue;
     const { status, activeKeyId } = report.data;
     result.push({
@@ -112,7 +113,7 @@ export async function freshWorkerStatuses(db: Executor, now: Date): Promise<Work
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
   const result: WorkerRuntimeStatus[] = [];
   for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
-    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const parsed = readerSchema(WorkerHeartbeatSchema).safeParse({ [processId]: entry });
     const value = parsed.success ? parsed.data[processId] : undefined;
     if (value === undefined) continue;
     if (!isHeartbeatFresh(Date.parse(value.at), now)) continue;
@@ -150,7 +151,7 @@ export async function freshWorkerRuntimeDefaults(
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return result;
   const beats: { at: number; defaults: Record<string, unknown> }[] = [];
   for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
-    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const parsed = readerSchema(WorkerHeartbeatSchema).safeParse({ [processId]: entry });
     const value = parsed.success ? parsed.data[processId] : undefined;
     if (value === undefined) continue;
     const at = Date.parse(value.at);

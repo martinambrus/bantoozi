@@ -16,7 +16,7 @@ import {
   recordVerifiedLogin,
   replaceSetupState,
 } from '@bantoozi/db';
-import { newUserId, parseSetting, type Me } from '@bantoozi/shared';
+import { parseStoredSetting, newUserId, parseSetting, type Me } from '@bantoozi/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ApiServices } from '../context.js';
@@ -154,7 +154,7 @@ export async function completeSetup(
     if (await activeAdminExists(tx)) return fail;
     const stored = await lockSetupState(tx);
     if (stored === undefined) return fail;
-    const state = parseSetting(SETUP_KEY, stored);
+    const state = parseStoredSetting(SETUP_KEY, stored);
     const expected = state.consumedAt === undefined ? state.digest : undefined;
     const given = setupTokenDigest(config.sessionPepper, input.token);
     const matches = digestsMatch(given, expected ?? '00');

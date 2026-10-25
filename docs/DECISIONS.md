@@ -3433,3 +3433,17 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   marked until the reader's next rating event of that article, dwell/read samples never refresh, and ratings captured
   before this change carry no marker (answer provenance was not recorded, so no backfill): the guard improves for new
   ratings only. Older releases ignore the extra snapshot field. No migration.
+- D-335: 2026-10-24 (design item #19, owner approved the recommended approach) — Stored settings: tolerant readers,
+  strict writers. Every reader of a stored setting (API, worker, eval/ops tools, runtime caches, the three
+  settings-shaped response DTOs) parses with `readerSchema(...)`, derived and cached from the registered zod 4 writer
+  schema: strict objects become stripping ones at every level, known-field types, bounds, refinements, defaults (fresh
+  per parse) and metadata are kept, Map/Set and getter recursion are handled, and an unsupported construct throws when
+  the reader is derived. Writers and request/editor schemas stay strict. Locked read-modify-write and the engine store's
+  `setSetting` restore the stored unknown keys after validating the new known values. `engine.model_watch` recovers per
+  field; model probes, `ops.events`, pending rebuild runs and sweep cursors per entry. Heartbeat readers drop newer
+  queue and env-provider names (writers reject them). A source-level test fails on any new strict parse of a stored
+  setting unless it is a write with a stated reason (direct, aliased, destructured, async and decode forms). Trade-off:
+  a typo'd or removed key in a stored row is now ignored on read. Extras are bound to the key path, not the record.
+  This protects rollbacks to this release and later ones; older binaries keep their strict readers, so their RUNBOOK
+  steps stay. Still open: the SQL `admin_activate_provider_credential` replaces the breaker object (task #49) and the
+  web client's strict parsing of every API response (design task #50). No migration.

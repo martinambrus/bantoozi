@@ -27,20 +27,29 @@ describe('resolveRankerSettings (spec 06 §7, §11)', () => {
     expect(settings.scoreVersion).toBe(`${RANKER_VERSION}:12`);
   });
 
-  it('rejects an override containing windowDays: the window is the fixed RANK_WINDOW_DAYS', () => {
-    expect(() =>
-      resolveRankerSettings({ thresholds: { windowDays: 30 }, settingsVersion: 1 }),
-    ).toThrow(RankerSettingsError);
-    expect(() =>
-      resolveRankerSettings({ thresholds: { model: { windowDays: 30 } }, settingsVersion: 1 }),
-    ).toThrow(RankerSettingsError);
+  it('ignores unknown root and nested keys while keeping the fixed rank window', () => {
+    for (const thresholds of [
+      { windowDays: 30 },
+      { model: { windowDays: 30 } },
+      { thresholds: {} },
+    ]) {
+      expect(resolveRankerSettings({ thresholds, settingsVersion: 1 }).config).toEqual(
+        DEFAULT_RANKER_CONFIG,
+      );
+    }
+    expect(
+      resolveRankerSettings({
+        thresholds: { future: true, model: { future: 1, historyDays: 90 } },
+        settingsVersion: 1,
+      }).config.model.historyDays,
+    ).toBe(90);
   });
 
   it.each([
     ['a JSON null', null],
     ['a string', 'lanes'],
     ['an array', []],
-    ['an unknown key', { thresholds: {} }],
+    ['a known field of the wrong type', { model: { historyDays: 'bad' } }],
     ['an out-of-range probability', { lanes: { forYou: 1.5 } }],
     ['a nonfinite number', { mustFloor: Number.NaN }],
     ['inverted lanes', { lanes: { maybe: 0.7, forYou: 0.6 } }],

@@ -18,6 +18,7 @@ import {
   type Question,
 } from '@bantoozi/engine';
 import {
+  readerSchema,
   canonicalJson,
   conservativeRequestTokens,
   ENGINE_MODEL_PROBES_MAX,
@@ -353,15 +354,22 @@ export async function recordModelProbe(
   let resetInvalid = false;
   await retryTransaction(db, async (tx) => {
     await updateSettingLocked(tx, 'engine.model_probe', {}, (current) => {
-      const stored = EngineModelProbesSchema.safeParse(current);
-      resetInvalid = !stored.success;
-      const previous = stored.success ? stored.data[checked.requested] : undefined;
+      const entries: Record<string, EngineModelProbe> = {};
+      resetInvalid = false;
+      if (current !== null && typeof current === 'object' && !Array.isArray(current)) {
+        for (const [key, value] of Object.entries(current)) {
+          const parsed = readerSchema(EngineModelProbesSchema).safeParse({ [key]: value });
+          if (parsed.success) Object.assign(entries, parsed.data);
+          else resetInvalid = true;
+        }
+      } else resetInvalid = true;
+      const previous = entries[checked.requested];
       const keepPrevious =
         previous !== undefined &&
         Date.parse(previous.at) > Date.parse(checked.at) &&
         Date.parse(previous.at) <= Date.now() + MODEL_PROBE_MAX_SKEW_MS;
       const merged: Record<string, EngineModelProbe> = {
-        ...(stored.success ? stored.data : {}),
+        ...entries,
         [checked.requested]: keepPrevious ? previous : checked,
       };
       const newest = Object.entries(merged)
@@ -376,7 +384,7 @@ export async function recordModelProbe(
       'engine.model_impact',
       null,
       (current) => {
-        const stored = EngineModelImpactSchema.safeParse(current);
+        const stored = readerSchema(EngineModelImpactSchema).safeParse(current);
         const at =
           stored.success &&
           Date.parse(stored.data.at) > Date.parse(checked.at) &&
@@ -387,11 +395,11 @@ export async function recordModelProbe(
       },
     );
   });
-  // A retried transaction reports the reset once, after it commits, without any stored payload.
+  // A retried transaction reports corrupt entries once, after it commits, without any stored payload.
   if (resetInvalid) {
     logger?.warn(
       { key: 'engine.model_probe' },
-      'invalid stored model probes; resetting the record',
+      'invalid stored model probes; discarding corrupt entries',
     );
   }
 }

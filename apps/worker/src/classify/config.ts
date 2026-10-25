@@ -11,7 +11,7 @@ import {
   parseSetting,
   readSetting,
   settingDefault,
-  validateRuntimeSetting,
+  readRuntimeSetting,
   type CardTextMode,
   type LanguageModes,
   type SettingEnvDefaults,
@@ -171,7 +171,7 @@ async function effectivePrefilterMinCards(db: Executor, env: ClassificationEnv):
   const fallback = env.prefilterMinCards ?? DEFAULT_PREFILTER_MIN_CARDS;
   const stored = await readStoredSetting(db, PREFILTER_MIN_CARDS_KEY);
   if (stored === undefined || stored === null) return fallback;
-  const checked = validateRuntimeSetting(PREFILTER_MIN_CARDS_KEY, stored, {
+  const checked = readRuntimeSetting(PREFILTER_MIN_CARDS_KEY, stored, {
     production: false,
     providerHostAllowlist: [],
     ollamaPricedModels: [],

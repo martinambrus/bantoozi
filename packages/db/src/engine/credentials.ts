@@ -1,4 +1,5 @@
 import {
+  BreakerStateSchema,
   AppError,
   CandidateValidationSchema,
   enqueueProviderValidate,
@@ -461,7 +462,9 @@ export async function activateProviderCredential(
     const breaker = input.provider === 'typesafe' ? 'typesafe' : 'llm';
     await tx.execute(sql`
       UPDATE settings s
-         SET value = jsonb_set(s.value, ARRAY[${breaker}]::text[], '{"state":"closed","reopenCount":0}'::jsonb),
+         SET value = jsonb_set(s.value, ARRAY[${breaker}]::text[],
+           ((s.value -> ${breaker}) - ${sql.param(Object.keys(BreakerStateSchema.shape))}::text[])
+           || '{"state":"closed","reopenCount":0}'::jsonb),
              updated_at = now(), updated_by = ${input.adminUserId ?? null}::uuid
        WHERE s.key = 'engine.circuit' AND s.value #>> ARRAY[${breaker}, 'state']::text[] = 'auth'`);
     const updated = result.rows[0]!;

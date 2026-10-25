@@ -1,3 +1,11 @@
+import {
+  HOUSE_PROGRESS_CURSORS,
+  isKnownSettingKey,
+  METRICS_DAILY_PREFIX,
+  MetricsSnapshotSchema,
+  preserveUnknownFields,
+  settingSchema,
+} from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from './client.js';
@@ -82,7 +90,9 @@ export async function shareLockStoredSetting(tx: Executor, key: string): Promise
  * Read-modify-write one JSON setting under its row lock (spec 02 §3.3): a missing key is first
  * inserted with `initial` (`ON CONFLICT DO NOTHING`), then locked, so concurrent writers never
  * overwrite each other. `update` returns the new value (validated by the caller) and the stored
- * value is replaced only when it changed. Returns the value now stored. Run inside a transaction.
+ * value is replaced only when it changed. Unknown fields in retained setting objects are restored
+ * from the locked row after the callback validates its new known value. Returns the value now
+ * stored (including those extensions). Run inside a transaction.
  */
 export async function updateSettingLocked<T>(
   tx: Executor,
@@ -94,9 +104,36 @@ export async function updateSettingLocked<T>(
   const locked = await tx.execute<{ value: unknown }>(
     sql`SELECT value FROM settings WHERE key = ${key} FOR UPDATE`,
   );
-  const next = update(locked.rows[0]?.value);
+  const current = locked.rows[0]?.value;
+  const updated = update(current);
+  const next = isKnownSettingKey(key)
+    ? preserveUnknownFields(
+        key.startsWith(METRICS_DAILY_PREFIX) ? MetricsSnapshotSchema : settingSchema(key),
+        current,
+        updated,
+      )
+    : updated;
+  if (key === 'house.progress') preserveProgressCursors(current, next);
+  // Open JSON snapshots count retained extensions toward their total storage limit too.
+  if (key.startsWith(METRICS_DAILY_PREFIX) && isKnownSettingKey(key))
+    settingSchema(key).parse(next);
   await tx.execute(sql`
     UPDATE settings SET value = ${JSON.stringify(next)}::jsonb, updated_at = now()
      WHERE key = ${key} AND value IS DISTINCT FROM ${JSON.stringify(next)}::jsonb`);
   return next;
+}
+
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** Progress cursors have per-job schemas inside the registry's otherwise open JSON field. */
+function preserveProgressCursors(current: unknown, next: unknown): void {
+  if (!object(current) || !object(next)) return;
+  for (const [job, schema] of Object.entries(HOUSE_PROGRESS_CURSORS)) {
+    const previous = current[job];
+    const updated = next[job];
+    if (object(previous) && object(updated) && Object.hasOwn(updated, 'cursor')) {
+      updated.cursor = preserveUnknownFields(schema, previous.cursor, updated.cursor);
+    }
+  }
 }

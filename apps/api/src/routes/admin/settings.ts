@@ -25,6 +25,7 @@ import {
   mergeRankerConfig,
   readSetting,
   validateRuntimeSetting,
+  readRuntimeSetting,
   type AdminSettingKey,
   type AdminSettings,
   type AdminSettingsPatch,
@@ -141,8 +142,7 @@ function runtimeState(
     state.defaults[key] = fallback;
     const row = stored.get(key);
     if (row !== undefined && row !== null) state.hasRow.add(key);
-    const checked =
-      row === undefined || row === null ? null : validateRuntimeSetting(key, row, ctx);
+    const checked = row === undefined || row === null ? null : readRuntimeSetting(key, row, ctx);
     if (checked?.ok === true && checked.value !== null) {
       state.values[key] = checked.value;
       state.sources[key] = 'stored';

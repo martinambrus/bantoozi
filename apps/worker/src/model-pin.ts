@@ -5,7 +5,7 @@ import {
   type Database,
   type Transaction,
 } from '@bantoozi/db';
-import { buildJobIntent, parseSetting } from '@bantoozi/shared';
+import { parseStoredSetting, buildJobIntent, parseSetting } from '@bantoozi/shared';
 
 /** The pin a worker derives from its config: `llm` exists only while the fallback is on. */
 export interface WorkerModelPin {
@@ -46,7 +46,7 @@ export async function recordModelPin(
     let changed = false;
     await updateSettingLocked(tx, 'engine.model_pin', fresh, (current) => {
       if (current === undefined || current === null) return fresh;
-      const stored = parseSetting('engine.model_pin', current);
+      const stored = parseStoredSetting('engine.model_pin', current);
       if (stored === undefined) return fresh;
       const { alias: _storedAlias, ...withoutAlias } = stored;
       if (stored.model === pin.model && llmKey(stored.llm) === llmKey(pin.llm)) {

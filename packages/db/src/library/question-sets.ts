@@ -1,4 +1,10 @@
-import { parseSetting, type QuestionSetsActive } from '@bantoozi/shared';
+import {
+  SETTINGS,
+  preserveUnknownFields,
+  parseStoredSetting,
+  parseSetting,
+  type QuestionSetsActive,
+} from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 import { sql } from 'drizzle-orm';
 
@@ -101,7 +107,7 @@ export async function seedQuestionSets(
   const locked = await tx.execute<{ value: unknown }>(
     sql`SELECT value FROM settings WHERE key = 'question_sets.active' FOR UPDATE`,
   );
-  const active = parseSetting('question_sets.active', locked.rows[0]?.value ?? {});
+  const active = parseStoredSetting('question_sets.active', locked.rows[0]?.value ?? {});
   const next: QuestionSetsActive = { ...active };
   const activated: QuestionSetKind[] = [];
   for (const kind of KINDS) {
@@ -118,7 +124,7 @@ export async function seedQuestionSets(
   if (activated.length > 0) {
     await tx.execute(sql`
       UPDATE settings
-         SET value = ${JSON.stringify(parseSetting('question_sets.active', next))}::jsonb,
+         SET value = ${JSON.stringify(preserveUnknownFields(SETTINGS['question_sets.active'].schema, locked.rows[0]?.value, parseSetting('question_sets.active', next)))}::jsonb,
              updated_at = now()
        WHERE key = 'question_sets.active'`);
   }
@@ -156,7 +162,7 @@ export async function checkQuestionSets(
     }
   }
   const known = new Set(sets.map((set) => `${set.version}:${set.sha256}`));
-  const active = parseSetting(
+  const active = parseStoredSetting(
     'question_sets.active',
     (await readStoredSetting(db, 'question_sets.active')) ?? {},
   );

@@ -10,6 +10,7 @@ import {
 } from '@bantoozi/db';
 import { OLLAMA_PRICE_TABLE } from '@bantoozi/engine';
 import {
+  readerSchema,
   canonicalJson,
   isConcreteJevModel,
   isModelAlias,
@@ -367,7 +368,9 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   if (modelState.kind === 'concrete' || modelState.kind === 'resolved') {
     processModel = modelState.model;
   } else {
-    const stored = EngineModelPinSchema.safeParse(await readStoredSetting(db, 'engine.model_pin'));
+    const stored = readerSchema(EngineModelPinSchema).safeParse(
+      await readStoredSetting(db, 'engine.model_pin'),
+    );
     processModel = stored.success ? stored.data.model : modelState.alias;
   }
   let lastClaimMs: number | undefined;

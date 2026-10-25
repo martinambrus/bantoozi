@@ -1,6 +1,6 @@
 import {
+  parseStoredSetting,
   DECISION_KINDS,
-  parseSetting,
   PLATFORM_USER_ID,
   type BudgetSnapshot,
   type CallKind,
@@ -32,7 +32,7 @@ export type BudgetAlerts = SettingValue<'engine.budget_alerts'>;
 
 /** The effective daily budget: a stored setting wins over the host default. */
 export function effectiveDailyBudgetUsd(stored: unknown, fallbackUsd: number): number {
-  return stored === undefined ? fallbackUsd : parseSetting('engine.daily_budget_usd', stored);
+  return stored === undefined ? fallbackUsd : parseStoredSetting('engine.daily_budget_usd', stored);
 }
 
 /** The highest committed spend a request of `priority` may reach (bulk 100 %, interactive 110 %). */

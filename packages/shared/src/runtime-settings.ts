@@ -1,5 +1,11 @@
+import { readerSchema } from './setting-readers.js';
 import { JEV_LATEST_ALIAS, isModelAlias, isModelId, isPinnedModel } from './model-id.js';
-import { EngineModelResolutionSchema, parseSetting, type SettingKey } from './settings.js';
+import {
+  EngineModelResolutionSchema,
+  parseSetting,
+  parseStoredSetting,
+  type SettingKey,
+} from './settings.js';
 
 /**
  * Live runtime settings (M8b-T1, spec 01 §3, spec 02 §2). The stored `settings` row of each key
@@ -129,14 +135,15 @@ function checkUrl(
 }
 
 /** Validate a value for a live runtime key; `null` always resets to the environment default. */
-export function validateRuntimeSetting(
+function validateRuntimeValue(
   key: RuntimeSettingKey,
   value: unknown,
   ctx: RuntimeSettingsContext,
+  stored = false,
 ): RuntimeSettingValidation {
   let parsed: unknown;
   try {
-    parsed = parseSetting(key, value);
+    parsed = stored ? parseStoredSetting(key, value) : parseSetting(key, value);
   } catch (error) {
     const issue = (error as { issues?: { message?: string }[] }).issues?.[0]?.message;
     return { ok: false, message: issue ?? 'invalid value' };
@@ -178,6 +185,24 @@ export function validateRuntimeSetting(
     default:
       return { ok: true, value: parsed };
   }
+}
+
+/** Validate a proposed runtime write strictly. */
+export function validateRuntimeSetting(
+  key: RuntimeSettingKey,
+  value: unknown,
+  ctx: RuntimeSettingsContext,
+): RuntimeSettingValidation {
+  return validateRuntimeValue(key, value, ctx, false);
+}
+
+/** Read a stored runtime override, ignoring unknown object fields. */
+export function readRuntimeSetting(
+  key: RuntimeSettingKey,
+  value: unknown,
+  ctx: RuntimeSettingsContext,
+): RuntimeSettingValidation {
+  return validateRuntimeValue(key, value, ctx, true);
 }
 
 const FIELDS: {
@@ -257,7 +282,7 @@ export function effectiveRuntimeSettings(
       sources[key] = 'env';
       continue;
     }
-    const result = validateRuntimeSetting(key, row, ctx);
+    const result = readRuntimeSetting(key, row, ctx);
     if (result.ok && result.value !== null) {
       values[field] = result.value;
       sources[key] = 'stored';
@@ -283,7 +308,7 @@ export function effectiveRuntimeSettings(
     resolutionRow !== undefined &&
     resolutionRow !== null
   ) {
-    const parsed = EngineModelResolutionSchema.safeParse(resolutionRow);
+    const parsed = readerSchema(EngineModelResolutionSchema).safeParse(resolutionRow);
     if (parsed.success && parsed.data.alias === values.typesafeModel) {
       values.typesafeResolvedModel = parsed.data.model;
     } else {

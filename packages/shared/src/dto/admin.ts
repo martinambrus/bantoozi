@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { readerSchema } from '../setting-readers.js';
+
 import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
 import { ENV_RANGES } from '../env-ranges.js';
 import { TRANSLATE_SKIP_REASONS } from '../jobs.js';
@@ -243,9 +245,9 @@ const runtimeDisplayShape = {
 } as const;
 
 /** The effective value of every admin key (the stored row, else its default). */
-export const AdminSettingsValuesSchema = z
-  .object({ ...settingShape, ...runtimeDisplayShape })
-  .strict();
+export const AdminSettingsValuesSchema = readerSchema(
+  z.object({ ...settingShape, ...runtimeDisplayShape }).strict(),
+);
 export type AdminSettingsValues = z.infer<typeof AdminSettingsValuesSchema>;
 
 export const AdminSettingsSchema = z
@@ -348,40 +350,42 @@ export type ModelProbeBody = z.infer<typeof ModelProbeBodySchema>;
  * probe's freshness is judged against it, never against the browser's. `impact` is `null` until a
  * worker that knows the count has recorded a probe.
  */
-export const AdminEngineModelSchema = z
-  .object({
-    now: IsoTimestampSchema,
-    setting: z
-      .object({
-        value: z.string().min(1).max(200),
-        source: z.enum(['env', 'stored', 'last_good']),
-      })
-      .strict(),
-    resolution: EngineModelResolutionSchema.nullable(),
-    pin: z
-      .object({
-        model: z.string().min(1).max(200),
-        alias: z.literal(JEV_LATEST_ALIAS).optional(),
-        since: IsoTimestampSchema,
-      })
-      .strict()
-      .nullable(),
-    watch: z
-      .object({
-        lastCheck: z
-          .object({
-            at: IsoTimestampSchema,
-            ok: z.boolean(),
-            error: z.string().min(1).max(200).optional(),
-          })
-          .strict()
-          .nullable(),
-      })
-      .strict(),
-    probes: EngineModelProbesSchema,
-    impact: EngineModelImpactSchema.nullable(),
-  })
-  .strict();
+export const AdminEngineModelSchema = readerSchema(
+  z
+    .object({
+      now: IsoTimestampSchema,
+      setting: z
+        .object({
+          value: z.string().min(1).max(200),
+          source: z.enum(['env', 'stored', 'last_good']),
+        })
+        .strict(),
+      resolution: EngineModelResolutionSchema.nullable(),
+      pin: z
+        .object({
+          model: z.string().min(1).max(200),
+          alias: z.literal(JEV_LATEST_ALIAS).optional(),
+          since: IsoTimestampSchema,
+        })
+        .strict()
+        .nullable(),
+      watch: z
+        .object({
+          lastCheck: z
+            .object({
+              at: IsoTimestampSchema,
+              ok: z.boolean(),
+              error: z.string().min(1).max(200).optional(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+      probes: EngineModelProbesSchema,
+      impact: EngineModelImpactSchema.nullable(),
+    })
+    .strict(),
+);
 export type AdminEngineModel = z.infer<typeof AdminEngineModelSchema>;
 
 /** `409 CONFLICT` details of a model change without a fresh probe of the new value. */
@@ -446,13 +450,15 @@ export const KeyringReportSchema = z
   .object({ status: KeyringStatusSchema, activeKeyId: z.string().optional() })
   .strict();
 /** Keyring state of the API and the fresh workers; never any key material (M8b-T9). */
-export const KeyringOverviewSchema = z
-  .object({
-    api: KeyringReportSchema,
-    workers: z.array(KeyringReportSchema.extend({ workerId: z.string() }).strict()),
-    mismatch: z.boolean(),
-  })
-  .strict();
+export const KeyringOverviewSchema = readerSchema(
+  z
+    .object({
+      api: KeyringReportSchema,
+      workers: z.array(KeyringReportSchema.extend({ workerId: z.string() }).strict()),
+      mismatch: z.boolean(),
+    })
+    .strict(),
+);
 export type KeyringOverview = z.infer<typeof KeyringOverviewSchema>;
 export const CredentialListSchema = z
   .object({ items: z.array(CredentialStatusSchema), keyring: KeyringOverviewSchema })

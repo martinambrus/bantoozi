@@ -200,7 +200,7 @@ describe('JEV-4 registerRatingFingerprint', () => {
     expect(now[shaOf(2)]).toBeDefined();
   });
 
-  it('RG10 an invalid entry is dropped by the next registration', async () => {
+  it('RG10 drops invalid known fields and preserves future fields on valid entries', async () => {
     await putRaw({
       [shaOf(5)]: { family: 'nope', settings: {}, firstSeenAt: at(0).toISOString() },
       [shaOf(6)]: { family: FAM_A, settings: {}, firstSeenAt: at(0).toISOString(), extra: 1 },
@@ -210,7 +210,8 @@ describe('JEV-4 registerRatingFingerprint', () => {
     await expect(registerRatingFingerprint(ctx.worker, fp, at(1))).resolves.toMatchObject({
       registered: true,
     });
-    expect(Object.keys(await stored()).sort()).toEqual([shaOf(7), shaOf(8)]);
+    expect(Object.keys(await stored()).sort()).toEqual([shaOf(6), shaOf(7), shaOf(8)]);
+    expect((await stored())[shaOf(6)]).toMatchObject({ extra: 1 });
   });
 
   it.each([

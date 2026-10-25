@@ -1,0 +1,166 @@
+[
+  {
+    "call": "apps/api/src/routes/admin/engine.ts: EngineCircuitSchema.parse({ ...parsed.data, resetRequested: { ...parsed.data.resetRequested, [engine]: at }, })",
+    "reason": "Builds an administrator-requested breaker reset from the leniently parsed circuit before persisting it."
+  },
+  {
+    "call": "apps/api/src/services/setup.ts: parseSetting(SETUP_KEY, { createdAt: state.createdAt, consumedAt: clock.now().toISOString(), userId, })",
+    "reason": "Builds consumed setup state after successful setup, intentionally removing the digest."
+  },
+  {
+    "call": "apps/api/src/services/setup.ts: parseSetting(SETUP_KEY, { digest: setupTokenDigest(config.sessionPepper, fresh), createdAt: clock.now().toISOString(), })",
+    "reason": "Builds a freshly generated setup-token digest and creation timestamp for storage."
+  },
+  {
+    "call": "apps/eval/src/commands/apply-g1.ts: LanguageModesSchema.parse(JSON.parse(env['LANGUAGE_MODES']))",
+    "reason": "Validates LANGUAGE_MODES supplied through the apply-g1 environment."
+  },
+  {
+    "call": "apps/worker/src/classify/config.ts: parseSetting(key, settingDefault(key, env))",
+    "reason": "Validates a registry default before inserting a missing classification-setting fence."
+  },
+  {
+    "call": "apps/worker/src/eval-mode.ts: parseSetting('worker.heartbeat', { [options.processId]: { at: at.toISOString(), startedAt, queues: [...options.queues], evalIngestOnly: options.evalIngestOnly, envCredentials: [...options.envCredentials], ...(pool === undefined ? {} : { pool }), ...(runtime === undefined ? {} : { runtime }), }, })",
+    "reason": "Validates the heartbeat this worker is about to publish, including its own queues and providers."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-alerts.ts: parseSetting( 'alerts.state', applyRun( parseStoredSetting('alerts.state', current ?? {}), plan, admins.length === 0 ? [] : conditions, outcome, memoChanged ? memo.backupOkAt : undefined, now, poolChanged ? memo.poolStreak : undefined, changedSeen, ), )",
+    "reason": "Validates the updated alert memo after applying a run to leniently parsed prior state."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-expire-rules.ts: parseSetting('house.progress', { ...progress, [JOB]: { updatedAt: now.toISOString(), completedAt: now.toISOString(), version: 1 }, })",
+    "reason": "Builds the successful expire-rules progress entry from leniently parsed progress."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-metrics.ts: settingSchema(key).parse(snapshot)",
+    "reason": "Checks a newly calculated metrics snapshot against the dynamic key storage limit."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-nightly-learn.ts: parseSetting('house.progress', { ...progress, [JOB]: { updatedAt: now.toISOString(), completedAt: now.toISOString(), version: 1 }, })",
+    "reason": "Builds the successful nightly-learning progress entry from leniently parsed progress."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-purge-auth.ts: parseSetting('house.progress', { ...progress, [job]: { ...(cursor === undefined ? {} : { cursor }), updatedAt: now.toISOString(), ...(completedAt === undefined ? {} : { completedAt }), version: 1, }, })",
+    "reason": "Builds one housekeeping progress entry with its new cursor and completion timestamp."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-purge-auth.ts: parseSetting('house.progress', { ...progress, [job]: { ...(pending.length === 0 ? {} : { cursor: { pending } }), updatedAt: now.toISOString(), ...(completedAt === undefined ? {} : { completedAt }), version: 1, }, })",
+    "reason": "Builds rebuild progress after salvaging pending runs and applying the pending-run cap."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-purge-auth.ts: parseSetting('house.progress', { ...progress, [job]: { updatedAt: now.toISOString(), ...(previous.completedAt === undefined ? {} : { completedAt: previous.completedAt }), version: 1, }, })",
+    "reason": "Builds progress after deliberately removing taken runs from the pending recovery list."
+  },
+  {
+    "call": "apps/worker/src/handlers/house-rescore-degraded.ts: parseSetting('house.progress', { ...progress, [JOB]: { cursor, updatedAt: now.toISOString(), version: 1, ...(passComplete ? { completedAt: now.toISOString() } : previous?.completedAt === undefined ? {} : { completedAt: previous.completedAt }), }, })",
+    "reason": "Builds the rescore progress entry with newly computed recovery positions and timestamps."
+  },
+  {
+    "call": "apps/worker/src/model-pin.ts: parseSetting('engine.model_pin', { model: pin.model, ...(pin.alias ? { alias: pin.alias } : {}), ...(pin.llm ? { llm: pin.llm } : {}), since, })",
+    "reason": "Builds a new model pin from resolved worker model identities and the observation timestamp."
+  },
+  {
+    "call": "apps/worker/src/model-probe.ts: EngineModelImpactSchema.parse({ at, activeModels })",
+    "reason": "Builds a new model-impact count and observation timestamp after the probe sweep."
+  },
+  {
+    "call": "apps/worker/src/model-probe.ts: EngineModelProbeSchema.parse(probe)",
+    "reason": "Validates the fresh probe supplied for recording, not the previous probe registry."
+  },
+  {
+    "call": "apps/worker/src/model-resolution.ts: EngineModelResolutionSchema.parse({ alias: input.alias, model: input.model, resolvedAt: at, checkedAt: at, })",
+    "reason": "Builds an initial concrete-model resolution when no previous resolution exists."
+  },
+  {
+    "call": "apps/worker/src/model-resolution.ts: EngineModelResolutionSchema.parse({ alias: input.alias, model: input.model, resolvedAt: at, checkedAt: at, })",
+    "reason": "Builds a replacement concrete-model resolution before adding previous-model grace data."
+  },
+  {
+    "call": "apps/worker/src/seed.ts: parseSetting('engine.model_pin', { model, ...(llm ? { llm } : {}), since: new Date().toISOString(), })",
+    "reason": "Builds the seed model pin from configured identities at the current time."
+  },
+  {
+    "call": "apps/worker/src/seed.ts: parseSetting(key, settingDefault(key, env))",
+    "reason": "Validates the registry default seed inserts only when its key is missing."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: EngineCircuitSchema.parse( settingDefault('engine.circuit', { dailyBudgetUsd: 0, languageModes: {}, signupMode: 'invite', }), )",
+    "reason": "Validates the registry-provided default circuit for the PostgreSQL engine store."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: EngineCircuitSchema.parse({ ...current, [engine]: next })",
+    "reason": "Validates the computed breaker transition on top of the leniently read circuit."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: parseSetting('engine.budget_alerts', next)",
+    "reason": "Validates budget-alert crossing timestamps produced by this transaction."
+  },
+  {
+    "call": "packages/db/src/engine/store.ts: settingSchema(key).parse(value)",
+    "reason": "Validates EngineStore.setSetting input before the locked update restores stored extensions."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('card_text_mode', input.cardTextMode)",
+    "reason": "Validates the proposed card-text mode from a G1 application request."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('engine.daily_budget_usd', input.dailyBudgetUsd)",
+    "reason": "Validates the proposed daily engine budget from a G1 application request."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('language_modes', { ...oldModes, ...input.languageModes })",
+    "reason": "Validates proposed language modes merged with leniently read previous modes."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('ranker.thresholds', input.rankerThresholds)",
+    "reason": "Validates proposed ranker thresholds from the G1 application request."
+  },
+  {
+    "call": "packages/db/src/eval/g1.ts: parseSetting('translate.tier2_daily_cap', input.tier2DailyCap)",
+    "reason": "Validates the proposed tier-two translation cap from the G1 application request."
+  },
+  {
+    "call": "packages/db/src/library/question-sets.ts: parseSetting('question_sets.active', next)",
+    "reason": "Validates newly selected active question-set versions before preserving stored extensions."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse(circuit)",
+    "reason": "Validates the default in-memory breaker circuit without reading a database row."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse(initial ?? defaultCircuit())",
+    "reason": "Validates caller-supplied initial state of an in-memory engine store."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse(value)",
+    "reason": "Validates a whole-circuit replacement supplied to the in-memory writer."
+  },
+  {
+    "call": "packages/engine/src/breaker.ts: EngineCircuitSchema.parse({ ...value, [engine]: next })",
+    "reason": "Validates a transition produced by the in-memory store update callback."
+  },
+  {
+    "call": "packages/shared/src/ranker-config.ts: RankerThresholdsSchema.parse(overrides ?? {})",
+    "reason": "Validates proposed ranker overrides; a separate stored-callers control enforces stripping first."
+  },
+  {
+    "call": "packages/shared/src/runtime-settings.ts: parseSetting(key, value)",
+    "reason": "Implements the strict runtime write branch; the read branch uses parseStoredSetting."
+  },
+  {
+    "call": "packages/shared/src/settings.ts: SETTINGS[key].schema.parse(value)",
+    "reason": "Implements the strict public settings writer; stored readers use parseStoredSetting."
+  },
+  {
+    "call": "packages/db/src/settings.ts: settingSchema(key).parse(next)",
+    "reason": "Rechecks the metrics storage limit after restoring extensions from the locked row."
+  },
+  {
+    "call": "apps/api/src/routes/admin/engine.ts: validateRuntimeSetting( 'engine.typesafe_model', model, runtimeContext(app.services.config), )",
+    "reason": "Validates the model name in the administrator probe request before enqueueing it."
+  },
+  {
+    "call": "apps/api/src/routes/admin/settings.ts: validateRuntimeSetting(key, raw, ctx)",
+    "reason": "Validates each proposed PATCH runtime value against production restrictions before computing its write plan."
+  }
+]

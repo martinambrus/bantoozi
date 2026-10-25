@@ -298,7 +298,15 @@ const report = (at: Date, containers: Containers): OpsEvent =>
   opsEvent(
     'host_health',
     at,
-    JSON.stringify({ host: 'prod', checkedAt: iso(at), filesystems: [HEALTHY_FS], containers }),
+    JSON.stringify({
+      host: 'prod',
+      checkedAt: iso(at),
+      filesystems: [{ ...HEALTHY_FS, future: true }],
+      containers: Object.fromEntries(
+        Object.entries(containers).map(([name, value]) => [name, { ...value, future: true }]),
+      ),
+      future: true,
+    }),
   );
 
 /** Reports `minutesAgo` before `at`, oldest first, with the same container each time. */

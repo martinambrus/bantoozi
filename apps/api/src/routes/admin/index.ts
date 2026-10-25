@@ -1,5 +1,6 @@
 import { updateSettingLocked } from '@bantoozi/db';
 import {
+  readerSchema,
   AppError,
   OPS_EVENTS_MAX,
   OpsEventBodySchema,
@@ -58,8 +59,11 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
       // the last 50 are kept for `house.alerts`.
       const stored = await db.transaction((tx) =>
         updateSettingLocked(tx, 'ops.events', [], (current) => {
-          const parsed = SETTINGS['ops.events'].schema.safeParse(current);
-          const events = parsed.success ? parsed.data : [];
+          const entry = readerSchema(SETTINGS['ops.events'].schema.element);
+          const events = (Array.isArray(current) ? current : []).flatMap((value) => {
+            const parsed = entry.safeParse(value);
+            return parsed.success ? [parsed.data] : [];
+          });
           return [...events, { kind: event.kind, detail, at }].slice(-OPS_EVENTS_MAX);
         }),
       );

@@ -1,4 +1,7 @@
+import { readStoredSetting } from '../settings.js';
 import {
+  settingSchema,
+  preserveUnknownFields,
   AppError,
   BUDGET_EXEMPT_KINDS,
   CandidateValidationSchema,
@@ -76,12 +79,15 @@ export async function lockSettingRows(
   }));
 }
 
-/** Upsert a validated setting value, attributed to the administrator. */
+/** Upsert a validated value, preserving stored extensions. The caller holds lockSettingRows. */
 export async function writeSetting(
   tx: Executor,
   input: { key: string; value: unknown; updatedBy: string | null },
 ): Promise<void> {
-  const value = JSON.stringify(input.value);
+  const current = await readStoredSetting(tx, input.key);
+  const value = JSON.stringify(
+    preserveUnknownFields(settingSchema(input.key), current, input.value),
+  );
   await tx.execute(sql`
     INSERT INTO settings (key, value, updated_at, updated_by)
     VALUES (${input.key}, ${value}::jsonb, now(), ${input.updatedBy}::uuid)

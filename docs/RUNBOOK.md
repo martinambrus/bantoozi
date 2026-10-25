@@ -251,6 +251,11 @@ the schema by hand and do not restore a backup over live writes. Put the site in
 fix forward with a patch release (deploy it as in section 2), and only if the data itself is damaged go to the
 recovery runbook (section 4.4). Record the incident.
 
+**Settings written by a newer release (D-335).** From this release on, readers ignore unknown keys in stored settings
+and read-modify-write keeps them, so rolling back to this release or a later one needs no manual key cleanup for an
+added settings field. Rolling back to a release from BEFORE this one still needs the version-specific steps below.
+New enum values, changed meanings, migrations and non-settings storage keep their own procedures.
+
 **Rolling back past JEV-2 (D-274).** A stored `engine.model_pin` may carry `alias`, which an older release parses
 strictly (the API answers 500 on ratings and Analyze, the worker cannot start). Before rolling back, set a concrete
 `engine.typesafe_model` (the model the alias resolves to), let one worker record the pin, and remove the key:

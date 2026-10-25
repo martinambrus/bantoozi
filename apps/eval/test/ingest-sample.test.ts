@@ -201,3 +201,23 @@ it('excludes heartbeats beyond the shared future-skew window', () => {
     ),
   ).toMatchObject({ ok: false, reason: 'no_ingest_only_worker' });
 });
+
+it('checks newer workers after dropping unknown queues and credential providers', () => {
+  const newer = {
+    ...beat(1_000, true, ['feed.fetch', 'article.extract', 'future.queue']),
+    envCredentials: ['typesafe', 'ollama', 'future-provider'],
+  };
+  expect(checkWorkers({ newer }, NOW)).toMatchObject({
+    ok: true,
+    ingestOnly: [
+      {
+        processId: 'newer',
+        queues: ['feed.fetch', 'article.extract'],
+      },
+    ],
+  });
+  expect(checkWorkers({ newer: { ...newer, evalIngestOnly: false } }, NOW)).toMatchObject({
+    ok: false,
+    reason: 'ordinary_worker_live',
+  });
+});
