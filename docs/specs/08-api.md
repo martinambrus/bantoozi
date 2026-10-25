@@ -11,7 +11,11 @@ Every per-user query runs under row-level security, and every limit that bounds 
   upload/download and the export download.
 - **Schemas:** all request and response bodies are zod schemas in `packages/shared/src/dto/` (one file
   per area), registered with `fastify-type-provider-zod`. OpenAPI JSON is served at
-  `/api/v1/openapi.json` (admin session required in production).
+  `/api/v1/openapi.json` (admin session required in production). Server DTOs and request/editor schemas
+  keep their declared validation. The web client's response boundary derives tolerant readers that
+  ignore additional structured object fields recursively while validating all known fields; explicit
+  record/catchall entries remain allowed. Error envelopes follow the same rule so added metadata does
+  not hide their status, code or details from compatible cached bundles (D-337).
 - **Data formats:** IDs are strings. Timestamps are ISO 8601 UTC strings. Enumerations are lower-case
   strings exactly as in [spec 02](./02-data-model.md).
 - **Errors:** `{ "error": { "code": "QUOTA_EXCEEDED", "message": "human text (en)", "details": {…} } }`

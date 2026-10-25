@@ -16,7 +16,13 @@ mobile-first, installable, works in English and Slovak, and never makes the read
 - The API client is generated from the zod DTOs in `packages/shared` (a thin typed `fetch` wrapper).
   It sends same-origin credentials and `X-Bantoozi-Client: web`; authenticated mutations carry the
   durable `Idempotency-Key` and reader `stateVersion` required by spec 08. Validate response DTOs
-  at the boundary. All query keys include the account id and normalized reader filters.
+  at the boundary with cached readers derived from the shared schemas: ignore unknown structured
+  object fields recursively, including nested objects, array entries and error envelopes, while
+  retaining required fields, known-field types, enums/discriminators, bounds and refinements.
+  Explicit records and catchalls keep their allowed data. Apply the same readers to API-derived
+  account/article data read from the offline cache, session/replay broadcasts and conflict details;
+  request/editor validation stays strict (D-337). All query keys include the account id and normalized
+  reader filters.
 - Optimistic updates for every reader action (read, rate, bookmark, label), rolled back on error with
   a toast ("Couldn't save — retry"). This is FeedIt's "undo on failure" todo.
 - **PWA (vite-plugin-pwa):**
@@ -61,7 +67,9 @@ mobile-first, installable, works in English and Slovak, and never makes the read
     Session tokens never enter IndexedDB/localStorage. A service-worker update preserves queued
     records via versioned migrations; prompt before reloading an actively used reader: a newer
     version shows a bar fixed at the top of every screen with Reload; each tab keeps its version
-    until the person reloads it (D-163)
+    until the person reloads it (D-163). Additive API response fields remain readable by cached bundles
+    containing the tolerant readers; this does not update already-deployed older JavaScript or make
+    breaking known-field changes compatible (D-337)
 - **Accessibility:**
   - every swipe action also has a button
   - keyboard navigation throughout

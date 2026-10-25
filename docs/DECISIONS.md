@@ -3445,8 +3445,8 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   setting unless it is a write with a stated reason (direct, aliased, destructured, async and decode forms). Trade-off:
   a typo'd or removed key in a stored row is now ignored on read. Extras are bound to the key path, not the record.
   This protects rollbacks to this release and later ones; older binaries keep their strict readers, so their RUNBOOK
-  steps stay. Still open: the SQL `admin_activate_provider_credential` replaces the breaker object (task #49) and the
-  web client's strict parsing of every API response (design task #50). No migration.
+  steps stay. Follow-ups cover the SQL `admin_activate_provider_credential` writer (task #49, D-336) and web API
+  response readers (design task #50, D-337). No migration.
 - D-336: 2026-10-24 (FNF-VL-25, task #49; completes D-335 for SQL writers) — Migration 0039 replaces
   `admin_activate_provider_credential` (same signature, grants, SECURITY DEFINER and search path): closing an `auth`
   breaker now applies the application's close transition (`engine/src/breaker.ts` `closed()`): it removes the known
@@ -3456,3 +3456,13 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   Activation also uses a NULL-safe comparison for the expected credential revision: NULL and mismatched revisions
   raise BZ409 before changing credentials or breaker settings; a current, validated candidate still activates with
   the exact revision.
+- D-337: 2026-10-25 (design task #50, owner approved ignoring unknown response fields) — Cached PWA
+  bundles now derive weakly cached recursive response readers from the shared schemas at the HTTP
+  boundary, including error envelopes. Added structured fields are ignored at every object/array
+  level; required fields, known-field types, enums/discriminators, bounds, defaults and refinements
+  retain their schema validation. Explicit records/catchalls keep their allowed data. The offline
+  account cache, session/replay broadcasts and reader conflict-detail items use the same readers,
+  avoiding a second strict rejection after the response boundary. Request/editor and shared server
+  DTO validation stay unchanged. This protects cached bundles that contain this change when a newer
+  server adds fields; already-deployed older JavaScript still needs its normal reload. Breaking
+  changes to known fields or discriminators remain invalid responses. No migration or dependency.
