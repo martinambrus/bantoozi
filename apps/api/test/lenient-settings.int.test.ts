@@ -167,7 +167,7 @@ it.each(['existing', 'missing'] as const)(
       ]);
       expect(row.rows[0].value).toEqual({
         ...circuit,
-        typesafe: { state: 'closed', reopenCount: 0 },
+        typesafe: { state: 'closed', reopenCount: 0, future: 9 },
       });
     } finally {
       await blocker.query('ROLLBACK').catch(() => undefined);

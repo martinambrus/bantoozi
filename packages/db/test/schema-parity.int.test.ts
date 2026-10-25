@@ -57,6 +57,7 @@ interface ExpectedFunction {
   securityDefiner: boolean;
   config: string[];
   execute: string[];
+  bodyMd5?: string;
 }
 interface ExpectedTrigger {
   table: string;
@@ -365,11 +366,13 @@ describe('schema parity with expected-schema.json', () => {
       security_definer: boolean;
       config: string[];
       execute: string[];
+      body_md5: string;
     }>(
       `SELECT p.proname AS name, pg_get_userbyid(p.proowner)::text AS owner,
               pg_get_function_identity_arguments(p.oid) AS args, pg_get_function_result(p.oid) AS result,
               l.lanname::text AS language, p.provolatile::text AS volatility,
               p.prosecdef AS security_definer, coalesce(p.proconfig, '{}') AS config,
+              md5(p.prosrc) AS body_md5,
               ARRAY(SELECT DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee)::text END
                       FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) AS a
                      WHERE a.privilege_type = 'EXECUTE' AND a.grantee <> p.proowner ORDER BY 1) AS execute
@@ -391,6 +394,7 @@ describe('schema parity with expected-schema.json', () => {
           securityDefiner: r.security_definer,
           config: r.config,
           execute: r.execute,
+          ...(expected.functions[r.name]?.bodyMd5 === undefined ? {} : { bodyMd5: r.body_md5 }),
         },
       ]),
     );
