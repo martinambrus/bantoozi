@@ -29,7 +29,10 @@ export function readerSchema<S extends z.core.$ZodType>(input: S): ReaderSchema<
     let result: z.ZodType;
     if (schema instanceof z.ZodObject) {
       const shape: Record<string, z.ZodType> = {};
-      result = schema.clone({ ...schema.def, shape, catchall: undefined });
+      // Zod captures catchall presence when cloning. Keep explicit catchalls present
+      // until their recursive readers are installed below; strict objects still strip.
+      const catchall = schema.def.catchall instanceof z.ZodNever ? undefined : schema.def.catchall;
+      result = schema.clone({ ...schema.def, shape, catchall });
       // Getter-based recursive objects can revisit this object while walking its shape.
       pending.set(schema, result);
       for (const [key, field] of Object.entries(schema.shape))

@@ -114,3 +114,22 @@ it('exposes strip semantics in the object reader type', () => {
     z.ZodObject<{ n: z.ZodNumber }, z.core.$strip>
   >();
 });
+
+it('preserves explicit catchall values and recursively reads their structured DTOs', () => {
+  const child = z.strictObject({ n: z.number().min(1) });
+  const schema = z.object({ name: z.string() }).catchall(child);
+  const wire = { name: 'known', dynamic: { n: 2, future: true } };
+  const reader = readerSchema(schema);
+  expect(reader.parse(wire)).toEqual({ name: 'known', dynamic: { n: 2 } });
+  expect(reader.safeParse({ name: 'known', dynamic: { n: 0 } }).success).toBe(false);
+  expect(schema.safeParse(wire).success).toBe(false);
+  const open = z.object({ name: z.string() }).catchall(z.unknown());
+  expect(readerSchema(open).parse(wire)).toEqual(wire);
+});
+
+it('supports recursive catchalls without leaving their writer permissive', () => {
+  const tree: z.ZodType = z.object({ n: z.number() }).catchall(z.lazy(() => tree));
+  const wire = { n: 1, child: { n: 2, grandchild: { n: 3 } } };
+  expect(readerSchema(tree).parse(wire)).toEqual(wire);
+  expect(readerSchema(tree).safeParse({ n: 1, child: { n: 'bad' } }).success).toBe(false);
+});
