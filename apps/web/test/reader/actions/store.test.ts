@@ -1091,6 +1091,21 @@ describe('O9 STALE_STATE', () => {
     expect(store.get(handle.id)?.status).toBe('stale');
   });
 
+  it('adopts a stale item containing fields added by a newer server', async () => {
+    const { store, transport } = rig();
+    const item = makeItem();
+    const handle = store.dispatch(item, rate(1));
+    await flush();
+    const server = serverItem(item);
+    nth(transport.sends, 0).reject(
+      apiError(409, 'STALE_STATE', {
+        item: { ...server, future: true, feed: { ...server.feed, future: true } },
+      }),
+    );
+    expect(asStale(await outcome(handle.result)).item).toEqual(server);
+    expect(store.view(item)).toEqual(adopted(item, server));
+  });
+
   it('sends the next queued action on that article with the adopted fence', async () => {
     const { store, transport } = rig();
     const item = makeItem();
@@ -1832,6 +1847,21 @@ describe('O15 bulk actions', () => {
     store.dispatch(b, { type: 'bookmark' });
     await flush();
     expect(nth(transport.sends, 0).fence).toEqual({ stateVersion: '12', contentRevision: '3' });
+  });
+
+  it('adopts stale bulk items containing fields added by a newer server', async () => {
+    const { store, transport } = rig();
+    const item = makeItem();
+    const pending = store.bulk({ kind: 'markRead', items: [item] });
+    await flush();
+    const newer = makeItem({ stateVersion: '12', readAt: SERVER_TIME });
+    nth(transport.markReads, 0).reject(
+      apiError(409, 'STALE_STATE', {
+        items: [{ ...newer, future: true, feed: { ...newer.feed, future: true } }],
+      }),
+    );
+    expect(await outcome(pending)).toEqual({ status: 'stale', items: [newer], reason: null });
+    expect(store.view(item)).toEqual(adopted(item, newer));
   });
 
   it('rateBulk adopts the items of a 409 STALE_STATE, rolls the ratings back and reports stale', async () => {

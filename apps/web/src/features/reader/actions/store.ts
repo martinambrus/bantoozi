@@ -4,6 +4,7 @@ import {
   MAX_RATE_BULK_TARGETS,
   compareBigIntStrings,
   nextRevision,
+  readerSchema,
   type ArticleListItem,
   type RatingReason,
 } from '@bantoozi/shared';
@@ -41,8 +42,9 @@ const MAX_RETRY_AFTER_MS = 30_000;
 
 const UNDOABLE = new Set<ReaderAction['type']>(UNDOABLE_ACTIONS);
 const OFFLINE = new Set<ReaderAction['type']>(OFFLINE_ACTIONS);
-const ItemsSchema = ArticleListItemSchema.array();
-const NullableItemSchema = ArticleListItemSchema.nullable();
+const ItemReaderSchema = readerSchema(ArticleListItemSchema);
+const ItemsSchema = ItemReaderSchema.array();
+const NullableItemSchema = ItemReaderSchema.nullable();
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 type Refusal = Extract<UndoResult, { status: 'refused' }>['reason'];

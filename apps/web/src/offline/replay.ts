@@ -1,4 +1,4 @@
-import { ArticleListItemSchema } from '@bantoozi/shared';
+import { ArticleListItemSchema, readerSchema } from '@bantoozi/shared';
 
 import type { ActionQueue, OfflineControl, SettledNote } from '../features/reader/actions/types.js';
 import { saveReaderStates } from './cache.js';
@@ -120,6 +120,9 @@ export function createDispatchLock(locks: Pick<LockManager, 'request'> | undefin
   };
 }
 
+const ItemReaderSchema = readerSchema(ArticleListItemSchema);
+const NullableItemReaderSchema = ItemReaderSchema.nullable();
+
 function noteFrom(data: unknown, accountId: string): SettledNote | null {
   if (typeof data !== 'object' || data === null) return null;
   const { accountId: owner, note } = data as { accountId?: unknown; note?: unknown };
@@ -129,14 +132,14 @@ function noteFrom(data: unknown, accountId: string): SettledNote | null {
   if (typeof id !== 'string') return null;
   switch (fields['outcome']) {
     case 'done': {
-      const item = ArticleListItemSchema.safeParse(fields['item']);
+      const item = ItemReaderSchema.safeParse(fields['item']);
       const mutationId = fields['mutationId'];
       return item.success && typeof mutationId === 'string'
         ? { id, outcome: 'done', item: item.data, mutationId }
         : null;
     }
     case 'stale': {
-      const item = ArticleListItemSchema.nullable().safeParse(fields['item']);
+      const item = NullableItemReaderSchema.safeParse(fields['item']);
       return item.success ? { id, outcome: 'stale', item: item.data } : null;
     }
     case 'failed': {
