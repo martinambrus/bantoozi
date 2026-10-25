@@ -133,6 +133,7 @@ function strictCalls(source: string, file: string): string[] {
   return found;
 }
 
+// Parsing every app/package source file needs headroom under CI coverage and CPU contention.
 it('has no unreviewed strict parses that can become stored-setting readers', () => {
   const calls: string[] = [];
   for (const tree of ['apps', 'packages']) {
@@ -147,7 +148,7 @@ it('has no unreviewed strict parses that can become stored-setting readers', () 
     }
   }
   expect(calls.sort()).toEqual(allowed.map((site) => site.call).sort());
-});
+}, 60_000);
 
 it('catches strict readers even when their imports are aliased', () => {
   expect(
