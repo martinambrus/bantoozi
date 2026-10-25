@@ -26,7 +26,7 @@ import { VERGE, likeOf, openMore, writeRoutes } from './surfaces.js';
  * The effect notice (visible-learning 4.5, PRG-3): after the reader's own rating the page asks
  * GET /me/learning/estimates every 5 s (at most 60 s after the last rating); when a refresh that followed
  * ratings finishes ("lastRun" with a new "at" and fromRatings true) a bar above the list says how
- * many unread articles moved, and the list reloads only when Show is pressed.
+ * many unread articles changed estimated tier, and the list reloads only when Refresh is pressed.
  */
 
 const { open } = createReaderHarness();
@@ -52,9 +52,10 @@ const L0 = run('2026-10-23T08:00:00.000Z', 4, 5);
 const L1 = run('2026-10-23T09:00:00.000Z', 12, 30);
 const L2 = run('2026-10-23T10:00:00.000Z', 3, 0);
 
-const SENTENCE_L1 = 'Updated from your ratings: 12 unread articles moved up, 30 down';
-const SENTENCE_L2 = 'Updated from your ratings: 3 unread articles moved up';
-const SHOW = 'Show articles in their new order';
+const SENTENCE_L1 =
+  'Your ratings raised the estimated tier of 12 unread articles and lowered it for 30.';
+const SENTENCE_L2 = 'Your ratings raised the estimated tier of 3 unread articles.';
+const REFRESH = 'Refresh article list';
 const DISMISS = 'Dismiss the update notice';
 
 /** What GET /me/learning/estimates answers next; a test changes it between polls. */
@@ -129,8 +130,8 @@ async function runLands(app: App, next: Run, before: Run | null = L0) {
 }
 
 const sentence = (text: string) => screen.queryByText(text);
-const notice = () => screen.queryByRole('button', { name: SHOW });
-const show = (app: App) => app.user.click(screen.getByRole('button', { name: SHOW }));
+const notice = () => screen.queryByRole('button', { name: REFRESH });
+const refreshNotice = (app: App) => app.user.click(screen.getByRole('button', { name: REFRESH }));
 
 describe('when the notice appears', () => {
   it('shows once, after the refresh of the new model version finished, and loads no list by itself', async () => {
@@ -149,7 +150,7 @@ describe('when the notice appears', () => {
     await nextPoll(app);
 
     expect(await screen.findByText(SENTENCE_L1)).toBeVisible();
-    expect(screen.getByRole('button', { name: SHOW })).toHaveTextContent('Show');
+    expect(screen.getByRole('button', { name: REFRESH })).toHaveTextContent('Refresh');
     expect(lists(app)).toBe(listed);
 
     await advance(70_000);
@@ -187,10 +188,14 @@ describe('when the notice appears', () => {
 
   it.each([
     { up: 0, down: 0, text: null },
-    { up: 1, down: 0, text: 'Updated from your ratings: 1 unread article moved up' },
-    { up: 0, down: 3, text: 'Updated from your ratings: 3 unread articles moved down' },
+    { up: 1, down: 0, text: 'Your ratings raised the estimated tier of 1 unread article.' },
+    { up: 0, down: 3, text: 'Your ratings lowered the estimated tier of 3 unread articles.' },
     { up: 12, down: 30, text: SENTENCE_L1 },
-    { up: 1, down: 1, text: 'Updated from your ratings: 1 unread article moved up, 1 down' },
+    {
+      up: 1,
+      down: 1,
+      text: 'Your ratings raised the estimated tier of 1 unread article and lowered it for 1.',
+    },
   ])('says it for $up up and $down down', async ({ up, down, text }) => {
     const { app } = await openReader();
     await app.user.click(likeOf('Article 1'));
@@ -200,10 +205,10 @@ describe('when the notice appears', () => {
 
     if (text === null) {
       expect(notice()).toBeNull();
-      expect(screen.queryByText(/Updated from your ratings/)).toBeNull();
+      expect(screen.queryByText(/Your ratings/)).toBeNull();
     } else {
       expect(await screen.findByText(text)).toBeVisible();
-      expect(screen.getByRole('button', { name: SHOW })).toBeVisible();
+      expect(screen.getByRole('button', { name: REFRESH })).toBeVisible();
     }
   });
 
@@ -215,7 +220,7 @@ describe('when the notice appears', () => {
     await advance(180_000);
 
     expect(notice()).toBeNull();
-    expect(screen.queryByText(/Updated from your ratings/)).toBeNull();
+    expect(screen.queryByText(/Your ratings/)).toBeNull();
     expect(polls(app)).toBe(asked);
   });
 
@@ -243,7 +248,7 @@ describe('when the notice appears', () => {
 
     expect(await screen.findByText(SENTENCE_L2)).toBeVisible();
     expect(sentence(SENTENCE_L1)).toBeNull();
-    expect(screen.getAllByRole('button', { name: SHOW })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: REFRESH })).toHaveLength(1);
   });
 });
 
@@ -400,8 +405,8 @@ describe('polling bounds', () => {
   });
 });
 
-describe('Show and Dismiss', () => {
-  it('does not touch the list while the reader is scrolled down; Show loads page one once', async () => {
+describe('Refresh and Dismiss', () => {
+  it('does not touch the list while the reader is scrolled down; Refresh loads page one once', async () => {
     const { app } = await openReader();
     // The router restores the scroll position once while the reader opens.
     scrollTo.mockClear();
@@ -418,7 +423,7 @@ describe('Show and Dismiss', () => {
     expect(rowTitles()).toEqual(titles);
     expect(scrollTo).not.toHaveBeenCalled();
 
-    await show(app);
+    await refreshNotice(app);
 
     await vi.waitFor(() => expect(lists(app)).toBe(listed + 1));
     expect(listQueries(app).at(-1)).not.toHaveProperty('cursor');
@@ -430,7 +435,7 @@ describe('Show and Dismiss', () => {
     expect(lists(app)).toBe(listed + 1);
   });
 
-  it('does not touch the list while an article is open; Show loads it and the article stays open', async () => {
+  it('does not touch the list while an article is open; Refresh loads it and the article stays open', async () => {
     const { app } = await openReader();
     await app.user.click(likeOf('Article 1'));
     await app.user.click(screen.getByRole('button', { name: 'Article 2' }));
@@ -447,7 +452,7 @@ describe('Show and Dismiss', () => {
     expect(lists(app)).toBe(listed);
     expect(rowTitles()).toEqual(titles);
 
-    await show(app);
+    await refreshNotice(app);
 
     await vi.waitFor(() => expect(lists(app)).toBe(listed + 1));
     expect(listQueries(app).at(-1)).not.toHaveProperty('cursor');
@@ -459,11 +464,11 @@ describe('Show and Dismiss', () => {
     );
   });
 
-  it('never announces the same run again after Show, but does announce a later run after another rating', async () => {
+  it('never announces the same run again after Refresh, but does announce a later run after another rating', async () => {
     const { app } = await openReader();
     await app.user.click(likeOf('Article 1'));
     await runLands(app, L1);
-    await show(app);
+    await refreshNotice(app);
     await vi.waitFor(() => expect(notice()).toBeNull());
 
     withRun(L1);
@@ -518,7 +523,7 @@ describe('where the notice is shown', () => {
     await runLands(app, L1);
 
     expect(await screen.findByText(SENTENCE_L1)).toBeVisible();
-    expect(screen.getByRole('button', { name: SHOW })).toBeVisible();
+    expect(screen.getByRole('button', { name: REFRESH })).toBeVisible();
   });
 
   it.each([
@@ -539,7 +544,7 @@ describe('where the notice is shown', () => {
 });
 
 describe('the notice as a live region', () => {
-  it('puts the sentence in a polite status element; Show and Dismiss are buttons outside it', async () => {
+  it('puts the sentence in a polite status element; Refresh and Dismiss are buttons outside it', async () => {
     const { app } = await openReader();
     await app.user.click(likeOf('Article 1'));
     await runLands(app, L1);
@@ -547,21 +552,21 @@ describe('the notice as a live region', () => {
     const text = await screen.findByText(SENTENCE_L1);
     const bar = text.closest('[role="status"]');
     expect(bar).not.toBeNull();
-    const showButton = screen.getByRole('button', { name: SHOW });
+    const refreshButton = screen.getByRole('button', { name: REFRESH });
     const dismissButton = screen.getByRole('button', { name: DISMISS });
-    expect(showButton).toHaveTextContent('Show');
-    expect(bar).not.toContainElement(showButton);
+    expect(refreshButton).toHaveTextContent('Refresh');
+    expect(bar).not.toContainElement(refreshButton);
     expect(bar).not.toContainElement(dismissButton);
-    expect(bar).not.toHaveTextContent('Show');
+    expect(bar).not.toHaveTextContent('Refresh');
   });
 });
 
 describe('in Slovak', () => {
-  const SK = 'Aktualizované podľa vašich hodnotení:';
+  const SK = 'Vaše hodnotenia zmenili odhadované úrovne neprečítaných článkov:';
   it.each([
-    { up: 1, text: `${SK} 1 neprečítaný článok sa posunul vyššie, 2 nižšie` },
-    { up: 3, text: `${SK} 3 neprečítané články sa posunuli vyššie, 2 nižšie` },
-    { up: 5, text: `${SK} 5 neprečítaných článkov sa posunulo vyššie, 2 nižšie` },
+    { up: 1, text: `${SK} 1 vyššie, 2 nižšie.` },
+    { up: 3, text: `${SK} 3 vyššie, 2 nižšie.` },
+    { up: 5, text: `${SK} 5 vyššie, 2 nižšie.` },
   ])('says $up up with the right plural form', async ({ up, text }) => {
     const { app } = await openReader();
     await app.user.click(likeOf('Article 1'));
@@ -570,9 +575,9 @@ describe('in Slovak', () => {
     await runLands(app, run(L1.at, up, 2));
 
     expect(await screen.findByText(text)).toBeVisible();
-    expect(
-      screen.getByRole('button', { name: 'Zobraziť články v novom poradí' }),
-    ).toHaveTextContent('Zobraziť');
+    expect(screen.getByRole('button', { name: 'Obnoviť zoznam článkov' })).toHaveTextContent(
+      'Obnoviť',
+    );
     expect(screen.getByRole('button', { name: 'Zavrieť oznámenie o aktualizácii' })).toBeVisible();
   });
 
@@ -583,6 +588,8 @@ describe('in Slovak', () => {
 
     await runLands(app, run(L1.at, 0, 3));
 
-    expect(await screen.findByText(`${SK} 3 neprečítané články sa posunuli nižšie`)).toBeVisible();
+    expect(
+      await screen.findByText('Vaše hodnotenia znížili odhadovanú úroveň 3 neprečítaných článkov.'),
+    ).toBeVisible();
   });
 });

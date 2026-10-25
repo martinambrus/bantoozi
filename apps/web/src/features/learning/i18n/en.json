@@ -18,14 +18,14 @@
     "enable": "Enable"
   },
   "notice": {
-    "both_one": "Updated from your ratings: {{count}} unread article moved up, {{down}} down",
-    "both_other": "Updated from your ratings: {{count}} unread articles moved up, {{down}} down",
-    "up_one": "Updated from your ratings: {{count}} unread article moved up",
-    "up_other": "Updated from your ratings: {{count}} unread articles moved up",
-    "down_one": "Updated from your ratings: {{count}} unread article moved down",
-    "down_other": "Updated from your ratings: {{count}} unread articles moved down",
-    "show": "Show",
-    "showLabel": "Show articles in their new order",
+    "both_one": "Your ratings raised the estimated tier of {{count}} unread article and lowered it for {{down}}.",
+    "both_other": "Your ratings raised the estimated tier of {{count}} unread articles and lowered it for {{down}}.",
+    "up_one": "Your ratings raised the estimated tier of {{count}} unread article.",
+    "up_other": "Your ratings raised the estimated tier of {{count}} unread articles.",
+    "down_one": "Your ratings lowered the estimated tier of {{count}} unread article.",
+    "down_other": "Your ratings lowered the estimated tier of {{count}} unread articles.",
+    "show": "Refresh",
+    "showLabel": "Refresh article list",
     "dismiss": "Dismiss",
     "dismissLabel": "Dismiss the update notice"
   }

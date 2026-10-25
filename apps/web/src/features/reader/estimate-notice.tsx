@@ -12,8 +12,8 @@ export interface EstimateNoticeBarProps {
 }
 
 /**
- * Says how many unread articles the model's refresh moved up or down, and loads the list from
- * page one when Show is pressed; nothing moves before (design 4.5, D-243).
+ * Reports unread articles whose estimated tier rose or fell, and reloads the current list from
+ * page one when Refresh is pressed; it does not select the changed articles (design 4.5, D-243).
  */
 export function EstimateNoticeBar({ notice, onShow, onDismiss }: EstimateNoticeBarProps) {
   const { t } = useTranslation('learning');

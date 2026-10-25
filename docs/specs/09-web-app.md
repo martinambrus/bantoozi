@@ -501,8 +501,10 @@ reports capture failures/partial snapshots and includes retained bookmark bodies
 
 Learning progress (D-312…D-314): an Off or Training feed view shows a **learning chip** in its header (estimate state,
 and for Training the interests agreement or Ready for automatic; the paused state overrides it). After the reader's own
-rating an **effect notice** may appear above the list ("Updated from your ratings: N unread articles moved up, M down",
-Show = Refresh, Dismiss). Settings → Personal learning shows the **learning curve** (three series over the updates,
+rating an **effect notice** may appear above the list, reporting unread articles whose estimated tier rose or fell
+(e.g. "Your ratings raised the estimated tier of 1 unread article."). Counts cover the account's estimate refresh;
+**Refresh** reloads the current list and counts from page one, scrolls to the top and dismisses the notice;
+it does not filter or highlight the affected articles. Dismiss closes the notice without refreshing. Settings → Personal learning shows the **learning curve** (three series over the updates,
 milestones, a slider that reads each update, and "Show as table").
 
 Word estimates (D-293): Reading preferences → "Feedback and learning" has the switch "Estimate unanalysed articles"
