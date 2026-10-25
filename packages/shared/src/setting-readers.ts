@@ -72,7 +72,10 @@ export function readerSchema<S extends z.core.$ZodType>(input: S): ReaderSchema<
       });
     } else if (schema instanceof z.ZodLazy) {
       // Register the lazy node before evaluating its getter as well.
-      result = schema.clone({ ...schema.def, getter: () => inner });
+      const definition = { ...schema.def, getter: () => inner };
+      // A previously parsed lazy carries Zod's cached writer; let this getter resolve its reader.
+      Reflect.deleteProperty(definition, '_cachedInner');
+      result = schema.clone(definition);
       pending.set(schema, result);
       const inner = derive(schema.def.getter());
     } else if (schema instanceof z.ZodPipe) {

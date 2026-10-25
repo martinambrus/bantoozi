@@ -133,3 +133,14 @@ it('supports recursive catchalls without leaving their writer permissive', () =>
   expect(readerSchema(tree).parse(wire)).toEqual(wire);
   expect(readerSchema(tree).safeParse({ n: 1, child: { n: 'bad' } }).success).toBe(false);
 });
+
+it('derives a warm lazy schema without reusing its cached strict writer', () => {
+  const child = z.strictObject({ n: z.number().min(1) });
+  const lazy = z.lazy(() => child);
+  // Parsing the writer populates Zod's internal lazy definition cache before reader derivation.
+  expect(lazy.parse({ n: 1 })).toEqual({ n: 1 });
+  const reader = readerSchema(z.strictObject({ lazy }));
+  expect(reader.parse({ lazy: { n: 2, future: true }, future: true })).toEqual({ lazy: { n: 2 } });
+  expect(reader.safeParse({ lazy: { n: 0, future: true } }).success).toBe(false);
+  expect(lazy.safeParse({ n: 2, future: true }).success).toBe(false);
+});
