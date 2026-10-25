@@ -325,8 +325,10 @@ an assumption until one real Jev answer is recorded.
 
   The paused state of §4.3 overrides all of them.
 - **Effect notice.** When `estimates.lastRun.at` advances after the reader's own ratings in this tab, a polite
-  live region above the list says "Updated from your ratings: 12 unread articles moved up, 30 down · Show". Show
-  reloads under D-243 and D-245, so rows never move under a reader who is scrolled down or reading.
+  live region above the list reports estimated tier changes, for example "Your ratings raised the estimated tier of
+  1 unread article." The counts cover the account's estimate refresh, not only the current feed or visible rows.
+  **Refresh** reloads the current view from page one and its counts, scrolls to the top and dismisses the notice
+  (D-243/D-245); it does not filter or highlight affected articles. Rows stay in place until the reader refreshes.
 - **History.** `user_learning_history(user_id, at, kind 'model'|'estimate', n, auc, baseline_auc, activated)`
   (migration; RLS; the newest 200 per user are kept), written by `user.learn` and `user.estimate`. Settings →
   Personal learning draws AUC over time, with milestones: estimates on, personal model active, upgrades.

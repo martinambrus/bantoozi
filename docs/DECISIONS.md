@@ -3214,9 +3214,10 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   for Training, "Interests agree X · ready at Y" (X is the agreement lower bound) or the Ready-for-automatic row; the
   paused state overrides all. Off feeds read the light endpoint; Training feeds the full status.
 - D-313: 2026-10-24 (PRG-3) — Effect notice. An own rating in this tab (rate, prompt answer, bulk rating) arms it; the
-  page polls the light `GET /me/learning/estimates` every 5 s for up to 60 s; a newer run with `fromRatings` that moved
-  at least one unread row shows "Updated from your ratings: N unread articles moved up, M down" with Show (= Refresh,
-  D-243/D-245) and Dismiss; nothing reloads by itself. First-time estimates inside `movedUp` are still counted (the
+  page polls the light `GET /me/learning/estimates` every 5 s for up to 60 s; when a newer run has `fromRatings` and
+  at least one unread row's estimated tier has changed, the notice shows account-wide higher/lower tier counts with Refresh
+  (D-243/D-245) and Dismiss; nothing reloads by itself. The notice describes tier changes rather than list positions;
+  Refresh reloads the current view and counts from page one without selecting or highlighting changed articles. First-time estimates inside `movedUp` are still counted (the
   first model has `fromRatings` false, so it is never announced).
 - D-314: 2026-10-24 (PRG-4) — Learning curve in Settings → Personal learning (`GET /me/learning/history`): inline SVG, x =
   update index, three series (personal model, word estimates hollow, interests alone), milestones from `turned_on` and
