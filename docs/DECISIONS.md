@@ -3453,3 +3453,6 @@ D-271, add at the end: "(Amended by D-301: the epoch order is hashed per sample 
   optional fields `openedAt`, `failingSince`, `openUntil`, `probeToken`, `probeUntil`, sets `state` closed and
   `reopenCount` 0, and keeps every other key of the breaker object instead of replacing it. A breaker not in `auth` is
   untouched. An older release calling the function after a rollback gets the new behaviour, which only keeps more keys.
+  Activation also uses a NULL-safe comparison for the expected credential revision: NULL and mismatched revisions
+  raise BZ409 before changing credentials or breaker settings; a current, validated candidate still activates with
+  the exact revision.
