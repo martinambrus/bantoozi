@@ -4738,7 +4738,8 @@
       "volatility": "v",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": ["bantoozi_app"]
+      "execute": ["bantoozi_app"],
+      "bodyMd5": "4edc111ebdc23f07fe5b9e74eca7ba30"
     },
     "admin_stage_provider_credential": {
       "args": "p_provider text, p_expected_revision bigint, p_envelope jsonb",
@@ -4747,7 +4748,8 @@
       "volatility": "v",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": ["bantoozi_app"]
+      "execute": ["bantoozi_app"],
+      "bodyMd5": "63aeceb05fd77d4047d442bbd15cdb2e"
     },
     "admin_usage_attribution": {
       "args": "p_days integer",
@@ -4765,7 +4767,8 @@
       "volatility": "v",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": ["bantoozi_app"]
+      "execute": ["bantoozi_app"],
+      "bodyMd5": "71529006d9ec48547897b88a3bf7e9d3"
     },
     "analysis_requests_insert_check": {
       "args": "",

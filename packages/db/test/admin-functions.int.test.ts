@@ -232,13 +232,23 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
     for (const secret of [SECRET, ...material]) expect(text).not.toContain(secret);
   };
 
-  const stage = (userId: string | null, provider: string | null, expected: Id, envelope: unknown) =>
+  const stage = (
+    userId: string | null,
+    provider: string | null,
+    expected: Id | null,
+    envelope: unknown,
+  ) =>
     appRow(userId, 'SELECT * FROM admin_stage_provider_credential($1, $2, $3::jsonb)', [
       provider,
       expected,
       json(envelope),
     ]);
-  const requestValidation = (userId: string, provider: string, candidate: Id, expected: Id) =>
+  const requestValidation = (
+    userId: string,
+    provider: string,
+    candidate: Id,
+    expected: Id | null,
+  ) =>
     appRow(userId, 'SELECT admin_validate_provider_credential($1, $2, $3)', [
       provider,
       candidate,
@@ -250,7 +260,12 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
       expected,
       candidate,
     ]);
-  const setEnabled = (userId: string, provider: string, expected: Id, enabled: boolean | null) =>
+  const setEnabled = (
+    userId: string,
+    provider: string,
+    expected: Id | null,
+    enabled: boolean | null,
+  ) =>
     appRow(userId, 'SELECT * FROM admin_set_provider_enabled($1, $2, $3)', [
       provider,
       expected,
@@ -371,6 +386,68 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
     }
     expect(await credential('typesafe')).toBeUndefined();
   });
+
+  const nullRevisionCases = (['typesafe', 'ollama'] as const).flatMap((provider) =>
+    (
+      [
+        'stage missing',
+        'stage replacement',
+        'validate pending',
+        'validate expired',
+        'enable',
+        'disable',
+        'disable missing',
+      ] as const
+    ).map((operation) => ({ provider, operation })),
+  );
+
+  it.each(nullRevisionCases)(
+    'rejects NULL expected revision for $provider $operation without changing rows or outbox (0040)',
+    async ({ provider, operation }) => {
+      let call: () => Promise<unknown>;
+      if (operation === 'stage missing' || operation === 'stage replacement') {
+        if (operation === 'stage replacement') {
+          await activateFresh(provider, 0);
+          await stage(admin, provider, 2, sealFor(provider, 3));
+          await claimValidation(provider, 3);
+        }
+        call = () =>
+          stage(admin, provider, null, sealFor(provider, operation === 'stage missing' ? 1 : 4));
+      } else if (operation === 'validate pending' || operation === 'validate expired') {
+        await stage(admin, provider, 0, sealFor(provider, 1));
+        if (operation === 'validate expired') {
+          await claimValidation(provider, 1);
+          await ctx.owner.query(
+            `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
+              WHERE provider = $1`,
+            [provider],
+          );
+        }
+        call = () => requestValidation(admin, provider, 1, null);
+      } else {
+        if (operation !== 'disable missing') {
+          await activateFresh(provider, 0);
+          await stage(admin, provider, 2, sealFor(provider, 3));
+          await claimValidation(provider, 3);
+          if (operation === 'enable') {
+            // A disabled row with a retained active key must otherwise be enableable.
+            await ctx.owner.query(
+              'UPDATE provider_credentials SET enabled = false WHERE provider = $1',
+              [provider],
+            );
+          }
+        }
+        call = () => setEnabled(admin, provider, null, operation === 'enable');
+      }
+      const rows = () => ownerRows('SELECT * FROM provider_credentials ORDER BY provider');
+      const outbox = () => ownerRows('SELECT * FROM job_outbox ORDER BY id');
+      const beforeRows = await rows();
+      const beforeOutbox = await outbox();
+      expect.soft(await outcome(call())).toBe('BZ409');
+      expect.soft(await rows()).toEqual(beforeRows);
+      expect.soft(await outbox()).toEqual(beforeOutbox);
+    },
+  );
 
   it('stages an envelope as the exact next revision, queues nothing and keeps the active key', async () => {
     const outboxBefore = await outboxCount();
